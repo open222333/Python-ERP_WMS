@@ -72,8 +72,9 @@ Python-ERP_WMS/
 │   └── nginx/
 │       ├── nginx.conf                  # nginx 主設定（worker、gzip、log 格式）
 │       └── conf.d/
-│           ├── default.conf            # 生效站台設定（HTTP only，本機 / Docker 均可用）
-│           └── default.conf.https-example  # HTTPS 範本（啟用域名時複製覆蓋 default.conf）
+│           ├── default.conf.default                    # HTTP 範本（複製為 default.conf 使用）
+│           ├── default.conf.https-letsencrypt.default  # Let's Encrypt HTTPS 範本
+│           └── default.conf.cloudflare.default         # Cloudflare Origin CA HTTPS 範本
 │
 └── src/
     ├── __init__.py                     # 全域設定參數（含外送平台設定讀取）
@@ -286,10 +287,16 @@ certbot certonly --standalone -d your.domain.com
 將 HTTPS 範本複製為生效設定，並替換 **4 處** `your.domain.com`：
 
 ```bash
-cp conf/nginx/conf.d/default.conf.https-example conf/nginx/conf.d/default.conf
+# Let's Encrypt
+cp conf/nginx/conf.d/default.conf.https-letsencrypt.default conf/nginx/conf.d/default.conf
 ```
 
 編輯 `conf/nginx/conf.d/default.conf`，將所有 `your.domain.com` 改為實際域名。
+
+> 若使用 **Cloudflare Full (Strict)**（Cloudflare Origin CA），改用：
+> ```bash
+> cp conf/nginx/conf.d/default.conf.cloudflare.default conf/nginx/conf.d/default.conf
+> ```
 
 #### 5. 啟動
 
@@ -878,6 +885,7 @@ from src.permissions import require_role
 |---|---|
 | `conf/flask.json` | 含 `SECRET_KEY`，**勿提交至版控**（已加入 .gitignore） |
 | `conf/config.ini` | 含資料庫連線與外送平台 API 金鑰，**勿提交至版控** |
+| nginx 設定 | `conf/nginx/conf.d/default.conf` 不納入版控；從 `*.default` 範本複製後修改 |
 | 預設帳號 | `admin / admin`，**首次啟動後立即至後台修改密碼** |
 | POS 庫存扣減 | 採 `findOneAndUpdate + $gte` 原子操作，並發失敗自動 rollback，不依賴 MongoDB Transactions（單節點相容） |
 | 出庫確認 | 確認出庫單時自動驗證庫存，庫存不足拒絕確認 |
