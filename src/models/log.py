@@ -21,6 +21,16 @@ class Log:
         return str(result.inserted_id)
 
     @classmethod
-    def find_all(cls, limit: int = 200) -> list:
-        logs = cls._col().find({}, {'_id': 0}).sort('created_at', -1).limit(limit)
-        return list(logs)
+    def find_all(cls, limit: int = 200, username: str = None, action: str = None) -> list:
+        q = {}
+        if username:
+            q['username'] = {'$regex': username, '$options': 'i'}
+        if action:
+            q['action'] = {'$regex': action, '$options': 'i'}
+        logs = cls._col().find(q, {'_id': 0}).sort('created_at', -1).limit(limit)
+        result = []
+        for log in logs:
+            if 'created_at' in log and isinstance(log['created_at'], datetime):
+                log['created_at'] = log['created_at'].isoformat()
+            result.append(log)
+        return result

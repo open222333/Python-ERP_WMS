@@ -34,7 +34,8 @@ ADMIN_TITLE = config.get('SETTING', 'ADMIN_TITLE', fallback='後台管理')
 
 # Flask 參數
 FLASK_PORT = int(environ.get('FLASK_PORT', 5000))
-JWT_ACCESS_TOKEN_EXPIRES_HOURS = int(environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS', 8))
+JWT_ACCESS_TOKEN_EXPIRES_HOURS  = int(environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS',  8))
+JWT_REFRESH_TOKEN_EXPIRES_DAYS  = int(environ.get('JWT_REFRESH_TOKEN_EXPIRES_DAYS', 30))
 
 # MongoDB 連線參數
 MONGO_URI = config.get('MONGO', 'MONGO_URI', fallback='mongodb://localhost:27017')
@@ -46,6 +47,17 @@ MYSQL_PORT = config.getint('MYSQL', 'MYSQL_PORT', fallback=3306)
 MYSQL_USER = config.get('MYSQL', 'MYSQL_USER', fallback='root')
 MYSQL_PASSWORD = config.get('MYSQL', 'MYSQL_PASSWORD', fallback='')
 MYSQL_DB = config.get('MYSQL', 'MYSQL_DB', fallback='flask_app')
+
+# 外送平台設定（可由環境變數覆寫）
+UBEREATS_CLIENT_ID      = config.get('UBEREATS', 'CLIENT_ID',      fallback='')
+UBEREATS_CLIENT_SECRET  = config.get('UBEREATS', 'CLIENT_SECRET',  fallback='')
+UBEREATS_STORE_ID       = config.get('UBEREATS', 'STORE_ID',       fallback='')
+UBEREATS_WEBHOOK_SECRET = config.get('UBEREATS', 'WEBHOOK_SECRET', fallback='')
+
+FOODPANDA_API_KEY        = config.get('FOODPANDA', 'API_KEY',        fallback='')
+FOODPANDA_VENDOR_CODE    = config.get('FOODPANDA', 'VENDOR_CODE',    fallback='')
+FOODPANDA_BASE_URL       = config.get('FOODPANDA', 'BASE_URL',       fallback='https://tw.fd-api.com')
+FOODPANDA_WEBHOOK_SECRET = config.get('FOODPANDA', 'WEBHOOK_SECRET', fallback='')
 
 # Redis 連線參數
 REDIS_HOST = config.get('REDIS', 'REDIS_HOST', fallback='localhost')

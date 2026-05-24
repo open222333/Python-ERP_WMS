@@ -3,7 +3,7 @@ from flask import jsonify
 from flask_jwt_extended import get_jwt_identity
 from src.models.user import User
 
-ROLE_LEVELS = {'admin': 3, 'operator': 2, 'viewer': 1}
+ROLE_LEVELS = {'admin': 3, 'operator': 2, 'cashier': 1, 'viewer': 1}
 
 
 def require_role(*roles):

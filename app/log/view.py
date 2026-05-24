@@ -9,5 +9,7 @@ app_log = Blueprint('app_log', __name__)
 @jwt_required()
 def list_logs():
     limit = request.args.get('limit', 200, type=int)
-    logs = Log.find_all(limit=limit)
+    username = request.args.get('username', '')
+    action = request.args.get('action', '')
+    logs = Log.find_all(limit=limit, username=username or None, action=action or None)
     return jsonify({'success': True, 'data': logs})

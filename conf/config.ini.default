@@ -15,15 +15,15 @@
 ; flask json 設定檔路徑 預設值 conf/flask.json
 ; FLASK_JSON_PATH=
 
-; 後台管理頁面名稱 預設值 後台管理
-; ADMIN_TITLE=
+; 後台管理頁面名稱
+ADMIN_TITLE=WMS 倉儲管理系統
 
 [MONGO]
 ; MongoDB 連線 URI 預設 mongodb://localhost:27017
 MONGO_URI=mongodb://localhost:27017
 
-; MongoDB 資料庫名稱 預設 flask_app
-MONGO_DB=flask_app
+; MongoDB 資料庫名稱 (WMS 使用 wms)
+MONGO_DB=wms
 
 [MYSQL]
 ; MySQL 主機 預設 localhost

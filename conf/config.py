@@ -1,6 +1,6 @@
 import json
 from datetime import timedelta
-from src import FLASK_JSON_PATH, JWT_ACCESS_TOKEN_EXPIRES_HOURS
+from src import FLASK_JSON_PATH, JWT_ACCESS_TOKEN_EXPIRES_HOURS, JWT_REFRESH_TOKEN_EXPIRES_DAYS
 
 with open(FLASK_JSON_PATH, 'r') as f:
     conf = json.loads(f.read())
@@ -19,7 +19,8 @@ class BasicConfig(object):
     """    """Base config, uses staging database server."""
     SECRET_KEY = conf['SECRET_KEY']
     JWT_SECRET_KEY = conf['SECRET_KEY']
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=JWT_ACCESS_TOKEN_EXPIRES_HOURS)
+    JWT_ACCESS_TOKEN_EXPIRES  = timedelta(hours=JWT_ACCESS_TOKEN_EXPIRES_HOURS)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
     JSON_AS_ASCII = False
     JSON_SORT_KEYS = True
 

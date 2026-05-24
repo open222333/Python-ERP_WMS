@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, redirect
 from flasgger import Swagger
 from flask_jwt_extended import JWTManager
 from app.sample.view import app_sample
@@ -6,31 +6,34 @@ from app.auth.view import app_auth
 from app.user.view import app_user
 from app.admin.view import app_admin
 from app.log.view import app_log
+from app.product.view import app_product
+from app.warehouse.view import app_warehouse
+from app.inventory.view import app_inventory
+from app.inbound.view import app_inbound
+from app.outbound.view import app_outbound
+from app.analytics.view import app_analytics
+from app.pos.view import app_pos
+from app.delivery.view import app_delivery
+from app.menu.view import app_menu
+from app.quick_io.view import app_quick_io
+from app.settings.view import app_settings
 from src import FLASK_JSON_PATH
 import json
 
 app = Flask(__name__)
 template = {
     "swagger": "2.0",
-    # "openapi": "3.0.0",
     "info": {
-        "title": "My API",
-        "description": "練習用 API文檔",
+        "title": "WMS 倉儲管理系統 API",
+        "description": "WMS API 文檔",
         "contact": {
-            "responsibleOrganization": "ME",
-            "responsibleDeveloper": "Me",
-            "email": "open222333@gmail.com",
-            "url": "www.test.com",
+            "email": "tom_li@appdet.com",
         },
-        "termsOfService": "http://test.com/terms",
-        "version": "0.0.1"
+        "version": "1.0.0"
     },
-    "host": "127.0.0.1",  # overrides localhost:500
-    "basePath": "/",  # base bash for blueprint registration
-    "schemes": [
-        "http",
-        # "https"
-    ],
+    "host": "127.0.0.1:5000",
+    "basePath": "/",
+    "schemes": ["http"],
     "operationId": "getmyData",
     "securityDefinitions": {
         "Bearer": {
@@ -48,15 +51,26 @@ jwt = JWTManager(app)
 
 @app.route("/")
 def status():
-    return 'ok'
+    return redirect('/admin/')
 
 
 def create_app(confgi_object=None):
-    app.register_blueprint(blueprint=app_sample, url_prefix='/sample')
-    app.register_blueprint(blueprint=app_auth, url_prefix='/auth')
-    app.register_blueprint(blueprint=app_user, url_prefix='/user')
-    app.register_blueprint(blueprint=app_admin, url_prefix='/admin')
-    app.register_blueprint(blueprint=app_log, url_prefix='/log')
+    app.register_blueprint(blueprint=app_sample,    url_prefix='/sample')
+    app.register_blueprint(blueprint=app_auth,      url_prefix='/auth')
+    app.register_blueprint(blueprint=app_user,      url_prefix='/user')
+    app.register_blueprint(blueprint=app_admin,     url_prefix='/admin')
+    app.register_blueprint(blueprint=app_log,       url_prefix='/log')
+    app.register_blueprint(blueprint=app_product,   url_prefix='/product')
+    app.register_blueprint(blueprint=app_warehouse, url_prefix='/warehouse')
+    app.register_blueprint(blueprint=app_inventory, url_prefix='/inventory')
+    app.register_blueprint(blueprint=app_inbound,    url_prefix='/inbound')
+    app.register_blueprint(blueprint=app_outbound,   url_prefix='/outbound')
+    app.register_blueprint(blueprint=app_analytics,  url_prefix='/analytics')
+    app.register_blueprint(blueprint=app_pos,        url_prefix='/pos')
+    app.register_blueprint(blueprint=app_delivery,   url_prefix='/delivery')
+    app.register_blueprint(blueprint=app_menu,       url_prefix='/menu')
+    app.register_blueprint(blueprint=app_quick_io,   url_prefix='/quick-io')
+    app.register_blueprint(blueprint=app_settings,   url_prefix='/settings')
     if confgi_object:
         app.config.from_object(confgi_object)
     return app
