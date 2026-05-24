@@ -3,11 +3,13 @@ services:
     image: nginx:1.26-alpine
     hostname: wms-nginx
     ports:
-      - "${APP_PORT:-80}:80"
-      # - "443:443"   # 啟用 HTTPS 時取消註解
+      - "80:80"
+      - "443:443"
     volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      # - ./docker/ssl:/etc/nginx/ssl:ro   # 啟用 HTTPS 時掛載憑證
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro          # Let's Encrypt 憑證（啟用 HTTPS 時需要）
+      - /var/www/certbot:/var/www/certbot:ro           # 自動續約驗證路徑（啟用 HTTPS 時需要）
     depends_on:
       - app
     restart: unless-stopped

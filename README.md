@@ -68,7 +68,12 @@ Python-ERP_WMS/
 ├── conf/
 │   ├── config.py                       # Flask Config 類別
 │   ├── config.ini.default              # 設定範本 ← 複製為 config.ini
-│   └── flask.json.default              # SECRET_KEY 範本 ← 複製為 flask.json
+│   ├── flask.json.default              # SECRET_KEY 範本 ← 複製為 flask.json
+│   └── nginx/
+│       ├── nginx.conf                  # nginx 主設定（worker、gzip、log 格式）
+│       └── conf.d/
+│           ├── default.conf            # 生效站台設定（HTTP only，本機 / Docker 均可用）
+│           └── default.conf.https-example  # HTTPS 範本（啟用域名時複製覆蓋 default.conf）
 │
 └── src/
     ├── __init__.py                     # 全域設定參數（含外送平台設定讀取）
@@ -202,11 +207,19 @@ MONGO_URI=mongodb://mongo:27017
 MONGO_DB=wms
 ```
 
-### 步驟四：啟動
+### 步驟四：首次啟動（建置 image）
 
 ```bash
 docker compose up -d --build
 ```
+
+> 首次啟動需要 `--build` 以建置 Flask image。之後若只修改 Python / HTML 程式碼，**不需重新 build**，直接重啟即可：
+>
+> ```bash
+> docker compose restart app
+> ```
+>
+> 只有異動 `requirements.txt` 或 `Dockerfile` 時，才需要再加 `--build`。
 
 ### 服務一覽
 
@@ -227,23 +240,76 @@ docker compose up -d --build
 
 > `APP_PORT` 若改為非 80，例如 `APP_PORT=8080`，則網址改為 `http://127.0.0.1:8080/...`
 
-### 啟用 HTTPS（SSL）
+### 部署自訂域名（含 HTTPS）
 
-1. 將憑證放入 `conf/ssl/`：
-   ```
-   conf/ssl/fullchain.pem
-   conf/ssl/privkey.pem
-   ```
-   > Let's Encrypt 可用 symlink：`ln -s /etc/letsencrypt/live/your.domain/fullchain.pem conf/ssl/fullchain.pem`
+#### 1. DNS 設定
 
-2. 編輯 `conf/nginx/nginx.conf`，取消 HTTPS server block 的註解，並填入 `server_name`。
+在域名商後台新增 A Record，指向伺服器 IP：
 
-3. 在 `docker-compose.yml` nginx ports 加入 `"443:443"`。
+```
+類型   名稱   值
+A      @      你的伺服器 IP
+A      www    你的伺服器 IP   ← 若需要 www
+```
 
-4. 重啟 nginx：
-   ```bash
-   docker compose restart nginx
-   ```
+#### 2. 伺服器開放 Port
+
+```bash
+# Ubuntu/Debian
+ufw allow 80 && ufw allow 443
+
+# CentOS/Rocky
+firewall-cmd --permanent --add-service=http
+firewall-cmd --permanent --add-service=https
+firewall-cmd --reload
+```
+
+#### 3. 申請 Let's Encrypt SSL 憑證
+
+```bash
+# 安裝 certbot
+apt install certbot   # Ubuntu/Debian
+
+# 暫停 nginx（讓 certbot 使用 80 port 驗證）
+docker compose stop nginx
+
+# 申請憑證（替換成你的域名）
+certbot certonly --standalone -d your.domain.com
+
+# 憑證位置
+# /etc/letsencrypt/live/your.domain.com/fullchain.pem
+# /etc/letsencrypt/live/your.domain.com/privkey.pem
+```
+
+#### 4. 更新 nginx 設定
+
+將 HTTPS 範本複製為生效設定，並替換 **4 處** `your.domain.com`：
+
+```bash
+cp conf/nginx/conf.d/default.conf.https-example conf/nginx/conf.d/default.conf
+```
+
+編輯 `conf/nginx/conf.d/default.conf`，將所有 `your.domain.com` 改為實際域名。
+
+#### 5. 啟動
+
+```bash
+docker compose up -d
+```
+
+#### 6. 憑證自動續約（cron）
+
+```bash
+crontab -e
+```
+
+加入（替換專案路徑）：
+
+```
+30 2 * * * certbot renew --quiet && docker compose -f /path/to/Python-ERP_WMS/docker-compose.yml restart nginx
+```
+
+> 憑證有效期 90 天，cron 每日凌晨 2:30 檢查，到期前 30 天自動更新。
 
 ### 常用指令
 
