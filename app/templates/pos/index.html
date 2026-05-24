@@ -885,7 +885,9 @@ function addMenuItemToCart(iid) {
   if (!CURRENT_MENU) return;
   const menuItem = (CURRENT_MENU.items || []).find(x => x._id === iid);
   if (!menuItem) return;
-  if ((menuItem.customizations || []).length > 0) {
+  // 專屬客製化 + 套用的選項組模組，只要任一有選項就開 modal
+  const allGroups = [...(menuItem.customizations || []), ...(menuItem.applied_groups || [])];
+  if (allGroups.length > 0) {
     openCustomizationModal(menuItem);
   } else {
     _doAddMenuItemToCart(menuItem, [], 0);
@@ -896,8 +898,11 @@ function openCustomizationModal(menuItem) {
   _pendingCustItem = menuItem;
   document.getElementById('cust-item-name').textContent = menuItem.name;
 
+  // 合併品項專屬客製化 + 套用的選項組模組
+  const allGroups = [...(menuItem.customizations || []), ...(menuItem.applied_groups || [])];
+
   const body = document.getElementById('cust-modal-body');
-  body.innerHTML = (menuItem.customizations || []).map(grp => {
+  body.innerHTML = allGroups.map(grp => {
     const inputType = grp.type === 'multiple' ? 'checkbox' : 'radio';
     const reqMark   = grp.required ? ' <span class="text-danger">*</span>' : '';
     const choices   = (grp.choices || []).map(ch => {
@@ -944,8 +949,11 @@ function confirmCustomization() {
     (groupSel[gid] = groupSel[gid] || []).push(el.dataset.choiceId);
   });
 
+  // 合併品項專屬客製化 + 套用的選項組模組
+  const allGroups = [...(menuItem.customizations || []), ...(menuItem.applied_groups || [])];
+
   // 驗證必選
-  for (const grp of (menuItem.customizations || [])) {
+  for (const grp of allGroups) {
     if (grp.required && !(groupSel[grp._id] || []).length) {
       toast(`請選擇「${grp.name}」`, 'danger');
       return;
@@ -955,7 +963,7 @@ function confirmCustomization() {
   // 組裝 customizations_selected（從 menuItem 資料取名稱/價格，不從 DOM 讀）
   let extraPrice = 0;
   const custSelected = [];
-  for (const grp of (menuItem.customizations || [])) {
+  for (const grp of allGroups) {
     const ids = groupSel[grp._id] || [];
     if (!ids.length) continue;
     const choices = ids.map(cid => {

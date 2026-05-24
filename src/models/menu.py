@@ -94,6 +94,13 @@ def _fmt_menu(doc) -> dict:
     for key in ('created_at', 'updated_at'):
         if key in d and d[key]:
             d[key] = d[key].isoformat() + 'Z'
+
+    # 確保 option_groups 欄位存在（舊資料向下相容）
+    if 'option_groups' not in d:
+        d['option_groups'] = []
+    # 建立 gid → group 查詢表，供品項解析 applied_group_ids 用
+    og_lookup = {og['_id']: og for og in d['option_groups']}
+
     # 格式化 items
     for item in d.get('items', []):
         # 舊欄位（向下相容）
@@ -120,6 +127,14 @@ def _fmt_menu(doc) -> dict:
         # 確保 customizations 欄位永遠存在（舊資料向下相容）
         if 'customizations' not in item:
             item['customizations'] = []
+        # 確保 applied_group_ids 欄位永遠存在
+        if 'applied_group_ids' not in item:
+            item['applied_group_ids'] = []
+        # 解析 applied_group_ids → applied_groups（供前端 & POS 直接使用）
+        item['applied_groups'] = [
+            og_lookup[gid] for gid in item['applied_group_ids']
+            if gid in og_lookup
+        ]
     return d
 
 
@@ -152,14 +167,15 @@ class Menu:
                sort_order: int = 0) -> str:
         now = datetime.utcnow()
         doc = {
-            'name':        name,
-            'description': description,
-            'status':      1,
-            'sort_order':  sort_order,
-            'categories':  [],
-            'items':       [],
-            'created_at':  now,
-            'updated_at':  now,
+            'name':          name,
+            'description':   description,
+            'status':        1,
+            'sort_order':    sort_order,
+            'categories':    [],
+            'items':         [],
+            'option_groups': [],
+            'created_at':    now,
+            'updated_at':    now,
         }
         return str(cls._col().insert_one(doc).inserted_id)
 
@@ -190,6 +206,7 @@ class Menu:
           sort_order, description, status
         """
         linked_products = _parse_linked_products(data.get('linked_products', []))
+        raw_gids = data.get('applied_group_ids') or []
         item = {
             '_id':               _new_item_id(),
             'name':              data.get('name', '').strip(),
@@ -199,6 +216,7 @@ class Menu:
             'consume_inventory': bool(data.get('consume_inventory', False)),
             'linked_products':   linked_products,
             'customizations':    _parse_customizations(data.get('customizations', [])),
+            'applied_group_ids': [str(g) for g in raw_gids],
             'sort_order':        int(data.get('sort_order', 0)),
             'status':            int(data.get('status', 1)),
         }
@@ -231,6 +249,9 @@ class Menu:
         if 'customizations' in data:
             set_fields['items.$[el].customizations'] = \
                 _parse_customizations(data['customizations'])
+        if 'applied_group_ids' in data:
+            set_fields['items.$[el].applied_group_ids'] = \
+                [str(g) for g in (data['applied_group_ids'] or [])]
 
         r = cls._col().update_one(
             {'_id': ObjectId(mid)},
@@ -321,5 +342,94 @@ class Menu:
             {'_id': ObjectId(mid)},
             {'$pull': {'categories': {'_id': cat_id}},
              '$set':  {'updated_at': datetime.utcnow()}},
+        )
+        return r.matched_count > 0
+
+    # ── 選項組 CRUD（embedded option_groups） ──────
+    @classmethod
+    def add_option_group(cls, mid: str, data: dict) -> dict:
+        """
+        新增選項組，回傳完整 dict。
+        data 欄位：
+          name（必填）、type('single'|'multiple')、required、
+          choices[{name, extra_price, is_default}]
+        """
+        og = {
+            '_id':      _new_item_id(),
+            'name':     (data.get('name') or '').strip(),
+            'type':     'multiple' if data.get('type') == 'multiple' else 'single',
+            'required': bool(data.get('required', True)),
+            'choices':  [],
+        }
+        for ch in (data.get('choices') or []):
+            ch_name = (ch.get('name') or '').strip()
+            if not ch_name:
+                continue
+            og['choices'].append({
+                '_id':         ch.get('_id') or _new_item_id(),
+                'name':        ch_name,
+                'extra_price': max(0.0, float(ch.get('extra_price') or 0)),
+                'is_default':  bool(ch.get('is_default', False)),
+            })
+        # 單選組：只保留第一個 is_default
+        if og['type'] == 'single':
+            found = False
+            for ch in og['choices']:
+                if ch['is_default']:
+                    if found:
+                        ch['is_default'] = False
+                    else:
+                        found = True
+        cls._col().update_one(
+            {'_id': ObjectId(mid)},
+            {'$push': {'option_groups': og},
+             '$set':  {'updated_at': datetime.utcnow()}},
+        )
+        return og
+
+    @classmethod
+    def update_option_group(cls, mid: str, gid: str, data: dict) -> bool:
+        set_fields = {'updated_at': datetime.utcnow()}
+        if 'name' in data:
+            set_fields['option_groups.$[g].name'] = (data['name'] or '').strip()
+        if 'type' in data:
+            set_fields['option_groups.$[g].type'] = \
+                'multiple' if data['type'] == 'multiple' else 'single'
+        if 'required' in data:
+            set_fields['option_groups.$[g].required'] = bool(data['required'])
+        if 'choices' in data:
+            choices = []
+            for ch in (data['choices'] or []):
+                ch_name = (ch.get('name') or '').strip()
+                if not ch_name:
+                    continue
+                choices.append({
+                    '_id':         ch.get('_id') or _new_item_id(),
+                    'name':        ch_name,
+                    'extra_price': max(0.0, float(ch.get('extra_price') or 0)),
+                    'is_default':  bool(ch.get('is_default', False)),
+                })
+            set_fields['option_groups.$[g].choices'] = choices
+        r = cls._col().update_one(
+            {'_id': ObjectId(mid)},
+            {'$set': set_fields},
+            array_filters=[{'g._id': gid}],
+        )
+        return r.matched_count > 0
+
+    @classmethod
+    def delete_option_group(cls, mid: str, gid: str) -> bool:
+        """刪除選項組，同時從所有品項的 applied_group_ids 中移除該 gid。"""
+        r = cls._col().update_one(
+            {'_id': ObjectId(mid)},
+            {
+                '$pull': {'option_groups': {'_id': gid}},
+                '$set':  {'updated_at': datetime.utcnow()},
+            },
+        )
+        # 清除品項中的參照
+        cls._col().update_one(
+            {'_id': ObjectId(mid)},
+            {'$pull': {'items.$[].applied_group_ids': gid}},
         )
         return r.matched_count > 0

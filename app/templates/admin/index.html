@@ -324,6 +324,14 @@
             <button class="btn btn-sm btn-outline-secondary" onclick="loadProducts()">
               <i class="bi bi-search"></i>
             </button>
+            <button class="btn btn-sm btn-outline-success" onclick="exportMenu()" title="匯出全部分類與產品為 JSON">
+              <i class="bi bi-download"></i> 匯出
+            </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('import-file-input').click()" title="從 JSON 檔案匯入分類與產品">
+              <i class="bi bi-upload"></i> 匯入
+            </button>
+            <input type="file" id="import-file-input" accept=".json" style="display:none"
+              onchange="handleImportFile(this)"/>
             <button class="btn btn-sm btn-primary" id="btn-add-prod" onclick="openProductModal()">
               <i class="bi bi-plus-lg"></i> 新增產品
             </button>
@@ -890,9 +898,19 @@
           <div class="table-card h-100">
             <div class="table-header">
               <h6><i class="bi bi-menu-button-wide me-1"></i>菜單列表</h6>
-              <button class="btn btn-sm btn-primary" onclick="openMenuModal()">
-                <i class="bi bi-plus-lg"></i> 新增菜單
-              </button>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-success" onclick="exportAllMenus()" title="匯出全部菜單">
+                  <i class="bi bi-download"></i> 匯出全部
+                </button>
+                <button class="btn btn-sm btn-outline-warning" onclick="document.getElementById('menus-import-input').click()" title="從 JSON 匯入全部菜單">
+                  <i class="bi bi-upload"></i> 匯入
+                </button>
+                <input type="file" id="menus-import-input" accept=".json" style="display:none"
+                       onchange="handleAllMenusImportFile(this)"/>
+                <button class="btn btn-sm btn-primary" onclick="openMenuModal()">
+                  <i class="bi bi-plus-lg"></i> 新增菜單
+                </button>
+              </div>
             </div>
             <div class="table-responsive">
               <table class="table mb-0" id="tbl-menus">
@@ -922,7 +940,21 @@
                           onclick="switchMenuTab('categories')">
                     <i class="bi bi-tags me-1"></i>分類
                   </button>
+                  <button class="btn btn-outline-secondary" id="tab-btn-option-groups"
+                          onclick="switchMenuTab('option-groups')">
+                    <i class="bi bi-sliders me-1"></i>選項組
+                  </button>
                 </div>
+                <button class="btn btn-sm btn-outline-success d-none" id="btn-export-menu"
+                        onclick="exportMenuJson()" title="匯出此菜單為 JSON">
+                  <i class="bi bi-download"></i> 匯出
+                </button>
+                <button class="btn btn-sm btn-outline-warning d-none" id="btn-import-menu"
+                        onclick="document.getElementById('menu-import-input').click()" title="從 JSON 匯入品項與分類">
+                  <i class="bi bi-upload"></i> 匯入
+                </button>
+                <input type="file" id="menu-import-input" accept=".json" style="display:none"
+                       onchange="handleMenuImportFile(this)"/>
                 <button class="btn btn-sm btn-primary d-none" id="btn-add-menu-item"
                         onclick="openMenuItemModal()">
                   <i class="bi bi-plus-lg"></i> 新增品項
@@ -930,6 +962,10 @@
                 <button class="btn btn-sm btn-outline-secondary d-none" id="btn-add-menu-cat"
                         onclick="openMenuCatModal()">
                   <i class="bi bi-plus-lg"></i> 新增分類
+                </button>
+                <button class="btn btn-sm btn-outline-secondary d-none" id="btn-add-og"
+                        onclick="openOptionGroupModal()">
+                  <i class="bi bi-plus-lg"></i> 新增選項組
                 </button>
               </div>
             </div>
@@ -953,6 +989,17 @@
                 <table class="table mb-0 table-sm" id="tbl-menu-categories">
                   <thead>
                     <tr><th>名稱</th><th>品項數</th><th>排序</th><th>狀態</th><th></th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <!-- 選項組 tab -->
+            <div id="menu-tab-option-groups" style="display:none">
+              <div class="table-responsive">
+                <table class="table mb-0 table-sm" id="tbl-menu-ogs">
+                  <thead>
+                    <tr><th>名稱</th><th>類型</th><th>必選</th><th>選項</th><th></th></tr>
                   </thead>
                   <tbody></tbody>
                 </table>
@@ -1125,7 +1172,7 @@
         <!-- 客製化選項 -->
         <div class="col-12">
           <div class="d-flex align-items-center justify-content-between mb-2">
-            <small class="fw-semibold text-secondary">客製化選項</small>
+            <small class="fw-semibold text-secondary">客製化選項（此品項專屬）</small>
             <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2"
                     onclick="addCustomizationGroup()">
               <i class="bi bi-plus-lg me-1"></i>新增選項組
@@ -1134,6 +1181,19 @@
           <div id="customization-groups"></div>
           <div class="form-text">
             <i class="bi bi-info-circle me-1"></i>POS 結帳時可讓操作者為顧客選擇客製化；單選 = 只能選一個，多選 = 可複選；加價金額加至品項售價。
+          </div>
+        </div>
+
+        <!-- 套用選項組模組 -->
+        <div class="col-12" id="menu-item-og-section">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <small class="fw-semibold text-secondary">套用選項組模組</small>
+          </div>
+          <div id="menu-item-og-checkboxes" class="d-flex flex-wrap gap-2">
+            <span class="text-muted small">（此菜單尚未建立選項組模組）</span>
+          </div>
+          <div class="form-text">
+            <i class="bi bi-info-circle me-1"></i>套用後，POS 會同時顯示模組的選項供顧客選擇（與上方專屬選項並存）。
           </div>
         </div>
 
@@ -1176,6 +1236,53 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
       <button class="btn btn-primary" onclick="saveMenuCategory()">儲存</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Option Group Modal -->
+<div class="modal fade" id="modal-menu-og" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="og-modal-title">選項組模組</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="og-id"/>
+      <div class="row g-3">
+        <div class="col-6">
+          <label class="form-label">名稱 <span class="text-danger">*</span></label>
+          <input id="og-name" type="text" class="form-control" placeholder="例：飲料溫度、甜度"/>
+        </div>
+        <div class="col-3">
+          <label class="form-label">類型</label>
+          <select id="og-type" class="form-select">
+            <option value="single">單選</option>
+            <option value="multiple">多選</option>
+          </select>
+        </div>
+        <div class="col-3">
+          <label class="form-label">必選</label>
+          <select id="og-required" class="form-select">
+            <option value="1">是</option>
+            <option value="0">否</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <small class="fw-semibold text-secondary">選項清單</small>
+            <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2"
+                    onclick="addOgChoiceRow()">
+              <i class="bi bi-plus-lg me-1"></i>新增選項
+            </button>
+          </div>
+          <div id="og-choices-rows"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+      <button class="btn btn-primary" onclick="saveOptionGroup()">儲存</button>
     </div>
   </div></div>
 </div>
@@ -2033,6 +2140,59 @@ async function deleteCategory(id) {
 // ════════════════════════════════════════════
 //  Products
 // ════════════════════════════════════════════
+
+// ── 菜單匯出 ──────────────────────────────
+async function exportMenu() {
+  const r = await fetch('/product/export', {
+    headers: { 'Authorization': `Bearer ${TOKEN}` }
+  });
+  if (!r.ok) { toast('匯出失敗', 'danger'); return; }
+  const blob = await r.blob();
+  const cd   = r.headers.get('Content-Disposition') || '';
+  const fn   = cd.match(/filename="?([^"]+)"?/)?.[1] || 'menu.json';
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = fn; a.click();
+  URL.revokeObjectURL(url);
+  toast('匯出完成');
+}
+
+// ── 菜單匯入 ──────────────────────────────
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';   // 允許重複選同一檔
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let payload;
+    try {
+      payload = JSON.parse(e.target.result);
+    } catch {
+      toast('檔案格式錯誤，請選擇有效的 JSON', 'danger');
+      return;
+    }
+
+    const catCount  = (payload.categories || []).length;
+    const prodCount = (payload.products   || []).length;
+    if (!confirm(`即將匯入：${catCount} 個分類、${prodCount} 個產品\n（SKU 已存在者將更新，分類已存在者略過）\n\n確定繼續？`)) return;
+
+    const r = await api('POST', '/product/import', payload);
+    if (!r.ok) {
+      toast(r.data?.message || '匯入失敗', 'danger');
+      return;
+    }
+    const res = r.data.result;
+    const msg = `匯入完成：分類 +${res.created_categories} 略過${res.skipped_categories}；` +
+                `產品 +${res.created_products} 更新${res.updated_products}` +
+                (res.errors.length ? `；${res.errors.length} 筆錯誤` : '');
+    toast(msg, res.errors.length ? 'warning' : 'success');
+    await Promise.all([loadProductCache(), loadCategoryCache()]);
+    loadProducts();
+  };
+  reader.readAsText(file);
+}
+
 async function loadProducts() {
   const kw = document.getElementById('product-search').value.trim();
   const r  = await api('GET', `/product/?keyword=${encodeURIComponent(kw)}`);
@@ -3259,17 +3419,119 @@ function copyWebhookUrl(inputId) {
 let _menus           = [];
 let _currentMenuId   = null;   // 目前右側顯示的菜單 id
 let _currentMenuData = null;   // 完整菜單物件（含 items + categories）
-let _menuTab         = 'items'; // 'items' | 'categories'
+let _menuTab         = 'items'; // 'items' | 'categories' | 'option-groups'
 
 // ── 切換 Tab ────────────────────────────────
 function switchMenuTab(tab) {
   _menuTab = tab;
-  document.getElementById('menu-tab-items').style.display      = tab === 'items'      ? '' : 'none';
-  document.getElementById('menu-tab-categories').style.display = tab === 'categories' ? '' : 'none';
-  document.getElementById('tab-btn-items').classList.toggle('active',      tab === 'items');
-  document.getElementById('tab-btn-categories').classList.toggle('active', tab === 'categories');
-  document.getElementById('btn-add-menu-item').classList.toggle('d-none',  tab !== 'items');
-  document.getElementById('btn-add-menu-cat').classList.toggle('d-none',   tab !== 'categories');
+  document.getElementById('menu-tab-items').style.display         = tab === 'items'         ? '' : 'none';
+  document.getElementById('menu-tab-categories').style.display    = tab === 'categories'    ? '' : 'none';
+  document.getElementById('menu-tab-option-groups').style.display = tab === 'option-groups' ? '' : 'none';
+  document.getElementById('tab-btn-items').classList.toggle('active',         tab === 'items');
+  document.getElementById('tab-btn-categories').classList.toggle('active',    tab === 'categories');
+  document.getElementById('tab-btn-option-groups').classList.toggle('active', tab === 'option-groups');
+  document.getElementById('btn-add-menu-item').classList.toggle('d-none',     tab !== 'items');
+  document.getElementById('btn-add-menu-cat').classList.toggle('d-none',      tab !== 'categories');
+  document.getElementById('btn-add-og').classList.toggle('d-none',            tab !== 'option-groups');
+}
+
+// ── 菜單列表 全部匯出 / 匯入 ──────────────────
+async function exportAllMenus() {
+  const r = await fetch('/menu/export-all', {
+    headers: { 'Authorization': `Bearer ${TOKEN}` }
+  });
+  if (!r.ok) { toast('匯出失敗', 'danger'); return; }
+  const blob = await r.blob();
+  const cd   = r.headers.get('Content-Disposition') || '';
+  const fn   = decodeURIComponent(cd.match(/filename\*=UTF-8''(.+)/)?.[1] || '') || 'menus_all.json';
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = fn; a.click();
+  URL.revokeObjectURL(url);
+  toast('全部菜單匯出完成');
+}
+
+function handleAllMenusImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let payload;
+    try { payload = JSON.parse(e.target.result); }
+    catch { toast('檔案格式錯誤，請選擇有效的 JSON', 'danger'); return; }
+
+    const menuCount = (payload.menus || []).length;
+    if (!menuCount) { toast('檔案內無菜單資料', 'warning'); return; }
+    if (!confirm(
+      `即將匯入 ${menuCount} 份菜單\n` +
+      `（菜單名稱已存在則沿用，分類/選項組/品項同名略過或更新）\n\n確定繼續？`
+    )) return;
+
+    const r = await api('POST', '/menu/import-all', payload);
+    if (!r.ok) { toast(r.data?.message || '匯入失敗', 'danger'); return; }
+    const res = r.data.result;
+    toast(
+      `匯入完成：菜單 +${res.created_menus} 略過${res.skipped_menus}｜` +
+      `分類 +${res.created_categories}｜` +
+      `選項組 +${res.created_option_groups}｜` +
+      `品項 +${res.created_items} 更新${res.updated_items}`,
+      'success'
+    );
+    loadMenus();
+  };
+  reader.readAsText(file);
+}
+
+// ── 單一菜單 匯出 / 匯入 ──────────────────────
+async function exportMenuJson() {
+  if (!_currentMenuId) { toast('請先選擇菜單', 'warning'); return; }
+  const r = await fetch(`/menu/${_currentMenuId}/export`, {
+    headers: { 'Authorization': `Bearer ${TOKEN}` }
+  });
+  if (!r.ok) { toast('匯出失敗', 'danger'); return; }
+  const blob = await r.blob();
+  const cd   = r.headers.get('Content-Disposition') || '';
+  const fn   = cd.match(/filename="?([^"]+)"?/)?.[1] || 'menu.json';
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = fn; a.click();
+  URL.revokeObjectURL(url);
+  toast('匯出完成');
+}
+
+function handleMenuImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  if (!_currentMenuId) { toast('請先選擇菜單', 'warning'); return; }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let payload;
+    try { payload = JSON.parse(e.target.result); }
+    catch { toast('檔案格式錯誤，請選擇有效的 JSON', 'danger'); return; }
+
+    const catCount  = (payload.categories || []).length;
+    const itemCount = (payload.items || []).length;
+    if (!confirm(
+      `即將匯入至「${_menus.find(m=>m._id===_currentMenuId)?.name || ''}」：\n` +
+      `${catCount} 個分類、${itemCount} 個品項\n` +
+      `（分類已存在略過；品項名稱相同則更新）\n\n確定繼續？`
+    )) return;
+
+    const r = await api('POST', `/menu/${_currentMenuId}/import`, payload);
+    if (!r.ok) { toast(r.data?.message || '匯入失敗', 'danger'); return; }
+
+    const res = r.data.result;
+    const msg = `匯入完成：分類 +${res.created_categories} 略過${res.skipped_categories}；` +
+                `品項 +${res.created_items} 更新${res.updated_items}` +
+                (res.errors.length ? `；${res.errors.length} 筆錯誤` : '');
+    toast(msg, res.errors.length ? 'warning' : 'success');
+    selectMenu(_currentMenuId);  // 重新整理右側
+  };
+  reader.readAsText(file);
 }
 
 // ── 左側菜單列表 ─────────────────────────────
@@ -3311,8 +3573,10 @@ async function selectMenu(mid) {
   const menu = _menus.find(m => m._id === mid);
   document.getElementById('menu-items-subtitle').textContent = menu ? `— ${menu.name}` : '';
 
-  // 顯示 Tab 群組 + 對應按鈕
+  // 顯示 Tab 群組 + 對應按鈕（含匯出/匯入）
   document.getElementById('menu-panel-tabs').style.display = '';
+  document.getElementById('btn-export-menu').classList.remove('d-none');
+  document.getElementById('btn-import-menu').classList.remove('d-none');
   switchMenuTab(_menuTab);   // 維持當前 tab，但確保按鈕狀態正確
 
   // 重新 fetch 完整菜單（含 categories）
@@ -3322,6 +3586,7 @@ async function selectMenu(mid) {
 
   _renderMenuItemsTable(_currentMenuData.items || []);
   _renderMenuCategoriesTable(_currentMenuData.categories || []);
+  _renderMenuOptionGroupsTable(_currentMenuData.option_groups || []);
 }
 
 // ── 右側：品項 Tab 渲染 ─────────────────────
@@ -3333,16 +3598,23 @@ function _productName(pid) {
 function _renderMenuItemsTable(items) {
   const tbody = document.querySelector('#tbl-menu-items tbody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">此菜單尚無品項</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">此菜單尚無品項</td></tr>';
     return;
   }
-  tbody.innerHTML = items.sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(i => `
+  tbody.innerHTML = items.sort((a,b) => (a.sort_order||0)-(b.sort_order||0)).map(i => {
+    // 專屬客製化 badge
+    const custBadge = (i.customizations||[]).length
+      ? `<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem" title="品項專屬客製化">${i.customizations.length} 選項</span>`
+      : '';
+    // 套用選項組模組 badges
+    const ogBadges = (i.applied_groups||[]).map(og =>
+      `<span class="badge bg-info text-dark ms-1" style="font-size:.65rem" title="選項組模組">
+        <i class="bi bi-sliders" style="font-size:.6rem"></i> ${og.name}
+      </span>`
+    ).join('');
+    return `
     <tr>
-      <td class="fw-semibold">${i.name}${
-        (i.customizations||[]).length
-          ? `<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem">${i.customizations.length} 選項</span>`
-          : ''
-      }</td>
+      <td class="fw-semibold">${i.name}${custBadge}${ogBadges}</td>
       <td>${i.category
         ? `<span class="badge bg-light text-dark border">${i.category}</span>`
         : '<span class="text-muted">—</span>'}</td>
@@ -3379,7 +3651,8 @@ function _renderMenuItemsTable(items) {
           <i class="bi bi-trash"></i>
         </button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 // ── 右側：分類 Tab 渲染 ─────────────────────
@@ -3413,6 +3686,119 @@ function _renderMenuCategoriesTable(cats) {
         </button>
       </td>
     </tr>`).join('');
+}
+
+// ── 右側：選項組 Tab 渲染 ────────────────────
+function _renderMenuOptionGroupsTable(ogs) {
+  const tbody = document.querySelector('#tbl-menu-ogs tbody');
+  if (!ogs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">此菜單尚無選項組</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ogs.map(og => {
+    const choiceNames = (og.choices || []).map(c => {
+      const extra = c.extra_price ? ` <span class="text-success">+$${c.extra_price}</span>` : '';
+      const def   = c.is_default  ? ' <span class="badge bg-secondary" style="font-size:.65rem">預設</span>' : '';
+      return `<span class="me-1">${c.name}${extra}${def}</span>`;
+    }).join('');
+    return `
+    <tr>
+      <td class="fw-semibold">${og.name}</td>
+      <td><span class="badge bg-info text-dark">${og.type === 'multiple' ? '多選' : '單選'}</span></td>
+      <td>${og.required ? '<span class="badge bg-danger">必選</span>' : '<span class="badge bg-secondary">選填</span>'}</td>
+      <td class="small">${choiceNames || '<span class="text-muted">無</span>'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary py-0 px-1 me-1"
+                onclick="openOptionGroupModal('${og._id}')">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-danger py-0 px-1"
+                onclick="deleteOptionGroup('${og._id}','${og.name}')">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 選項組 Modal ─────────────────────────────
+function openOptionGroupModal(gid) {
+  const og = gid ? (_currentMenuData?.option_groups || []).find(x => x._id === gid) : null;
+  document.getElementById('og-modal-title').textContent = og ? '編輯選項組' : '新增選項組';
+  document.getElementById('og-id').value       = og?._id || '';
+  document.getElementById('og-name').value     = og?.name || '';
+  document.getElementById('og-type').value     = og?.type || 'single';
+  document.getElementById('og-required').value = og?.required !== false ? '1' : '0';
+
+  // 渲染選項列
+  const container = document.getElementById('og-choices-rows');
+  container.innerHTML = '';
+  (og?.choices || []).forEach(ch => _addOgChoiceRow(ch));
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-menu-og')).show();
+}
+
+function addOgChoiceRow() { _addOgChoiceRow({}); }
+
+function _addOgChoiceRow(ch) {
+  const row = document.createElement('div');
+  row.className = 'og-choice-row d-flex gap-2 align-items-center mb-2';
+  row.innerHTML = `
+    <input type="hidden" class="og-ch-id" value="${ch._id || ''}"/>
+    <input type="text" class="form-control form-control-sm og-ch-name" placeholder="選項名稱" value="${ch.name || ''}"/>
+    <div class="input-group input-group-sm" style="width:110px;flex-shrink:0">
+      <span class="input-group-text">+$</span>
+      <input type="number" class="form-control og-ch-price" min="0" step="1" value="${ch.extra_price || 0}"/>
+    </div>
+    <div class="form-check mb-0 ms-1" style="white-space:nowrap">
+      <input class="form-check-input og-ch-default" type="checkbox" ${ch.is_default ? 'checked' : ''}/>
+      <label class="form-check-label small">預設</label>
+    </div>
+    <button type="button" class="btn btn-xs btn-outline-danger py-0 px-1"
+            onclick="this.closest('.og-choice-row').remove()">
+      <i class="bi bi-x-lg"></i>
+    </button>`;
+  document.getElementById('og-choices-rows').appendChild(row);
+}
+
+async function saveOptionGroup() {
+  const gid  = document.getElementById('og-id').value.trim();
+  const name = document.getElementById('og-name').value.trim();
+  if (!name) { toast('請填寫選項組名稱', 'warning'); return; }
+
+  const choices = [...document.querySelectorAll('#og-choices-rows .og-choice-row')].map(row => ({
+    _id:         row.querySelector('.og-ch-id').value || undefined,
+    name:        row.querySelector('.og-ch-name').value.trim(),
+    extra_price: parseFloat(row.querySelector('.og-ch-price').value) || 0,
+    is_default:  row.querySelector('.og-ch-default').checked,
+  })).filter(c => c.name);
+
+  const body = {
+    name:     name,
+    type:     document.getElementById('og-type').value,
+    required: document.getElementById('og-required').value === '1',
+    choices:  choices,
+  };
+
+  let r;
+  if (gid) {
+    r = await api('PUT', `/menu/${_currentMenuId}/option-group/${gid}`, body);
+  } else {
+    r = await api('POST', `/menu/${_currentMenuId}/option-group`, body);
+  }
+  if (!r.ok) { toast(r.data?.message || '儲存失敗', 'danger'); return; }
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-menu-og')).hide();
+  toast(gid ? '選項組已更新' : '選項組已新增');
+  await selectMenu(_currentMenuId);
+}
+
+async function deleteOptionGroup(gid, name) {
+  if (!confirm(`確定刪除選項組「${name}」？\n套用此組的品項將自動移除關聯。`)) return;
+  const r = await api('DELETE', `/menu/${_currentMenuId}/option-group/${gid}`);
+  if (!r.ok) { toast(r.data?.message || '刪除失敗', 'danger'); return; }
+  toast('選項組已刪除');
+  await selectMenu(_currentMenuId);
 }
 
 // ── 菜單 Modal ──────────────────────────────
@@ -3463,8 +3849,11 @@ async function deleteMenu(mid, name) {
         '<tr><td colspan="7" class="text-center text-muted">請先從左側選擇菜單</td></tr>';
       document.querySelector('#tbl-menu-categories tbody').innerHTML =
         '<tr><td colspan="5" class="text-center text-muted">請先從左側選擇菜單</td></tr>';
+      document.querySelector('#tbl-menu-ogs tbody').innerHTML =
+        '<tr><td colspan="5" class="text-center text-muted">請先從左側選擇菜單</td></tr>';
       document.getElementById('btn-add-menu-item').classList.add('d-none');
       document.getElementById('btn-add-menu-cat').classList.add('d-none');
+      document.getElementById('btn-add-og').classList.add('d-none');
       document.getElementById('menu-panel-tabs').style.display = 'none';
       document.getElementById('menu-items-subtitle').textContent = '— 請先從左側選擇菜單';
     }
@@ -3644,7 +4033,30 @@ async function openMenuItemModal(iid) {
   // 建立客製化選項列
   _renderCustomizations(item?.customizations || []);
 
+  // 填入選項組模組勾選區
+  _renderItemOgCheckboxes(item?.applied_group_ids || []);
+
   bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-menu-item')).show();
+}
+
+function _renderItemOgCheckboxes(appliedIds) {
+  const ogs = _currentMenuData?.option_groups || [];
+  const container = document.getElementById('menu-item-og-checkboxes');
+  if (!ogs.length) {
+    container.innerHTML = '<span class="text-muted small">（此菜單尚未建立選項組模組）</span>';
+    return;
+  }
+  container.innerHTML = ogs.map(og => {
+    const checked = appliedIds.includes(og._id) ? 'checked' : '';
+    return `
+      <div class="form-check me-3">
+        <input class="form-check-input og-apply-cb" type="checkbox" value="${og._id}" id="og-cb-${og._id}" ${checked}/>
+        <label class="form-check-label" for="og-cb-${og._id}">
+          ${og.name}
+          <span class="badge bg-info text-dark ms-1" style="font-size:.65rem">${og.type === 'multiple' ? '多選' : '單選'}</span>
+        </label>
+      </div>`;
+  }).join('');
 }
 
 function toggleMenuItemInventory() {
@@ -3746,6 +4158,10 @@ async function saveMenuItem() {
     customizations.push(grp);
   });
 
+  // 收集套用的選項組 IDs
+  const applied_group_ids = [...document.querySelectorAll('#menu-item-og-checkboxes .og-apply-cb:checked')]
+    .map(cb => cb.value);
+
   const body = {
     name,
     price,
@@ -3756,6 +4172,7 @@ async function saveMenuItem() {
     consume_inventory: document.getElementById('menu-item-consume-inventory').checked,
     linked_products,
     customizations,
+    applied_group_ids,
   };
 
   const iid = document.getElementById('menu-item-id').value;
