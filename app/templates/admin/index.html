@@ -2149,7 +2149,7 @@ async function exportMenu() {
   if (!r.ok) { toast('匯出失敗', 'danger'); return; }
   const blob = await r.blob();
   const cd   = r.headers.get('Content-Disposition') || '';
-  const fn   = cd.match(/filename="?([^"]+)"?/)?.[1] || 'menu.json';
+  const fn   = decodeURIComponent(cd.match(/filename\*=UTF-8''(.+)/)?.[1] || '') || 'product.json';
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url; a.download = fn; a.click();
@@ -3493,7 +3493,7 @@ async function exportMenuJson() {
   if (!r.ok) { toast('匯出失敗', 'danger'); return; }
   const blob = await r.blob();
   const cd   = r.headers.get('Content-Disposition') || '';
-  const fn   = cd.match(/filename="?([^"]+)"?/)?.[1] || 'menu.json';
+  const fn   = decodeURIComponent(cd.match(/filename\*=UTF-8''(.+)/)?.[1] || '') || 'menu.json';
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url; a.download = fn; a.click();
