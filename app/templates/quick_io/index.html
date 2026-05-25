@@ -461,9 +461,9 @@
 // ──────────────────────────────────────────
 //  State
 // ──────────────────────────────────────────
-let TOKEN         = localStorage.getItem('qio_token')         || '';
-let REFRESH_TOKEN = localStorage.getItem('qio_refresh_token') || '';
-let CURRENT_USER  = localStorage.getItem('qio_user')          || '';
+let TOKEN         = localStorage.getItem('qio_token')         || localStorage.getItem('wms_token') || '';
+let REFRESH_TOKEN = localStorage.getItem('qio_refresh_token') || localStorage.getItem('wms_refresh_token') || '';
+let CURRENT_USER  = localStorage.getItem('qio_user')          || localStorage.getItem('wms_user')  || '';
 
 let ALL_WAREHOUSES = [];
 let ALL_PRODUCTS   = [];

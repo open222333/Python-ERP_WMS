@@ -527,9 +527,9 @@
 // ════════════════════════════════════════════
 //  State
 // ════════════════════════════════════════════
-let TOKEN         = localStorage.getItem('pos_token')         || '';
-let REFRESH_TOKEN = localStorage.getItem('pos_refresh_token') || '';
-let CURRENT_USER  = localStorage.getItem('pos_user')          || '';
+let TOKEN         = localStorage.getItem('pos_token')         || localStorage.getItem('wms_token') || '';
+let REFRESH_TOKEN = localStorage.getItem('pos_refresh_token') || localStorage.getItem('wms_refresh_token') || '';
+let CURRENT_USER  = localStorage.getItem('pos_user')          || localStorage.getItem('wms_user')  || '';
 let ALL_PRODUCTS    = [];
 let ALL_CATEGORIES  = [];
 let ALL_WAREHOUSES  = [];
