@@ -205,14 +205,17 @@ def batch_move():
 @app_inventory.route('/movement/', methods=['GET'])
 @jwt_required()
 def list_movements():
-    warehouse_id = request.args.get('warehouse_id', '')
-    product_id = request.args.get('product_id', '')
+    warehouse_id  = request.args.get('warehouse_id', '')
+    product_id    = request.args.get('product_id', '')
     movement_type = request.args.get('movement_type', '')
-    limit = int(request.args.get('limit', 200))
+    limit         = int(request.args.get('limit', 200))
+    # product_only=1（預設）：後台只顯示產品資料操作，菜單品項觸發的只紀錄不顯示
+    product_only  = request.args.get('product_only', '1') != '0'
     data = StockMovement.find_all(
         warehouse_id=warehouse_id or None,
         product_id=product_id or None,
         movement_type=movement_type or None,
-        limit=limit
+        limit=limit,
+        product_only=product_only,
     )
     return jsonify({'success': True, 'data': data})
