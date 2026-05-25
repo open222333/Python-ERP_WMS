@@ -506,7 +506,7 @@
       <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
     </div>
     <div class="modal-body py-2" id="cust-modal-body"
-         style="touch-action:pan-y;-webkit-overflow-scrolling:touch;overscroll-behavior:contain"></div>
+         style="overflow-y:scroll;touch-action:pan-y;-webkit-overflow-scrolling:touch;overscroll-behavior:contain"></div>
     <div class="modal-footer py-2">
       <span class="me-auto fw-bold text-primary fs-5" id="cust-total-price"></span>
       <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
@@ -1354,6 +1354,12 @@ document.addEventListener('touchstart', e => {
     if (CURRENT_USER) document.getElementById('login-user').value = CURRENT_USER;
   }
 })();
+
+// iOS Safari：防止 touchmove 冒泡到 Bootstrap modal 的 document handler
+// 使 modal-body 內可以正常用手指上下滑動
+document.getElementById('cust-modal-body').addEventListener('touchmove', function(e) {
+  e.stopPropagation();
+}, { passive: true });
 </script>
 </body>
 </html>
