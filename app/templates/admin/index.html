@@ -588,6 +588,34 @@
           </div>
         </div>
 
+        <!-- ── POS 折扣快捷 ── -->
+        <div class="col-12">
+          <div class="table-card">
+            <div class="table-header d-flex align-items-center justify-content-between">
+              <h6><i class="bi bi-percent me-1 text-primary"></i>POS 折扣快捷</h6>
+              <button class="btn btn-sm btn-outline-primary" onclick="addDiscountPresetRow()">
+                <i class="bi bi-plus-lg me-1"></i>新增
+              </button>
+            </div>
+            <div class="p-3">
+              <div class="row g-1 mb-2 align-items-center" style="font-size:.72rem;color:#6b7280">
+                <div class="col-3">顯示名稱</div>
+                <div class="col-5">類型</div>
+                <div class="col-2 text-end">數值</div>
+                <div class="col-2"></div>
+              </div>
+              <div id="discount-presets-list"></div>
+              <div class="form-text mb-3 mt-2">
+                <b>折扣%</b>：輸入數字，例如 90 = 九折（小計 × 0.9）。
+                <b>固定折抵</b>：輸入折抵金額，例如 50 = 折抵 $50。
+              </div>
+              <button class="btn btn-primary" onclick="saveDiscountPresets()">
+                <i class="bi bi-save me-1"></i>儲存折扣設定
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- ── POS 付款方式 ── -->
         <div class="col-12">
           <div class="table-card">
@@ -4244,6 +4272,9 @@ async function loadSettings() {
   ];
   _renderPayMethodsList();
 
+  // 載入折扣快捷設定
+  _renderDiscountPresetsList(_settingsCache.pos_discount_presets || []);
+
   // 填入倉庫下拉
   const sel = document.getElementById('setting-default-warehouse');
   sel.innerHTML = '<option value="">— 不指定預設倉庫 —</option>';
@@ -4337,6 +4368,61 @@ async function savePayMethods() {
       if (!row.dataset.id && methods[i]) row.dataset.id = methods[i].id;
     });
     toast('付款設定已儲存', 'success');
+  } else {
+    toast(r.data.message || '儲存失敗', 'danger');
+  }
+}
+
+// ════════════════════════════════════════════
+//  折扣快捷設定
+// ════════════════════════════════════════════
+function _renderDiscountPresetsList(presets) {
+  const list = document.getElementById('discount-presets-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (presets || []).forEach(p => addDiscountPresetRow(p));
+}
+
+function addDiscountPresetRow(p) {
+  const list = document.getElementById('discount-presets-list');
+  const row  = document.createElement('div');
+  row.className = 'row g-1 mb-1 align-items-center dp-row';
+  row.innerHTML = `
+    <div class="col-3">
+      <input type="text" class="form-control form-control-sm dp-label"
+             placeholder="名稱" value="${p?.label || ''}"/>
+    </div>
+    <div class="col-5">
+      <select class="form-select form-select-sm dp-type">
+        <option value="percent"${(!p || p.type === 'percent') ? ' selected' : ''}>折扣%（如 90 = 九折）</option>
+        <option value="fixed"${p?.type === 'fixed' ? ' selected' : ''}>固定折抵（元）</option>
+      </select>
+    </div>
+    <div class="col-2">
+      <input type="number" class="form-control form-control-sm dp-value text-end"
+             min="0" placeholder="數值" value="${p?.value ?? ''}"/>
+    </div>
+    <div class="col-2 text-end">
+      <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1"
+              onclick="this.closest('.dp-row').remove()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>`;
+  list.appendChild(row);
+}
+
+async function saveDiscountPresets() {
+  const presets = [];
+  document.querySelectorAll('#discount-presets-list .dp-row').forEach(row => {
+    const label = row.querySelector('.dp-label').value.trim();
+    const type  = row.querySelector('.dp-type').value;
+    const value = parseFloat(row.querySelector('.dp-value').value);
+    if (label && !isNaN(value) && value > 0) presets.push({label, type, value});
+  });
+  const r = await api('PUT', '/settings/', {pos_discount_presets: presets});
+  if (r.ok) {
+    _settingsCache.pos_discount_presets = presets;
+    toast('折扣設定已儲存', 'success');
   } else {
     toast(r.data.message || '儲存失敗', 'danger');
   }

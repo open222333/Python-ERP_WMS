@@ -425,12 +425,12 @@
 
 <!-- Payment Modal -->
 <div class="modal fade" id="modal-payment" tabindex="-1">
-  <div class="modal-dialog modal-sm"><div class="modal-content">
+  <div class="modal-dialog modal-sm modal-dialog-scrollable"><div class="modal-content">
     <div class="modal-header">
       <h5 class="modal-title"><i class="bi bi-credit-card me-1"></i>付款</h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="overflow-y:scroll;touch-action:pan-y;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">
       <div class="mb-3 text-center">
         <div class="text-muted small">應付金額</div>
         <div class="fs-2 fw-bold text-primary" id="pay-total">$0</div>
@@ -440,6 +440,11 @@
         <div class="d-flex flex-wrap gap-1" id="pay-type-btns">
           <!-- 動態產生 -->
         </div>
+      </div>
+      <div id="pay-discount-wrap" class="mb-3" style="display:none">
+        <label class="form-label small fw-semibold">折扣快捷</label>
+        <div class="d-flex flex-wrap gap-2" id="pay-discount-btns"></div>
+        <div class="mt-1 small" id="pay-discount-info"></div>
       </div>
       <div id="pay-cash-wrap" class="mb-2" style="display:none">
         <label class="form-label small fw-semibold">收現</label>
@@ -534,6 +539,9 @@ let CART = [];   // [{item, quantity}]  item 含 name/price/sku/unit/consume_inv
 
 // 付款方式（動態從後端載入，初始 fallback）
 let _payMethods = [{id:'cash', label:'現金', enabled:true, has_cash:true, sort_order:0}];
+// 折扣快捷（從後台設定載入）
+let _posDiscountPresets = [];
+let _selectedDiscountIdx = -1;
 // 向下相容舊訂單的 payment_type 顯示
 const _PAY_LABELS_LEGACY = {cash:'現金', card:'刷卡', mixed:'混合', online:'線上'};
 function _payLabel(id) {
@@ -682,8 +690,12 @@ async function bootApp() {
   ALL_WAREHOUSES = wr.ok  ? (wr.data.data  || []) : [];
   ALL_MENUS      = mr.ok  ? (mr.data.data  || []) : [];
 
-  // 載入付款方式
-  await loadPayMethods();
+  // 載入付款方式 + 折扣快捷設定
+  const [, sr] = await Promise.all([
+    loadPayMethods(),
+    api('GET', '/settings/'),
+  ]);
+  _posDiscountPresets = sr.ok ? (sr.data.data?.pos_discount_presets || []) : [];
 
   // 倉庫下拉
   const sel = document.getElementById('sel-warehouse');
@@ -1098,10 +1110,68 @@ function openPayment() {
   document.getElementById('pay-total').textContent = `$${total.toLocaleString()}`;
   document.getElementById('pay-remark').value = '';
   _renderPayButtons();
+  // 折扣快捷按鈕
+  _renderDiscountBtns();
+  _selectedDiscountIdx = -1;
+  document.getElementById('pay-discount-info').textContent = '';
   // 預設選第一個付款方式
   const first = _payMethods[0]?.id || 'cash';
   setPayType(first);
   _bsModal['modal-payment'].show();
+}
+
+function _renderDiscountBtns() {
+  const wrap = document.getElementById('pay-discount-wrap');
+  const btns = document.getElementById('pay-discount-btns');
+  if (!_posDiscountPresets.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  btns.innerHTML = _posDiscountPresets.map((p, i) =>
+    `<button class="btn btn-sm btn-outline-secondary dp-preset-btn" data-idx="${i}"
+             onclick="applyDiscountPreset(${i})">${p.label}</button>`
+  ).join('');
+}
+
+function applyDiscountPreset(idx) {
+  const preset = _posDiscountPresets[idx];
+  if (!preset) return;
+
+  // 再次點擊同一個 → 取消折扣
+  if (_selectedDiscountIdx === idx) {
+    _selectedDiscountIdx = -1;
+    document.getElementById('cf-discount').value = 0;
+    updateTotal();
+    const subtotal = CART.reduce((s, c) => s + c.item.price * c.quantity, 0);
+    document.getElementById('pay-total').textContent = `$${subtotal.toLocaleString()}`;
+    document.getElementById('pay-discount-info').textContent = '';
+    document.querySelectorAll('.dp-preset-btn').forEach(b => {
+      b.classList.remove('btn-secondary', 'text-white');
+      b.classList.add('btn-outline-secondary');
+    });
+    calcChange();
+    return;
+  }
+
+  _selectedDiscountIdx = idx;
+  const subtotal = CART.reduce((s, c) => s + c.item.price * c.quantity, 0);
+  let discountAmt = preset.type === 'percent'
+    ? Math.round(subtotal * (1 - preset.value / 100))
+    : preset.value;
+  discountAmt = Math.max(0, Math.min(discountAmt, subtotal));
+
+  document.getElementById('cf-discount').value = discountAmt;
+  updateTotal();
+  const total = Math.max(subtotal - discountAmt, 0);
+  document.getElementById('pay-total').textContent = `$${total.toLocaleString()}`;
+  document.getElementById('pay-discount-info').textContent =
+    `已折抵 $${discountAmt.toLocaleString()}`;
+
+  document.querySelectorAll('.dp-preset-btn').forEach((b, i) => {
+    const active = i === idx;
+    b.classList.toggle('btn-secondary',       active);
+    b.classList.toggle('text-white',          active);
+    b.classList.toggle('btn-outline-secondary', !active);
+  });
+  calcChange();
 }
 
 function setPayType(type) {
@@ -1365,9 +1435,11 @@ document.addEventListener('touchstart', e => {
 
 // iOS Safari：防止 touchmove 冒泡到 Bootstrap modal 的 document handler
 // 使 modal-body 內可以正常用手指上下滑動
-document.getElementById('cust-modal-body').addEventListener('touchmove', function(e) {
-  e.stopPropagation();
-}, { passive: true });
+['cust-modal-body', 'modal-payment'].forEach(id => {
+  document.getElementById(id).addEventListener('touchmove', function(e) {
+    e.stopPropagation();
+  }, { passive: true });
+});
 </script>
 </body>
 </html>
