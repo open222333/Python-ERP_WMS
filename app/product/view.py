@@ -168,7 +168,7 @@ def export_menu():
         ],
     }
 
-    filename = f"menu_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = f"product_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
     Log.create(get_jwt_identity(), '匯出菜單',
                f"分類 {len(categories)} 筆，產品 {len(products)} 筆")
 
