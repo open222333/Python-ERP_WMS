@@ -36,9 +36,9 @@
     ══ */
     #app {
       position: absolute;
-      top: 0; left: 0; right: 0;
-      /* --viewport-h 由 JS 設定為 window.innerHeight，避免 iOS Safari 的 100vh 包含工具列問題 */
-      height: var(--viewport-h, 100vh);
+      top: 0; left: 0; right: 0; bottom: 0;
+      /* bottom:0 錨定底部，避免 iOS Safari 工具列高度導致 --viewport-h 算錯時版面跑掉
+         --viewport-h 仍由 JS 設定（visualViewport），作為 max-height 的 fallback 參考 */
       display: flex; flex-direction: column;
       overflow: hidden;
     }
@@ -1335,12 +1335,20 @@ document.addEventListener('touchstart', e => {
 
 // ════════════════════════════════════════════
 //  Viewport height fix（iOS Safari 100vh 包含工具列，用 JS 精確設定）
+//  優先使用 visualViewport.height（iOS Safari 最準確的可見區域高度）
+//  requestAnimationFrame 確保地址列渲染完成後再量測
 // ════════════════════════════════════════════
 (function initVH() {
-  const set = () =>
-    document.documentElement.style.setProperty('--viewport-h', window.innerHeight + 'px');
+  const set = () => {
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--viewport-h', Math.floor(h) + 'px');
+  };
   set();
+  requestAnimationFrame(set);  // 瀏覽器工具列渲染完成後重算
   window.addEventListener('resize', set, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', set, { passive: true });
+  }
 })();
 
 // ════════════════════════════════════════════
