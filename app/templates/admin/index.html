@@ -606,7 +606,7 @@
               </div>
               <div id="discount-presets-list"></div>
               <div class="form-text mb-3 mt-2">
-                <b>折扣%</b>：輸入數字，例如 90 = 九折（小計 × 0.9）。
+                <b>折扣%</b>：輸入數字，例如 90 = 九折（小計 × 0.9）。填 <b>0</b> = 免費贈送（全額折抵）。<br>
                 <b>固定折抵</b>：輸入折抵金額，例如 50 = 折抵 $50。
               </div>
               <button class="btn btn-primary" onclick="saveDiscountPresets()">
@@ -4417,7 +4417,9 @@ async function saveDiscountPresets() {
     const label = row.querySelector('.dp-label').value.trim();
     const type  = row.querySelector('.dp-type').value;
     const value = parseFloat(row.querySelector('.dp-value').value);
-    if (label && !isNaN(value) && value > 0) presets.push({label, type, value});
+    // 折扣% 允許 0（表示免費贈送）；固定折抵需 > 0 才有意義
+    if (label && !isNaN(value) && (type === 'percent' ? value >= 0 : value > 0))
+      presets.push({label, type, value});
   });
   const r = await api('PUT', '/settings/', {pos_discount_presets: presets});
   if (r.ok) {
