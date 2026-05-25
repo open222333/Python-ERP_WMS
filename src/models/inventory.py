@@ -140,10 +140,10 @@ class StockMovement:
         }
         return str(cls._col().insert_one(doc).inserted_id)
 
-    @classmethod
     # reference_type 屬於菜單品項觸發（POS 銷售 / 退款 / 外送）的類型
     _MENU_REF_TYPES = {'pos_order', 'pos_refund', 'delivery_order'}
 
+    @classmethod
     def find_all(cls, warehouse_id: str = None, product_id: str = None,
                  movement_type: str = None, limit: int = 200,
                  product_only: bool = False) -> list:
