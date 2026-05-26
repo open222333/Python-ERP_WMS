@@ -2218,6 +2218,7 @@ function handleImportFile(input) {
     toast(msg, res.errors.length ? 'warning' : 'success');
     await Promise.all([loadProductCache(), loadCategoryCache()]);
     loadProducts();
+    loadDashboard();
   };
   reader.readAsText(file);
 }
