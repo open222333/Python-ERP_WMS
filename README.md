@@ -24,6 +24,7 @@
 - [專案結構](#專案結構)
 - [快速開始（本機）](#快速開始本機)
 - [Docker 部署](#docker-部署)
+- [主機 nginx 部署](#主機-nginx-部署)
 - [API 端點總覽](#api-端點總覽)
 - [業務流程說明](#業務流程說明)
 - [角色與權限](#角色與權限)
@@ -330,6 +331,106 @@ docker compose restart app           # 重啟應用
 docker compose down                  # 停止所有服務
 docker compose down -v               # 停止並清除資料（不可逆）
 docker compose build --no-cache app  # 重新建置 Flask 映像
+```
+
+---
+
+## 主機 nginx 部署
+
+> **適用情境**：主機上已安裝 nginx（或已有其他服務佔用 80/443 port），不希望在 Docker 中額外跑一個 nginx 容器。
+
+```
+使用者 → 主機 nginx:80/443 → 127.0.0.1:5000（Docker app 容器）→ MongoDB 容器
+```
+
+設定檔位置：
+
+| 檔案 | 說明 |
+|---|---|
+| `conf/nginx/host/http.conf` | 純 HTTP（IP 直連或 Cloudflare 代理） |
+| `conf/nginx/host/cloudflare.conf` | Cloudflare Origin CA SSL |
+| `conf/nginx/host/https-letsencrypt.conf` | Let's Encrypt 免費 SSL |
+
+---
+
+### Step 1：調整 docker-compose.yml
+
+移除 `nginx` 服務，並讓 `app` 容器將 port 暴露至主機 localhost：
+
+```yaml
+services:
+  # nginx:          ← 整段刪除或 comment out
+  #   image: ...
+
+  app:
+    # ... 其他設定不變 ...
+    ports:
+      - "127.0.0.1:5000:5000"   # 只綁 localhost，不直接對外暴露
+```
+
+### Step 2：安裝 nginx（Ubuntu / Debian）
+
+```bash
+sudo apt update && sudo apt install -y nginx
+sudo systemctl enable --now nginx
+```
+
+### Step 3：建立 nginx 站台設定
+
+選擇其中一種模式：
+
+```bash
+# ── 模式一：HTTP（IP 直連或 Cloudflare 代理） ──────────────
+sudo cp conf/nginx/host/http.conf /etc/nginx/sites-available/flask-app
+sudo nano /etc/nginx/sites-available/flask-app
+# 將 YOUR_DOMAIN 改為實際域名，或改為 _ 接受所有請求
+
+# ── 模式二：Cloudflare Origin CA SSL ──────────────────────
+# 前置：建立 Cloudflare 憑證（參見檔案頂部說明）
+sudo cp conf/nginx/host/cloudflare.conf /etc/nginx/sites-available/flask-app
+sudo nano /etc/nginx/sites-available/flask-app
+# 將 YOUR_DOMAIN 替換為實際域名（共 2 處）
+
+# ── 模式三：Let's Encrypt SSL ──────────────────────────────
+sudo apt install -y certbot python3-certbot-nginx
+# 先用 http.conf 啟動 nginx 後，再申請憑證：
+sudo certbot certonly --nginx -d your.domain.com
+# 憑證申請成功後換用 letsencrypt 設定：
+sudo cp conf/nginx/host/https-letsencrypt.conf /etc/nginx/sites-available/flask-app
+sudo nano /etc/nginx/sites-available/flask-app
+# 將所有 YOUR_DOMAIN 替換為實際域名（共 4 處）
+```
+
+### Step 4：啟用站台並重載
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/flask-app /etc/nginx/sites-enabled/flask-app
+sudo rm -f /etc/nginx/sites-enabled/default   # 移除預設站台（若存在）
+sudo nginx -t                                  # 驗證設定語法
+sudo systemctl reload nginx
+```
+
+### Step 5：啟動 Docker 容器（不含 nginx）
+
+```bash
+docker compose up -d --build app mongo
+```
+
+若已從 docker-compose.yml 完全移除 nginx 服務，直接：
+
+```bash
+docker compose up -d --build
+```
+
+### 常用指令
+
+```bash
+sudo nginx -t                                       # 驗證設定語法
+sudo systemctl reload nginx                         # 重載（不中斷連線）
+sudo systemctl restart nginx                        # 完整重啟
+sudo tail -f /var/log/nginx/flask-app-error.log    # 錯誤日誌
+sudo tail -f /var/log/nginx/flask-app-access.log   # 訪問日誌
+sudo certbot renew --dry-run                        # 測試 Let's Encrypt 自動續約
 ```
 
 ---
