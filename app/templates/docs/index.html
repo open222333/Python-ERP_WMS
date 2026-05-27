@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系統使用說明 — WMS 倉儲管理系統</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root { --sidebar-w: 260px; }
+
+    body { background: #f8f9fa; }
+
+    /* ── 側欄 ── */
+    #sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      overflow-y: auto; background: #1e293b; color: #cbd5e1;
+      z-index: 100; padding: 1.5rem 0;
+    }
+    #sidebar .brand {
+      font-size: 1rem; font-weight: 700; color: #f1f5f9;
+      padding: 0 1.25rem 1rem; border-bottom: 1px solid #334155;
+      margin-bottom: .75rem;
+    }
+    #sidebar .nav-link {
+      color: #94a3b8; font-size: .85rem;
+      padding: .35rem 1.25rem; border-radius: 0;
+    }
+    #sidebar .nav-link:hover, #sidebar .nav-link.active {
+      color: #f1f5f9; background: #334155;
+    }
+    #sidebar .nav-section {
+      font-size: .7rem; font-weight: 600; letter-spacing: .08em;
+      color: #64748b; padding: .75rem 1.25rem .2rem; text-transform: uppercase;
+    }
+
+    /* ── 主區 ── */
+    #main { margin-left: var(--sidebar-w); padding: 2rem 2.5rem; max-width: 960px; }
+
+    h2.section-title {
+      font-size: 1.35rem; font-weight: 700; border-bottom: 2px solid #e2e8f0;
+      padding-bottom: .5rem; margin-top: 2.5rem; margin-bottom: 1.25rem;
+      scroll-margin-top: 1rem;
+    }
+    h3.sub-title {
+      font-size: 1.05rem; font-weight: 600;
+      margin-top: 1.5rem; margin-bottom: .75rem;
+      scroll-margin-top: 1rem;
+    }
+
+    .badge-method {
+      font-size: .7rem; font-weight: 700; border-radius: 3px;
+      padding: .15em .45em; vertical-align: middle;
+    }
+
+    .step-list { counter-reset: step; padding-left: 0; list-style: none; }
+    .step-list li {
+      counter-increment: step; padding: .4rem 0 .4rem 2.5rem; position: relative;
+    }
+    .step-list li::before {
+      content: counter(step);
+      position: absolute; left: 0;
+      background: #3b82f6; color: #fff;
+      width: 1.5rem; height: 1.5rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .75rem; font-weight: 700;
+    }
+
+    .tip-box {
+      background: #eff6ff; border-left: 4px solid #3b82f6;
+      border-radius: 0 .5rem .5rem 0; padding: .75rem 1rem;
+      margin: 1rem 0; font-size: .9rem;
+    }
+    .warn-box {
+      background: #fffbeb; border-left: 4px solid #f59e0b;
+      border-radius: 0 .5rem .5rem 0; padding: .75rem 1rem;
+      margin: 1rem 0; font-size: .9rem;
+    }
+
+    .url-pill {
+      display: inline-block; background: #1e293b; color: #7dd3fc;
+      font-family: monospace; font-size: .85rem;
+      padding: .2rem .6rem; border-radius: .35rem;
+    }
+
+    table.doc-table th { background: #f1f5f9; font-weight: 600; font-size: .85rem; }
+    table.doc-table td { font-size: .85rem; vertical-align: middle; }
+
+    .feature-card {
+      border: 1px solid #e2e8f0; border-radius: .75rem;
+      padding: 1rem 1.25rem; margin-bottom: .75rem;
+    }
+    .feature-card .fc-title { font-weight: 600; margin-bottom: .25rem; }
+    .feature-card .fc-desc  { font-size: .875rem; color: #64748b; }
+
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #main { margin-left: 0; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════ 側欄 ══════════════════════ -->
+<nav id="sidebar">
+  <div class="brand"><i class="bi bi-box-seam me-2"></i>WMS 使用說明</div>
+
+  <div class="nav-section">入門</div>
+  <a class="nav-link" href="#overview">系統概覽</a>
+  <a class="nav-link" href="#login">登入 / 帳號</a>
+  <a class="nav-link" href="#urls">系統網址</a>
+
+  <div class="nav-section">後台管理</div>
+  <a class="nav-link" href="#product">產品管理</a>
+  <a class="nav-link" href="#warehouse">倉庫管理</a>
+  <a class="nav-link" href="#inventory">庫存管理</a>
+  <a class="nav-link" href="#inbound">進貨單</a>
+  <a class="nav-link" href="#outbound">出貨單</a>
+  <a class="nav-link" href="#quick-io">快速出入庫</a>
+  <a class="nav-link" href="#analytics">報表 / 分析</a>
+  <a class="nav-link" href="#settings">系統設定</a>
+
+  <div class="nav-section">前台操作</div>
+  <a class="nav-link" href="#pos">收銀台 POS</a>
+  <a class="nav-link" href="#delivery">外送管理</a>
+
+  <div class="nav-section">帳號 / 權限</div>
+  <a class="nav-link" href="#roles">角色權限</a>
+  <a class="nav-link" href="#user-mgmt">使用者管理</a>
+</nav>
+
+<!-- ══════════════════════ 主內容 ══════════════════════ -->
+<main id="main">
+
+  <h1 class="fw-bold mb-1">WMS 倉儲管理系統</h1>
+  <p class="text-muted mb-4">系統使用說明文件</p>
+
+  <!-- ── 系統概覽 ── -->
+  <h2 class="section-title" id="overview"><i class="bi bi-grid-1x2 me-2 text-primary"></i>系統概覽</h2>
+  <p>WMS 是一套整合倉儲、銷售、外送的管理系統，主要功能模組如下：</p>
+  <div class="row g-3 mb-2">
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-box me-1 text-primary"></i>產品管理</div>
+        <div class="fc-desc">建立產品資料、分類、匯入匯出 JSON</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-building me-1 text-success"></i>倉庫管理</div>
+        <div class="fc-desc">多倉庫設定，管理儲位與庫存分佈</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-bar-chart me-1 text-warning"></i>庫存管理</div>
+        <div class="fc-desc">即時庫存查詢、盤點調整、批次出入庫、低庫存警示</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-receipt me-1 text-info"></i>進 / 出貨單</div>
+        <div class="fc-desc">採購進貨、銷售出貨全流程追蹤</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-cash-register me-1 text-danger"></i>收銀台 POS</div>
+        <div class="fc-desc">點餐 / 結帳、折扣、退款、菜單管理</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="feature-card">
+        <div class="fc-title"><i class="bi bi-truck me-1 text-secondary"></i>外送管理</div>
+        <div class="fc-desc">外送訂單接收、狀態追蹤</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 登入 ── -->
+  <h2 class="section-title" id="login"><i class="bi bi-shield-lock me-2 text-primary"></i>登入 / 帳號</h2>
+  <ol class="step-list">
+    <li>開啟後台網址（見下方<a href="#urls">系統網址</a>），自動跳轉至登入頁面。</li>
+    <li>輸入帳號（Email）與密碼，點擊「登入」。</li>
+    <li>登入後 Token 存於 <code>localStorage</code>，有效期間內重新整理不需再次登入。</li>
+    <li>點擊右上角「登出」可清除 Token 並返回登入頁。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>自動登入 POS / 快速出入庫：</strong>後台登入後，直接開啟 POS 或快速出入庫頁面會自動沿用同一登入憑證，無需重新輸入帳密。
+  </div>
+
+  <!-- ── 系統網址 ── -->
+  <h2 class="section-title" id="urls"><i class="bi bi-link-45deg me-2 text-primary"></i>系統網址</h2>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>功能</th><th>網址</th></tr></thead>
+    <tbody>
+      <tr><td>後台管理</td><td><span class="url-pill">/admin/</span></td></tr>
+      <tr><td>收銀台 POS</td><td><span class="url-pill">/pos/</span></td></tr>
+      <tr><td>快速出入庫</td><td><span class="url-pill">/quick-io/</span></td></tr>
+      <tr><td>API 文件（Swagger）</td><td><span class="url-pill">/apidocs/</span></td></tr>
+      <tr><td>使用說明（本頁）</td><td><span class="url-pill">/docs/</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── 產品管理 ── -->
+  <h2 class="section-title" id="product"><i class="bi bi-box me-2 text-primary"></i>產品管理</h2>
+  <p>後台 → 側欄「產品」分頁。</p>
+
+  <h3 class="sub-title">新增產品</h3>
+  <ol class="step-list">
+    <li>點擊右上角「＋ 新增產品」按鈕。</li>
+    <li>填入 SKU（唯一識別碼）、名稱、分類、單位、成本價、售價。</li>
+    <li>可設定「最低庫存」與「最高庫存」，觸發庫存警示。</li>
+    <li>點擊「儲存」完成新增。</li>
+  </ol>
+
+  <h3 class="sub-title">匯入產品（JSON）</h3>
+  <ol class="step-list">
+    <li>點擊「⬆ 匯入」按鈕，選擇 JSON 檔案。</li>
+    <li>系統自動比對 SKU：<strong>已存在的產品更新資料、不存在的新增</strong>。</li>
+    <li>匯入完成後庫存警示自動重整。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-file-earmark-code me-1"></i>
+    JSON 格式：<code>{"categories": [...], "products": [...]}</code>。可先匯出現有資料作為範本。
+  </div>
+
+  <h3 class="sub-title">匯出產品（JSON）</h3>
+  <ol class="step-list">
+    <li>點擊「⬇ 匯出」按鈕，即下載包含所有分類與產品的 JSON 檔。</li>
+    <li>檔名格式：<code>product_YYYYMMDD_HHMMSS.json</code>。</li>
+  </ol>
+
+  <h3 class="sub-title">庫存警示設定</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>最低庫存</td><td>庫存低於此值時，儀表板顯示「低庫存」警示。設為 0 = 不限制。</td></tr>
+      <tr><td>最高庫存</td><td>庫存高於此值時，顯示「超量」警示。設為 0 = 不限制。</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── 倉庫管理 ── -->
+  <h2 class="section-title" id="warehouse"><i class="bi bi-building me-2 text-primary"></i>倉庫管理</h2>
+  <p>後台 → 側欄「倉庫」分頁。</p>
+  <ol class="step-list">
+    <li>點擊「＋ 新增倉庫」，輸入倉庫名稱與說明。</li>
+    <li>建立後即可在庫存、進貨單、出貨單選擇此倉庫。</li>
+    <li>支援多倉庫，同一產品可在不同倉庫各自存放庫存。</li>
+  </ol>
+
+  <!-- ── 庫存管理 ── -->
+  <h2 class="section-title" id="inventory"><i class="bi bi-bar-chart me-2 text-primary"></i>庫存管理</h2>
+  <p>後台 → 側欄「庫存」分頁。</p>
+
+  <h3 class="sub-title">查詢庫存</h3>
+  <p>可依倉庫或產品篩選，顯示即時庫存量、產品 SKU 與倉庫名稱。</p>
+
+  <h3 class="sub-title">盤點調整</h3>
+  <ol class="step-list">
+    <li>選擇產品與倉庫，輸入<strong>實際盤點數量</strong>（非異動量）。</li>
+    <li>系統自動計算差異並建立「盤點調整」移動紀錄。</li>
+  </ol>
+
+  <h3 class="sub-title">庫存移動紀錄</h3>
+  <p>顯示所有產品相關的庫存異動（入庫、出庫、調撥、盤點、消耗），POS 銷售觸發的移動僅後台記錄，不列入此清單。</p>
+
+  <!-- ── 快速出入庫 ── -->
+  <h2 class="section-title" id="quick-io"><i class="bi bi-lightning me-2 text-primary"></i>快速出入庫</h2>
+  <p>網址：<span class="url-pill">/quick-io/</span>，也可從後台側欄「出入庫」開啟。</p>
+  <ol class="step-list">
+    <li>選擇倉庫與操作類型（入庫 / 出庫 / 消耗）。</li>
+    <li>逐筆加入產品與數量（可多筆）。</li>
+    <li>點擊「確認送出」完成批次異動，系統自動建立移動紀錄。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    適合日常快速補貨 / 領料，不需建立正式進貨單的情境。
+  </div>
+
+  <!-- ── 進貨單 ── -->
+  <h2 class="section-title" id="inbound"><i class="bi bi-box-arrow-in-down me-2 text-primary"></i>進貨單</h2>
+  <p>後台 → 側欄「進貨單」分頁。</p>
+  <ol class="step-list">
+    <li>點擊「＋ 新增進貨單」，填入供應商、倉庫、備註。</li>
+    <li>加入進貨品項（產品 + 數量 + 單價）。</li>
+    <li>儲存後狀態為「草稿」；確認後點擊「確認入庫」，庫存自動增加。</li>
+  </ol>
+  <table class="table doc-table table-bordered mt-2">
+    <thead><tr><th>狀態</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge bg-secondary">草稿</span></td><td>可繼續編輯，尚未異動庫存</td></tr>
+      <tr><td><span class="badge bg-success">已入庫</span></td><td>庫存已增加，不可再修改</td></tr>
+      <tr><td><span class="badge bg-danger">已取消</span></td><td>作廢，不影響庫存</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── 出貨單 ── -->
+  <h2 class="section-title" id="outbound"><i class="bi bi-box-arrow-up me-2 text-primary"></i>出貨單</h2>
+  <p>後台 → 側欄「出貨單」分頁。流程與進貨單相同，確認後庫存自動減少。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>狀態</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge bg-secondary">草稿</span></td><td>可繼續編輯，尚未異動庫存</td></tr>
+      <tr><td><span class="badge bg-success">已出貨</span></td><td>庫存已減少，不可再修改</td></tr>
+      <tr><td><span class="badge bg-danger">已取消</span></td><td>作廢，不影響庫存</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── 報表分析 ── -->
+  <h2 class="section-title" id="analytics"><i class="bi bi-graph-up me-2 text-primary"></i>報表 / 分析</h2>
+  <p>後台 → 側欄「儀表板」或「分析」分頁。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>報表</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>庫存警示</td><td>低庫存 / 超量產品清單（依 min_stock / max_stock）</td></tr>
+      <tr><td>庫存總覽</td><td>各倉庫庫存量與庫存金額</td></tr>
+      <tr><td>進出貨趨勢</td><td>近期進 / 出貨數量趨勢圖</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── 系統設定 ── -->
+  <h2 class="section-title" id="settings"><i class="bi bi-gear me-2 text-primary"></i>系統設定</h2>
+  <p>後台 → 側欄「設定」分頁（需 <code>admin</code> 角色）。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>設定項目</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>系統名稱</td><td>顯示於後台標題列</td></tr>
+      <tr><td>POS 折扣快捷</td><td>設定結帳時可一鍵套用的折扣（%數或固定金額）；0% 代表免費贈送</td></tr>
+      <tr><td>菜單管理</td><td>POS 菜單品項、分類、價格設定</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── POS ── -->
+  <h2 class="section-title" id="pos"><i class="bi bi-cash-register me-2 text-primary"></i>收銀台 POS</h2>
+  <p>網址：<span class="url-pill">/pos/</span>，適合平板或行動裝置操作。</p>
+
+  <h3 class="sub-title">點餐結帳流程</h3>
+  <ol class="step-list">
+    <li>左側選擇菜單分類，點擊品項加入購物車。</li>
+    <li>可點擊購物車品項調整數量或備註。</li>
+    <li>點擊「結帳」按鈕，選擇付款方式（現金 / 信用卡 / 行動支付）。</li>
+    <li>可套用折扣快捷按鈕（後台設定）或手動輸入折扣。</li>
+    <li>確認後完成訂單，庫存自動扣除。</li>
+  </ol>
+
+  <h3 class="sub-title">客製化選項</h3>
+  <p>點擊品項後可設定規格（冰塊、甜度等），依後台菜單設定顯示。</p>
+
+  <h3 class="sub-title">退款</h3>
+  <ol class="step-list">
+    <li>進入「訂單記錄」，找到該筆訂單。</li>
+    <li>點擊「退款」，確認後原品項庫存回補。</li>
+  </ol>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    退款後庫存自動回補，請確認實際商品已收回再操作。
+  </div>
+
+  <!-- ── 外送 ── -->
+  <h2 class="section-title" id="delivery"><i class="bi bi-truck me-2 text-primary"></i>外送管理</h2>
+  <p>後台 → 側欄「外送」分頁。用於管理外送平台訂單或自行配送。</p>
+  <ol class="step-list">
+    <li>接收訂單後顯示於外送清單。</li>
+    <li>更新訂單狀態（備餐中 → 配送中 → 已送達）。</li>
+    <li>完成後庫存相應扣除。</li>
+  </ol>
+
+  <!-- ── 角色權限 ── -->
+  <h2 class="section-title" id="roles"><i class="bi bi-person-badge me-2 text-primary"></i>角色權限</h2>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>角色</th><th>可操作功能</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge bg-danger">admin</span></td>
+        <td>全部功能，包含使用者管理、系統設定、刪除資料</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-warning text-dark">operator</span></td>
+        <td>產品、倉庫、庫存、進出貨單、POS、外送操作；不可管理使用者與系統設定</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-secondary">viewer</span></td>
+        <td>僅能查看資料，不可新增、修改、刪除</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── 使用者管理 ── -->
+  <h2 class="section-title" id="user-mgmt"><i class="bi bi-people me-2 text-primary"></i>使用者管理</h2>
+  <p>後台 → 側欄「使用者」分頁（需 <code>admin</code> 角色）。</p>
+  <ol class="step-list">
+    <li>點擊「＋ 新增使用者」，填入 Email、密碼、角色。</li>
+    <li>可修改現有使用者的密碼與角色。</li>
+    <li>停用使用者後該帳號無法登入，資料保留。</li>
+  </ol>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    請勿刪除唯一的 admin 帳號，否則將無法管理系統。
+  </div>
+
+  <div class="text-muted small mt-5 pt-3 border-top">
+    WMS 倉儲管理系統 &copy; {{ now }} &nbsp;|&nbsp; <a href="/apidocs/" target="_blank">API 文件</a>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // 側欄 active 高亮（ScrollSpy 簡易版）
+  const links = document.querySelectorAll('#sidebar .nav-link');
+  const sections = [...links].map(l => document.querySelector(l.getAttribute('href'))).filter(Boolean);
+
+  function onScroll() {
+    let cur = sections[0];
+    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 80) cur = s; });
+    links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + cur.id));
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+</body>
+</html>
