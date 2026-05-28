@@ -165,33 +165,71 @@ class UberEatsClient:
 def parse_menu_items(menu: dict) -> list:
     """
     將 UberEats GET /menu 回應解析成統一格式：
-    [{'external_id', 'name', 'description', 'price', 'available', 'category'}]
+    [{'external_id', 'name', 'description', 'price', 'available', 'category',
+      'modifier_group_ids'}]
     """
     # 建立 item_id → 分類名稱 的反向對應
     item_category: dict = {}
     for cat in menu.get('categories', []):
         cat_name = cat.get('title', '').strip()
         for entity in cat.get('entities', []):
-            eid = entity.get('id', '') or entity if isinstance(entity, str) else ''
+            eid = entity.get('id', '') if isinstance(entity, dict) else (entity or '')
             if eid:
                 item_category[eid] = cat_name
 
     items = []
     for item in menu.get('items', []):
-        price_info = item.get('price_info', {})
-        # price 單位為分，轉回元
+        price_info  = item.get('price_info', {})
         price_cents = price_info.get('price') or price_info.get('core_price') or 0
         suspension  = item.get('suspension_info', {}).get('suspension', {})
         item_id     = item.get('id', '')
+        # 抽取本品項連結的 modifier group external_id 清單
+        mg_refs = item.get('modifier_group_ids_sorted_with_type') or []
+        modifier_group_ids = [
+            r['id'] for r in mg_refs if isinstance(r, dict) and r.get('id')
+        ]
         items.append({
-            'external_id': item_id,
-            'name':        item.get('title', '').strip(),
-            'description': item.get('description', ''),
-            'price':       round(price_cents / 100, 2),
-            'available':   not suspension.get('suspend', False),
-            'category':    item_category.get(item_id, ''),
+            'external_id':        item_id,
+            'name':               item.get('title', '').strip(),
+            'description':        item.get('description', ''),
+            'price':              round(price_cents / 100, 2),
+            'available':          not suspension.get('suspend', False),
+            'category':           item_category.get(item_id, ''),
+            'modifier_group_ids': modifier_group_ids,
         })
     return items
+
+
+def parse_option_groups(menu: dict) -> list:
+    """
+    將 UberEats GET /menu 中的 modifier_groups 解析為 WMS option_group 格式：
+    [{'external_id', 'name', 'type', 'required', 'choices':[{name, extra_price, is_default}]}]
+    UberEats 的 quantity_info 結構較複雜，預設解析為 single/optional；
+    使用者可在菜單管理介面手動調整。
+    """
+    groups = []
+    for mg in menu.get('modifier_groups', []):
+        choices = []
+        for it in mg.get('items', []):
+            pi = it.get('price_info') or {}
+            price_cents = pi.get('price') or pi.get('core_price') or 0
+            label = (it.get('title') or '').strip()
+            if label:
+                choices.append({
+                    'name':        label,
+                    'extra_price': round(price_cents / 100, 2),
+                    'is_default':  False,
+                })
+        if not choices:
+            continue
+        groups.append({
+            'external_id': mg.get('id', ''),
+            'name':        (mg.get('title') or '').strip(),
+            'type':        'single',   # 預設單選；如需多選可在 WMS 手動改
+            'required':    False,      # 預設選填
+            'choices':     choices,
+        })
+    return groups
 
 
 def build_menu_from_products(products: list, category_name: str = '商品') -> dict:

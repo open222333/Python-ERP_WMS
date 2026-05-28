@@ -19,8 +19,9 @@ services:
     environment:
       # nginx template 替換變數
       DOMAIN: ${DOMAIN:-_}
-      # 只替換 ${DOMAIN}，保留 nginx 本身的 $host / $remote_addr 等內建變數
-      NGINX_ENVSUBST_FILTER: DOMAIN
+      FLASK_PORT: "${FLASK_PORT:-5000}"
+      # 只替換 ${DOMAIN} 與 ${FLASK_PORT}，保留 nginx 本身的 $host / $remote_addr 等內建變數
+      NGINX_ENVSUBST_FILTER: "DOMAIN|FLASK_PORT"
     depends_on:
       - app
     restart: unless-stopped

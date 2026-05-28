@@ -1,17 +1,21 @@
 # WMS 倉儲管理系統
 
-基於 Flask + MongoDB 建置的倉儲管理系統（WMS），整合 POS 收銀、分析報表、外送平台串接，提供從倉儲入出庫到前台銷售的完整業務流程。
+基於 Flask + MongoDB 建置的倉儲管理系統（WMS），整合 POS 收銀、多期間銷售報表、操作紀錄管理、外送平台串接，提供從倉儲入出庫到前台銷售的完整業務流程。
 
-- **後台管理**：JWT 認證 + 角色權限（admin / operator / cashier / viewer）
+- **後台管理**：JWT 認證 + 角色權限（admin / operator / cashier / viewer）+ 使用者頁面模板控制
 - **產品管理**：分類、SKU 自動生成、EAN-13 條碼、成本/售價、庫存警示
 - **倉庫管理**：多倉庫、貨架位置、倉庫代碼自動生成（WH-XXX）
 - **庫存管理**：即時查詢、盤點調整、低庫存 / 超量警示
 - **入庫單**：建立 → 確認 → 完成（自動入帳庫存）+ 條碼掃描新增品項
 - **出庫單**：建立 → 確認（自動驗證庫存）→ 完成（自動扣減）+ 條碼掃描
 - **庫存移動紀錄**：完整異動歷史
-- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、找零、印收據、退款管理
+- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、找零、印收據、退款管理、預設菜單設定
+- **銷售報表**：日 / 週 / 月 / 年多期間銷售統計、每日/每月明細、付款方式分析
+- **銷售記錄**：查詢、篩選、CSV 匯出 / 歷史資料匯入
+- **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
-- **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步
+- **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
+- **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除
 - **Swagger UI**：自動產生 API 文件
 - **Docker 部署**：一鍵啟動
 
@@ -49,19 +53,20 @@ Python-ERP_WMS/
 │   ├── auth/view.py                    # POST /auth/login  GET /auth/me
 │   ├── user/view.py                    # 使用者 CRUD（admin）
 │   ├── admin/view.py                   # GET /admin/ → 後台 UI
-│   ├── log/view.py                     # GET /log/ → 操作紀錄
+│   ├── log/view.py                     # 操作紀錄（查詢/匯出/匯入/清除）
+│   ├── settings/view.py                # 系統設定 CRUD
 │   ├── product/view.py                 # 產品分類 + 產品 CRUD + 條碼查詢
 │   ├── warehouse/view.py               # 倉庫 + 倉庫位置 CRUD
 │   ├── inventory/view.py               # 庫存查詢、盤點調整、移動紀錄
 │   ├── inbound/view.py                 # 入庫單管理
 │   ├── outbound/view.py                # 出庫單管理
 │   ├── analytics/view.py               # 分析報表 + 庫存警示
-│   ├── pos/view.py                     # POS 收銀（銷售、退款、日結報表）
+│   ├── pos/view.py                     # POS 收銀（銷售、退款、CSV 匯出入、銷售報表）
 │   ├── delivery/                       # 外送平台整合
-│   │   ├── view.py                     # Webhook + 訂單 + 菜單 + 設定端點
+│   │   ├── view.py                     # Webhook + 訂單 + 菜單同步 + 設定端點
 │   │   └── adapters/
-│   │       ├── ubereats.py             # UberEats Marketplace API client
-│   │       └── foodpanda.py            # foodpanda Vendor API client
+│   │       ├── ubereats.py             # UberEats Marketplace API client（含選項群組解析）
+│   │       └── foodpanda.py            # foodpanda Vendor API client（含選項群組解析）
 │   └── templates/
 │       ├── admin/index.html            # 後台管理 SPA（Bootstrap 5）
 │       └── pos/index.html              # POS 收銀 PWA（橫向鎖定）
@@ -79,9 +84,6 @@ Python-ERP_WMS/
 │       │   └── cloudflare/
 │       │       └── default.conf.template               # Cloudflare SSL 模式 template
 │       └── conf.d/                     # 舊版靜態設定檔（參考用，已由 templates 取代）
-│           ├── default.conf.default
-│           ├── default.conf.https-letsencrypt.default
-│           └── default.conf.cloudflare.default
 │
 └── src/
     ├── __init__.py                     # 全域設定參數（含外送平台設定讀取）
@@ -89,13 +91,14 @@ Python-ERP_WMS/
     ├── permissions.py                  # @require_role 裝飾器
     └── models/
         ├── user.py                     # 使用者（bcrypt）
-        ├── log.py                      # 操作紀錄
+        ├── log.py                      # 操作紀錄（含 bulk_insert / cleanup_old）
+        ├── settings.py                 # 系統設定（key-value 儲存）
         ├── product.py                  # ProductCategory、Product
         ├── warehouse.py                # Warehouse、WarehouseLocation
         ├── inventory.py                # Inventory、StockMovement
         ├── inbound.py                  # InboundOrder（含 embedded items）
         ├── outbound.py                 # OutboundOrder（含 embedded items）
-        ├── pos.py                      # PosOrder（POS 銷售單）
+        ├── pos.py                      # PosOrder（POS 銷售單 + bulk_import）
         └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
 ```
 
@@ -416,12 +419,6 @@ sudo systemctl reload nginx
 docker compose up -d --build app mongo
 ```
 
-若已從 docker-compose.yml 完全移除 nginx 服務，直接：
-
-```bash
-docker compose up -d --build
-```
-
 ### 常用指令
 
 ```bash
@@ -534,36 +531,6 @@ curl -X POST http://127.0.0.1/auth/login \
 | POST | `/inbound/<id>/complete` | operator+ | 完成入庫（自動入帳庫存，可帶 `received_qtys`） |
 | POST | `/inbound/<id>/cancel` | operator+ | 取消入庫單 |
 
-#### POST `/inbound/<id>/item` — 新增明細（支援條碼掃描）
-
-```bash
-# 以 product_id 新增
-curl -X POST http://127.0.0.1/inbound/<id>/item \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"product_id": "<id>", "expected_qty": 10, "unit_price": 500.0}'
-
-# 以條碼掃描新增（自動查詢 product）
-curl -X POST http://127.0.0.1/inbound/<id>/item \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"barcode": "2001234567890", "expected_qty": 10}'
-```
-
-#### POST `/inbound/<id>/complete` — 完成入庫
-
-```bash
-# 以 expected_qty 入庫
-curl -X POST http://127.0.0.1/inbound/<id>/complete \
-  -H "Authorization: Bearer <token>"
-
-# 指定各明細實收數量
-curl -X POST http://127.0.0.1/inbound/<id>/complete \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"received_qtys": {"<item_id_1>": 9, "<item_id_2>": 5}}'
-```
-
 ---
 
 ### 出庫管理 `/outbound`
@@ -596,33 +563,6 @@ curl -X POST http://127.0.0.1/inbound/<id>/complete \
 | GET | `/analytics/summary` | 已登入 | 日/週/月/年用量 + 毛利 + 庫存警示 |
 | GET | `/analytics/stock_alerts` | 已登入 | 僅庫存警示列表 |
 
-#### GET `/analytics/summary`
-
-回傳四個時段（`day` / `week` / `month` / `year`）的統計：
-
-```json
-{
-  "success": true,
-  "data": {
-    "day": {
-      "inbound":  {"orders": 2, "completed": 1, "qty": 50, "amount": 25000.0},
-      "outbound": {"orders": 1, "completed": 1, "qty": 20, "amount": 10000.0},
-      "gross_profit": 3500.0
-    },
-    "week":  { ... },
-    "month": { ... },
-    "year":  { ... },
-    "stock_alerts": [
-      {"product_name": "商品A", "sku": "...", "warehouse_name": "台北倉",
-       "quantity": 3, "min_stock": 10, "alert_type": "low"}
-    ],
-    "stock_alert_count": 1
-  }
-}
-```
-
-**毛利計算**：`(出庫售價 − 對應產品成本價) × 出庫數量` 之加總（僅計算已完成出庫單）
-
 ---
 
 ### POS 收銀 `/pos`
@@ -632,10 +572,14 @@ curl -X POST http://127.0.0.1/inbound/<id>/complete \
 | GET | `/pos/` | 任何人 | POS 收銀頁面（PWA） |
 | GET | `/pos/manifest.json` | - | PWA Manifest（橫向鎖定） |
 | POST | `/pos/sale` | cashier+ | 建立銷售單（結帳 + 原子扣庫存） |
-| GET | `/pos/sales` | cashier+ | 查詢銷售記錄 |
+| GET | `/pos/sales` | cashier+ | 查詢銷售記錄（支援日期/收銀員/狀態/來源篩選） |
+| GET | `/pos/sales/export` | cashier+ | 依篩選條件匯出全部銷售記錄為 CSV |
+| POST | `/pos/sales/import` | admin | 批次匯入歷史銷售記錄（CSV/JSON，不扣庫存） |
 | GET | `/pos/sales/<id>` | cashier+ | 查詢單筆銷售 |
 | POST | `/pos/sales/<id>/refund` | operator+ | 退款（回補庫存） |
-| GET | `/pos/summary` | cashier+ | 日結報表 |
+| GET | `/pos/payment-methods` | 已登入 | 取得 POS 付款方式清單 |
+| PUT | `/pos/payment-methods` | admin | 更新 POS 付款方式 |
+| GET | `/pos/summary` | cashier+ | 銷售報表（日/週/月/年） |
 
 #### POST `/pos/sale` — 結帳
 
@@ -661,38 +605,105 @@ curl -X POST http://127.0.0.1/pos/sale \
 | `card` | 純刷卡（需帶 `card_amount`） |
 | `mixed` | 混合（同時帶 `cash_amount` 與 `card_amount`） |
 
-Response `201`：
+#### GET `/pos/summary` — 銷售報表
 
-```json
-{
-  "success": true,
-  "order": {
-    "order_no": "POS-20260523-A1B2",
-    "total_amount": 250.0,
-    "change_amount": 150.0,
-    "status": "completed"
-  }
-}
-```
+支援 `period` 參數切換多種統計粒度：
 
-> **庫存扣減**採用 `findOneAndUpdate + $gte` 原子操作，並發失敗時自動 rollback，確保資料一致性。
+| `period` | 參數 | 說明 |
+|---|---|---|
+| `day`（預設） | `date=YYYY-MM-DD` | 單日；回傳 `orders` 個別訂單列表 |
+| `week` | `date=YYYY-MM-DD` | 指定日期所在週（週一起始）；回傳 `breakdown` 每日彙總 |
+| `month` | `month=YYYY-MM` | 指定月份；回傳 `breakdown` 每日彙總 |
+| `year` | `year=YYYY` | 指定年份；回傳 `breakdown` 每月彙總 |
 
-#### GET `/pos/summary?date=YYYY-MM-DD` — 日結報表
+**日模式回傳範例（`period=day`）：**
 
 ```json
 {
   "success": true,
   "data": {
-    "date": "2026-05-23",
+    "period": "day",
+    "date": "2026-05-28",
     "total_orders": 15,
     "total_amount": 8750.0,
     "total_discount": 200.0,
     "cash_total": 5500.0,
     "card_total": 3250.0,
-    "orders": [ ... ]
+    "orders": [
+      {"_id": "...", "order_no": "POS-20260528-A1B2",
+       "total_amount": 350.0, "payment_type": "cash", "status": "completed", ...}
+    ]
   }
 }
 ```
+
+**週/月模式回傳範例（`period=week`）：**
+
+```json
+{
+  "success": true,
+  "data": {
+    "period": "week",
+    "date_from": "2026-05-25",
+    "date_to": "2026-05-31",
+    "total_orders": 87,
+    "total_amount": 52300.0,
+    "breakdown": [
+      {"period": "2026-05-25", "orders": 12, "amount": 7200.0, "discount": 100.0},
+      {"period": "2026-05-26", "orders": 15, "amount": 9500.0, "discount": 200.0}
+    ]
+  }
+}
+```
+
+#### GET `/pos/sales/export` — 匯出 CSV
+
+依目前篩選條件匯出全部銷售記錄，不受筆數限制。支援 `date_from`、`date_to`、`cashier`、`status`、`source` 篩選參數。
+
+CSV 欄位：`order_no, source, warehouse_name, cashier, items_count, subtotal, discount, total_amount, payment_type, cash_amount, change_amount, status, remark, created_at`
+
+#### POST `/pos/sales/import` — 匯入 CSV/JSON（admin）
+
+從 CSV 或 JSON 檔案批次匯入歷史銷售記錄，**不執行庫存扣減**，僅寫入 `pos_orders` collection。
+
+```bash
+curl -X POST http://127.0.0.1/pos/sales/import \
+  -H "Authorization: Bearer <admin-token>" \
+  -F "file=@/path/to/sales.csv"
+# → {"success": true, "inserted": 120}
+```
+
+---
+
+### 操作紀錄 `/log`
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/log/` | 已登入 | 查詢操作紀錄（支援 `username`/`action`/日期範圍/`limit`） |
+| GET | `/log/export` | 已登入 | 依篩選條件匯出全部紀錄為 CSV（不限筆數） |
+| POST | `/log/import` | admin | 從 CSV 或 JSON 批次匯入操作紀錄 |
+| GET | `/log/stats` | 已登入 | 取得統計（總筆數 + 超齡筆數） |
+| POST | `/log/cleanup` | admin | 立即清除超齡紀錄 |
+
+**自動清除機制**：每次讀取操作紀錄頁時，若「系統設定」已設定保留天數且距上次清除 ≥ 24 小時，系統自動觸發清除，無需額外排程器。
+
+---
+
+### 系統設定 `/settings`
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/settings/` | 已登入 | 取得所有系統設定 |
+| PUT | `/settings/` | admin | 批次更新系統設定（key-value） |
+
+**已支援的設定鍵值**
+
+| 鍵 | 說明 | 預設 |
+|---|---|---|
+| `pos_default_menu_id` | POS 收銀台預設載入的菜單 ID | _(空)_ |
+| `log_retention_days` | 操作紀錄保留天數（0 = 不自動清除） | `0` |
+| `log_last_cleanup_at` | 上次清除操作紀錄的 UTC 時間（ISO 格式） | _(空)_ |
+| `pos_payment_methods` | POS 付款方式清單（JSON） | 見 POS 端點說明 |
 
 ---
 
@@ -724,7 +735,7 @@ Webhook URL 請填入各平台 Developer Dashboard：
 | 方法 | 路徑 | 角色 | 說明 |
 |---|---|---|---|
 | POST | `/delivery/sync/<platform>` | operator+ | 主動從平台拉取最新訂單 |
-| POST | `/delivery/menu/sync/<platform>` | operator+ | 推送系統商品目錄至平台菜單 |
+| POST | `/delivery/menu/sync/<platform>` | operator+ | 從平台拉取菜單並同步至 WMS（含客製化選項群組） |
 
 ```bash
 # 拉取 UberEats 訂單
@@ -732,13 +743,13 @@ curl -X POST http://127.0.0.1/delivery/sync/ubereats \
   -H "Authorization: Bearer <token>"
 # → {"success": true, "new_count": 3, "errors": []}
 
-# 同步菜單到 foodpanda
+# 從 foodpanda 同步菜單與客製化選項
 curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"category_name": "全部商品"}'
-# → {"success": true, "synced_products": 42}
+  -H "Authorization: Bearer <token>"
+# → {"success": true, "synced": 42, "groups_created": 5, "groups_updated": 3}
 ```
+
+**菜單同步說明**：從外送平台拉回菜單時，會一併同步客製化選項群組（UberEats `modifier_groups` / foodpanda `topping_groups`）至 WMS 菜單的 `option_groups`，並自動建立品項與選項群組的連結。
 
 #### 商品映射 & 平台設定
 
@@ -759,15 +770,9 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 | GET | `/user/` | admin | 列出使用者 |
 | POST | `/user/` | admin | 新增使用者 |
 | PUT | `/user/<id>` | admin | 更新密碼或角色 |
-| DELETE | `/user/<id>` | admin | 刪除使用者 |
+| DELETE | `/user/<id>` | admin | 刪除使用者（系統預設 admin 不可刪） |
 
----
-
-### 操作紀錄 `/log`
-
-| 方法 | 路徑 | 角色 | 說明 |
-|---|---|---|---|
-| GET | `/log/` | 已登入 | 查詢操作紀錄（可篩選 `username`、`action`） |
+**使用者模板（page_permissions）**：admin 可為每位非 admin 使用者指定「頁面顯示模板」，控制側邊欄可見的功能頁面。模板設定存於 `users` collection 的 `page_permissions` 陣列，可包含任意頁面鍵（如 `pos-sales`、`pos-report`、`menus`、`settings` 等）。
 
 ---
 
@@ -823,8 +828,9 @@ cancelled（已取消）  ← 終態
 ```
 1. 開啟 /pos/（觸控友善 PWA，建議橫向使用）
 2. 登入（JWT 存至 localStorage，重整不需重登）
-3. 選擇出貨倉庫
-4. 加入購物車（搜尋商品 / 掃描條碼）
+3. 選擇出貨倉庫（系統設定可預設倉庫與菜單）
+4. 加入購物車（搜尋商品 / 掃描條碼 / 選擇菜單品項）
+   └─ 品項含客製化選項時，彈出選項選擇視窗
 5. 點擊「結帳」→ 選擇付款方式（現金 / 刷卡 / 混合）
       ↓ 系統自動原子扣減庫存
       ↓ 建立 pos_orders 紀錄
@@ -833,8 +839,40 @@ cancelled（已取消）  ← 終態
 7. 列印收據（window.print()）
 ```
 
-**退款**：後台「POS 銷售記錄」→ 查看詳情 → 退款（operator+ 限定）  
+**退款**：後台「銷售記錄」→ 查看詳情 → 退款（operator+ 限定）  
 退款時自動回補庫存並記錄移動紀錄。
+
+**銷售記錄匯出 / 匯入**：後台「銷售記錄」右上角可匯出 CSV（依目前篩選條件），或匯入 CSV/JSON 歷史資料（僅 admin，不執行庫存扣減）。
+
+### 銷售報表多期間切換
+
+後台「銷售報表」支援四種統計粒度，直接點擊按鈕切換：
+
+| 模式 | 選擇器 | 顯示內容 |
+|---|---|---|
+| 日 | 日期選擇器 | 當日摘要 + 個別訂單列表 + 付款方式分析 |
+| 週 | 日期選擇器（取所在週） | 本週摘要 + 每日銷售明細 |
+| 月 | 月份選擇器（YYYY-MM） | 本月摘要 + 每日銷售明細 |
+| 年 | 年份下拉（近 5 年） | 全年摘要 + 每月銷售明細 |
+
+### 操作紀錄管理
+
+```
+自動清除（懶觸發）：
+  每次開啟「操作紀錄」頁面時 → 檢查系統設定的 log_retention_days
+  若已設定且距上次清除 ≥ 24 小時 → 自動刪除超齡紀錄
+
+手動操作（系統設定頁面）：
+  ├─ 設定保留天數（0 = 不自動清除）
+  ├─ 查看統計：總筆數 + 超齡筆數
+  └─ 立即清除（按鈕 → confirm → 刪除超齡紀錄）
+
+匯出 CSV：
+  支援 username / action / 日期範圍 篩選，不受顯示筆數限制
+
+匯入（admin）：
+  支援 CSV 或 JSON 格式批次匯入歷史操作紀錄
+```
 
 ### 外送訂單流程
 
@@ -854,6 +892,12 @@ B. 主動拉取（Polling，備用）
 C. 後台操作
    後台「外送訂單」→ 查看 → 確認接單 / 拒絕 / 更新進度
        ↓ 系統同步呼叫平台 API 更新訂單狀態
+
+D. 菜單同步（含客製化選項群組）
+   後台「平台設定」→「匯入菜單」
+       ↓ 從平台拉回菜單品項
+       ↓ 同步 option_groups（modifier_groups / topping_groups）
+       ↓ 建立品項與選項群組的 applied_group_ids 連結
 ```
 
 ### POS 銷售單狀態
@@ -890,9 +934,9 @@ cancelled（已取消）  ← 終態
 
 | 角色 | 說明 | 主要權限 |
 |---|---|---|
-| `admin` | 管理員 | 完整權限：使用者管理、刪除資料、新增倉庫、外送平台設定 |
+| `admin` | 管理員 | 完整權限：使用者管理、刪除資料、新增倉庫、外送平台設定、系統設定、操作紀錄清除/匯入、銷售匯入 |
 | `operator` | 操作員 | 建立/更新產品、倉庫位置、入出庫單、盤點調整、POS 退款、訂單狀態更新 |
-| `cashier` | 收銀員 | POS 結帳、查詢銷售紀錄、查詢外送訂單 |
+| `cashier` | 收銀員 | POS 結帳、查詢銷售紀錄、查詢外送訂單、匯出銷售 CSV |
 | `viewer` | 唯讀 | 僅查詢，無法新增/修改/刪除任何資料 |
 
 ```python
@@ -902,6 +946,8 @@ from src.permissions import require_role
 @require_role('admin', 'operator')           # admin 或 operator
 @require_role('admin', 'operator', 'cashier')# admin、operator 或 cashier
 ```
+
+**使用者頁面模板**：admin 可在「使用者管理」為非 admin 帳號設定頁面顯示模板，僅開放指定功能頁面的側邊欄連結，不影響 API 權限。
 
 ---
 
@@ -943,8 +989,9 @@ from src.permissions import require_role
 
 | Collection | 說明 |
 |---|---|
-| `users` | 使用者帳號（bcrypt 加密密碼） |
-| `logs` | 所有操作紀錄 |
+| `users` | 使用者帳號（bcrypt 加密密碼）+ `page_permissions` 頁面模板 |
+| `logs` | 所有操作紀錄（支援自動清除） |
+| `system_settings` | 系統設定 key-value（POS 預設菜單、紀錄保留天數等） |
 | `product_categories` | 產品分類 |
 | `products` | 產品主檔（SKU、EAN-13 條碼、成本/售價、庫存警示） |
 | `warehouses` | 倉庫資料（含自動生成代碼 WH-XXX） |
@@ -953,7 +1000,8 @@ from src.permissions import require_role
 | `stock_movements` | 庫存移動完整歷史（入庫/出庫/POS/盤點/退款均記錄） |
 | `inbound_orders` | 入庫單（含 embedded items array） |
 | `outbound_orders` | 出庫單（含 embedded items array） |
-| `pos_orders` | POS 銷售單（含 embedded items、付款資訊） |
+| `pos_orders` | POS 銷售單（含 embedded items、付款資訊、`source` 欄位區分 POS/外送） |
+| `menus` | POS 菜單（含 `option_groups` 客製化選項群組） |
 | `delivery_orders` | 外送平台訂單（UberEats / foodpanda） |
 | `delivery_mappings` | 系統商品 ID ↔ 平台商品 ID 映射表 |
 | `delivery_settings` | 各平台啟用狀態、自動接單設定 |
@@ -989,6 +1037,8 @@ from src.permissions import require_role
 | nginx 設定 | `conf/nginx/conf.d/default.conf` 不納入版控；從 `*.default` 範本複製後修改 |
 | 預設帳號 | `admin / admin`，**首次啟動後立即至後台修改密碼** |
 | POS 庫存扣減 | 採 `findOneAndUpdate + $gte` 原子操作，並發失敗自動 rollback，不依賴 MongoDB Transactions（單節點相容） |
+| 銷售匯入 | 批次匯入歷史銷售記錄不執行庫存扣減，僅寫入 `pos_orders`，避免影響現有庫存數量 |
+| 操作紀錄清除 | 自動清除為懶觸發（每次打開紀錄頁面時檢查），無需額外排程器；保留天數設為 0 則永不自動清除 |
 | 出庫確認 | 確認出庫單時自動驗證庫存，庫存不足拒絕確認 |
 | 庫存更新時機 | 庫存變更僅在「完成入/出庫」及「POS 結帳/退款」時觸發 |
 | Webhook 安全 | 建議設定 `WEBHOOK_SECRET`，系統會驗證 HMAC-SHA256 簽名；留空則略過驗簽（僅開發用） |

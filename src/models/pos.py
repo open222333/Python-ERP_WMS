@@ -393,6 +393,61 @@ class PosOrder:
         }
 
     @classmethod
+    def bulk_import(cls, rows: list) -> int:
+        """
+        批次匯入歷史銷售紀錄（僅寫入記錄，不執行庫存扣減）。
+        支援從 export 匯出的 CSV 欄位，或自訂 JSON 陣列。
+        回傳成功插入筆數。
+        """
+        docs = []
+        for r in rows:
+            order_no = str(r.get('order_no') or '').strip() or _gen_order_no()
+            source   = str(r.get('source')   or 'pos').strip()
+
+            def _f(key, default=0.0):
+                try:    return float(r.get(key) or default)
+                except: return default  # noqa: E722
+
+            total_amount  = _f('total_amount')
+            subtotal      = _f('subtotal', total_amount)
+            discount      = _f('discount')
+            cash_amount   = _f('cash_amount')
+            card_amount   = _f('card_amount')
+            change_amount = _f('change_amount')
+
+            try:
+                raw_ts = str(r.get('created_at') or '').rstrip('Z')
+                created_at = datetime.fromisoformat(raw_ts) if raw_ts else datetime.utcnow()
+            except (ValueError, TypeError):
+                created_at = datetime.utcnow()
+
+            status_raw = str(r.get('status') or 'completed').strip()
+            status = status_raw if status_raw in ('completed', 'refunded') else 'completed'
+
+            docs.append({
+                'order_no':      order_no,
+                'source':        source,
+                'warehouse_name': str(r.get('warehouse_name') or ''),
+                'cashier':       str(r.get('cashier')        or ''),
+                'items':         [],          # 歷史匯入無品項明細
+                'subtotal':      subtotal,
+                'discount':      discount,
+                'total_amount':  total_amount,
+                'payment_type':  str(r.get('payment_type')   or 'cash'),
+                'cash_amount':   cash_amount,
+                'card_amount':   card_amount,
+                'change_amount': change_amount,
+                'remark':        str(r.get('remark')         or ''),
+                'status':        status,
+                'created_at':    created_at,
+                'imported':      True,        # 標記為匯入資料
+            })
+
+        if docs:
+            cls._col().insert_many(docs)
+        return len(docs)
+
+    @classmethod
     def refund(cls, sid: str, reason: str, operator: str) -> dict:
         """
         退款：把 status 改為 refunded，並回補庫存。

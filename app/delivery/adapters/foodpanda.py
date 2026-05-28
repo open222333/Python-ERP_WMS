@@ -160,21 +160,67 @@ class FoodpandaClient:
 def parse_menu_items(menu: dict) -> list:
     """
     將 foodpanda GET /menu 回應解析成統一格式：
-    [{'external_id', 'name', 'description', 'price', 'available', 'category'}]
+    [{'external_id', 'name', 'description', 'price', 'available', 'category',
+      'modifier_group_ids'}]
     """
     items = []
     for cat in menu.get('categories', []):
         cat_name = cat.get('name', '').strip()
         for p in cat.get('products', []):
+            # 取得此品項連結的 topping group ID 清單
+            modifier_group_ids = [
+                str(tg.get('id', ''))
+                for tg in p.get('topping_groups', [])
+                if tg.get('id')
+            ]
             items.append({
-                'external_id': str(p.get('id', '')),
-                'name':        p.get('name', '').strip(),
-                'description': p.get('description', ''),
-                'price':       float(p.get('price', 0)),
-                'available':   bool(p.get('active', True)),
-                'category':    cat_name,
+                'external_id':        str(p.get('id', '')),
+                'name':               p.get('name', '').strip(),
+                'description':        p.get('description', ''),
+                'price':              float(p.get('price', 0)),
+                'available':          bool(p.get('active', True)),
+                'category':           cat_name,
+                'modifier_group_ids': modifier_group_ids,
             })
     return items
+
+
+def parse_option_groups(menu: dict) -> list:
+    """
+    將 foodpanda GET /menu 中各 product 的 topping_groups 抽取並去重（依 topping group ID），
+    解析為 WMS option_group 格式：
+    [{'external_id', 'name', 'type', 'required', 'choices':[{name, extra_price, is_default}]}]
+    同一 topping group ID 跨多個品項只保留一份；name 衝突時以先出現者為準。
+    """
+    seen_ids: set = set()
+    groups = []
+    for cat in menu.get('categories', []):
+        for p in cat.get('products', []):
+            for tg in p.get('topping_groups', []):
+                tg_id = str(tg.get('id', ''))
+                if not tg_id or tg_id in seen_ids:
+                    continue
+                seen_ids.add(tg_id)
+                choices = []
+                for t in tg.get('toppings', []):
+                    label = (t.get('name') or '').strip()
+                    if label:
+                        choices.append({
+                            'name':        label,
+                            'extra_price': float(t.get('price', 0)),
+                            'is_default':  bool(t.get('is_default', False)),
+                        })
+                if not choices:
+                    continue
+                max_t = tg.get('max_toppings', 1) or 1
+                groups.append({
+                    'external_id': tg_id,
+                    'name':        (tg.get('name') or '').strip(),
+                    'type':        'multiple' if max_t != 1 else 'single',
+                    'required':    bool(tg.get('is_mandatory', False)),
+                    'choices':     choices,
+                })
+    return groups
 
 
 def build_menu_from_products(products: list,

@@ -135,3 +135,9 @@ docker/database/**
 
 # Nginx conf（實際設定不納入版控，請從 *.default 複製）
 conf/nginx/conf.d/*.conf
+
+# Vue 3 build output (nginx serves this)
+frontend-dist/
+
+# Frontend node_modules
+frontend/node_modules/

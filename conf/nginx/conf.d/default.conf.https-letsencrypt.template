@@ -1,6 +1,6 @@
 # ============================================================
 # Let's Encrypt SSL 範本（HTTPS + 免費憑證）
-# 使用情境：伺服器直接暴露於網際網路（不經 Cloudflare Proxy），使用 Let's Encrypt 憑證
+# 使用情境：伺服器直接暴露於網際網路（不經 Cloudflare Proxy）
 #
 # 啟用方式 (.env)：
 #   NGINX_MODE=https-letsencrypt
@@ -14,11 +14,9 @@
 #   3. 申請憑證：
 #        certbot certonly --webroot -w /var/www/certbot -d your.domain.com
 #   4. 將下方 ssl_certificate 路徑中的 your.domain.com 替換為實際域名
-#
-# 注意：ssl_certificate 路徑含域名部分需手動修改，無法透過 ${DOMAIN} 自動替換
 # ============================================================
 upstream flask_app {
-    server app:5000;
+    server app:${FLASK_PORT};
 }
 
 # HTTP → HTTPS 強制導向（同時提供 certbot webroot 驗證）
@@ -26,11 +24,9 @@ server {
     listen      80;
     server_name ${DOMAIN};
 
-    # Let's Encrypt certbot webroot 驗證路徑（自動續約用）
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
-
     location / {
         return 301 https://$host$request_uri;
     }
@@ -51,7 +47,7 @@ server {
     ssl_session_cache         shared:SSL:10m;
     ssl_session_timeout       1d;
 
-    # HSTS（可選，強制瀏覽器永遠使用 HTTPS）
+    # HSTS（可選）
     # add_header Strict-Transport-Security "max-age=63072000" always;
 
     client_max_body_size 50M;
@@ -59,7 +55,12 @@ server {
     access_log  /var/log/nginx/access.log;
     error_log   /var/log/nginx/error.log;
 
-    location / {
+    # Vue SPA 靜態檔
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # ── Flask API 路徑（全部反向代理到 Flask）───────────────
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|settings|customer-order|apidocs)/ {
         proxy_pass         http://flask_app;
         proxy_http_version 1.1;
 
@@ -73,7 +74,17 @@ server {
         proxy_read_timeout    120s;
     }
 
-    location /nginx-health {
+    # Swagger UI
+    location = /apidocs {
+        return 301 https://$host/apidocs/;
+    }
+
+    # ── SPA 路由 fallback ────────────────────────────────────
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /nginx-health {
         access_log  off;
         return      200 "ok\n";
         add_header  Content-Type text/plain;

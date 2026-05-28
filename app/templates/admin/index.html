@@ -136,28 +136,32 @@
   <div style="overflow-y:auto;flex:1;padding-bottom:8px;">
     <div class="nav-section">總覽</div>
     <a class="nav-link active" data-page="dashboard"><i class="bi bi-grid-1x2"></i> 儀表板</a>
-    <div class="nav-section">商品管理</div>
-    <a class="nav-link" data-page="categories"><i class="bi bi-tags"></i> 產品分類</a>
-    <a class="nav-link" data-page="products"><i class="bi bi-box-seam"></i> 產品資料</a>
-    <div class="nav-section">倉儲管理</div>
-    <a class="nav-link" data-page="warehouses"><i class="bi bi-building"></i> 倉庫管理</a>
-    <a class="nav-link" data-page="inventory"><i class="bi bi-archive"></i> 庫存查詢</a>
-    <div class="nav-section">出入庫</div>
-    <a class="nav-link" data-page="inbound"><i class="bi bi-box-arrow-in-down"></i> 入庫管理</a>
-    <a class="nav-link" data-page="outbound"><i class="bi bi-box-arrow-up"></i> 出庫管理</a>
-    <a class="nav-link" data-page="movements"><i class="bi bi-arrow-left-right"></i> 庫存移動</a>
-    <a class="nav-link" href="/quick-io/" target="_blank"><i class="bi bi-lightning-charge"></i> 快速出入庫 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
-    <div class="nav-section">POS 收銀</div>
-    <a class="nav-link" data-page="pos-sales"><i class="bi bi-receipt"></i> 銷售記錄</a>
-    <a class="nav-link" data-page="pos-report"><i class="bi bi-bar-chart-line"></i> 日結報表</a>
-    <a class="nav-link" data-page="menus"><i class="bi bi-menu-button-wide"></i> 菜單管理</a>
-    <a class="nav-link" href="/pos/" target="_blank"><i class="bi bi-display"></i> 開啟收銀台 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
-    <div class="nav-section">外送平台</div>
-    <a class="nav-link" data-page="delivery-orders"><i class="bi bi-scooter"></i> 外送訂單</a>
-    <a class="nav-link" data-page="delivery-settings"><i class="bi bi-gear"></i> 平台設定</a>
-    <div class="nav-section">系統</div>
-    <a class="nav-link" data-page="users" id="nav-users"><i class="bi bi-people"></i> 使用者管理</a>
-    <a class="nav-link" data-page="logs"><i class="bi bi-journal-text"></i> 操作紀錄</a>
+    <div class="nav-section" data-nav-group="商品管理">商品管理</div>
+    <a class="nav-link" data-page="categories" data-nav-key="categories"><i class="bi bi-tags"></i> 產品分類</a>
+    <a class="nav-link" data-page="products"   data-nav-key="products"><i class="bi bi-box-seam"></i> 產品資料</a>
+    <div class="nav-section" data-nav-group="倉儲管理">倉儲管理</div>
+    <a class="nav-link" data-page="warehouses" data-nav-key="warehouses"><i class="bi bi-building"></i> 倉庫管理</a>
+    <a class="nav-link" data-page="inventory"  data-nav-key="inventory"><i class="bi bi-archive"></i> 庫存查詢</a>
+    <div class="nav-section" data-nav-group="出入庫">出入庫</div>
+    <a class="nav-link" data-page="inbound"   data-nav-key="inbound"><i class="bi bi-box-arrow-in-down"></i> 入庫管理</a>
+    <a class="nav-link" data-page="outbound"  data-nav-key="outbound"><i class="bi bi-box-arrow-up"></i> 出庫管理</a>
+    <a class="nav-link" data-page="movements" data-nav-key="movements"><i class="bi bi-arrow-left-right"></i> 庫存移動</a>
+    <a class="nav-link" data-nav-key="quick-io" href="/quick-io/" target="_blank"><i class="bi bi-lightning-charge"></i> 快速出入庫 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
+    <div class="nav-section" data-nav-group="顧客點單">顧客點單</div>
+    <a class="nav-link" data-page="cust-orders" data-nav-key="cust-orders"><i class="bi bi-receipt"></i> 訂單管理</a>
+    <a class="nav-link" data-nav-key="kitchen-link" href="/kitchen/" target="_blank"><i class="bi bi-grid-3x3-gap"></i> 備餐顯示 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
+    <a class="nav-link" data-nav-key="order-link"   href="/order/"   target="_blank"><i class="bi bi-qr-code"></i> 顧客點單頁 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
+    <div class="nav-section" data-nav-group="POS 收銀">POS 收銀</div>
+    <a class="nav-link" data-page="pos-sales" data-nav-key="pos-sales"><i class="bi bi-receipt"></i> 銷售記錄</a>
+    <a class="nav-link" data-page="pos-report" data-nav-key="pos-report"><i class="bi bi-bar-chart-line"></i> 日結報表</a>
+    <a class="nav-link" data-page="menus"      data-nav-key="menus"><i class="bi bi-menu-button-wide"></i> 菜單管理</a>
+    <a class="nav-link" data-nav-key="pos-link" href="/pos/" target="_blank"><i class="bi bi-display"></i> 開啟收銀台 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
+    <div class="nav-section" data-nav-group="外送平台">外送平台</div>
+    <a class="nav-link" data-page="delivery-orders"   data-nav-key="delivery-orders"><i class="bi bi-scooter"></i> 外送訂單</a>
+    <a class="nav-link" data-page="delivery-settings" data-nav-key="delivery-settings"><i class="bi bi-gear"></i> 平台設定</a>
+    <div class="nav-section" data-nav-group="系統">系統</div>
+    <a class="nav-link" data-page="users" data-nav-key="users" id="nav-users"><i class="bi bi-people"></i> 使用者管理</a>
+    <a class="nav-link" data-page="logs"  data-nav-key="logs"><i class="bi bi-journal-text"></i> 操作紀錄</a>
     <a class="nav-link" data-page="settings"><i class="bi bi-sliders"></i> 系統設定</a>
     <a class="nav-link" href="/docs/" target="_blank"><i class="bi bi-book"></i> 使用說明 <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.65rem"></i></a>
   </div>
@@ -494,18 +498,61 @@
 
     <!-- ──────── USERS ──────── -->
     <div id="page-users" class="page">
-      <div class="table-card">
-        <div class="table-header">
-          <h6><i class="bi bi-people me-1"></i>使用者管理</h6>
-          <button class="btn btn-sm btn-primary" onclick="openUserModal()">
-            <i class="bi bi-person-plus"></i> 新增使用者
-          </button>
+      <!-- Tab 導覽 -->
+      <ul class="nav nav-tabs mb-3" id="users-tab">
+        <li class="nav-item">
+          <a class="nav-link active" id="tab-userlist" data-bs-toggle="tab"
+             href="#users-tab-list" onclick="loadUsers()">
+            <i class="bi bi-people me-1"></i>使用者
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" id="tab-templates" data-bs-toggle="tab"
+             href="#users-tab-templates" onclick="loadTemplates()">
+            <i class="bi bi-person-badge me-1"></i>使用者模板
+          </a>
+        </li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- ── Tab 1：使用者列表 ── -->
+        <div class="tab-pane fade show active" id="users-tab-list">
+          <div class="table-card">
+            <div class="table-header">
+              <h6><i class="bi bi-people me-1"></i>使用者列表</h6>
+              <button class="btn btn-sm btn-primary" onclick="openUserModal()">
+                <i class="bi bi-person-plus"></i> 新增使用者
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="table mb-0" id="tbl-users">
+                <thead><tr><th>帳號</th><th>角色</th><th>使用者模板</th><th>建立時間</th><th>操作</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        <div class="table-responsive">
-          <table class="table mb-0" id="tbl-users">
-            <thead><tr><th>帳號</th><th>角色</th><th>建立時間</th><th>操作</th></tr></thead>
-            <tbody></tbody>
-          </table>
+
+        <!-- ── Tab 2：使用者模板管理 ── -->
+        <div class="tab-pane fade" id="users-tab-templates">
+          <div class="table-card">
+            <div class="table-header">
+              <h6><i class="bi bi-person-badge me-1"></i>使用者模板</h6>
+              <button class="btn btn-sm btn-primary" onclick="openTemplateModal()">
+                <i class="bi bi-plus-lg"></i> 新增使用者模板
+              </button>
+            </div>
+            <div class="px-3 pt-3 pb-1 text-muted small">
+              每個模板定義對應的系統角色與頁面顯示設定，指派給使用者後決定其權限及側欄可見頁面。
+              <span class="badge bg-warning text-dark ms-1"><i class="bi bi-lock-fill"></i> 系統</span> 標記的模板為預設模板，不可刪除。
+            </div>
+            <div class="table-responsive">
+              <table class="table mb-0" id="tbl-templates">
+                <thead><tr><th>模板名稱</th><th>角色</th><th>說明</th><th>已指派使用者</th><th>操作</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -583,6 +630,11 @@
                     </td>
                     <td class="text-muted small">開啟頁面後自動選取此倉庫，仍可手動切換</td>
                   </tr>
+                  <tr>
+                    <td class="fw-semibold text-nowrap">使用者模板</td>
+                    <td><span class="badge bg-secondary">使用者管理</span></td>
+                    <td class="text-muted small">在「使用者管理 → 使用者模板」Tab 設定，決定帳號的系統角色與登入後的側欄頁面顯示</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -647,6 +699,40 @@
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ──────── 顧客訂單管理 ──────── -->
+    <div id="page-cust-orders" class="page">
+      <div class="table-card">
+        <div class="table-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <h6><i class="bi bi-receipt me-1 text-primary"></i>訂單管理</h6>
+          <div class="d-flex gap-2 flex-wrap">
+            <select id="co-status-filter" class="form-select form-select-sm" style="width:auto" onchange="loadCustOrders()">
+              <option value="">全部狀態</option>
+              <option value="pending">待處理</option>
+              <option value="processing">處理中</option>
+              <option value="completed">已完成</option>
+              <option value="cancelled">已取消</option>
+            </select>
+            <input id="co-date-filter" type="date" class="form-control form-control-sm" style="width:auto" onchange="loadCustOrders()">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadCustOrders()"><i class="bi bi-arrow-clockwise"></i></button>
+            <a href="/kitchen/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-grid-3x3-gap me-1"></i>備餐顯示</a>
+          </div>
+        </div>
+        <!-- 今日統計 -->
+        <div class="d-flex gap-3 px-3 py-2 border-bottom flex-wrap" id="co-stats">
+          <span class="small text-muted">載入中...</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table mb-0" id="tbl-cust-orders">
+            <thead><tr>
+              <th>訂單編號</th><th>桌號/姓名</th><th>品項</th>
+              <th class="text-end">金額</th><th>狀態</th><th>時間</th><th>操作</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1630,17 +1716,63 @@
         <input id="user-password" type="password" class="form-control" placeholder="修改時留空表示不更改"/>
       </div>
       <div class="mb-3">
-        <label class="form-label">角色</label>
-        <select id="user-role" class="form-select">
-          <option value="viewer">Viewer（唯讀）</option>
-          <option value="operator">Operator（操作員）</option>
-          <option value="admin">Admin（管理員）</option>
+        <label class="form-label">使用者模板 <span class="text-danger" id="tmpl-required">*</span>
+          <span class="text-muted small ms-1">（決定角色權限與頁面顯示）</span>
+        </label>
+        <select id="user-template" class="form-select"
+          onchange="_updateRoleBadgeFromTemplate(this.value)">
+          <option value="">— 不指派 —</option>
         </select>
+        <div class="form-text d-flex align-items-center gap-1 mt-1">
+          對應角色：<span id="user-role-badge" class="badge bg-secondary">—</span>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
       <button class="btn btn-primary" onclick="saveUser()">儲存</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Template Modal -->
+<div class="modal fade" id="modal-template" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="modal-template-title">使用者模板</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tmpl-id"/>
+      <input type="hidden" id="tmpl-is-system" value=""/>
+      <div id="tmpl-system-notice" class="alert alert-warning d-none py-2 small">
+        <i class="bi bi-lock-fill me-1"></i>系統預設模板：名稱與角色不可修改，但可調整頁面顯示設定。
+      </div>
+      <div class="mb-3">
+        <label class="form-label">模板名稱 <span class="text-danger">*</span></label>
+        <input id="tmpl-name" type="text" class="form-control" placeholder="例：收銀員、倉管人員"/>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">對應角色 <span class="text-danger">*</span></label>
+        <select id="tmpl-role" class="form-select">
+          <option value="viewer">Viewer（唯讀）</option>
+          <option value="operator">Operator（操作員）</option>
+          <option value="admin">Admin（管理員）</option>
+        </select>
+        <div class="form-text">指派此模板的使用者將自動獲得對應的系統角色。若更新角色，已指派此模板的帳號也會同步更新。</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">說明</label>
+        <input id="tmpl-desc" type="text" class="form-control" placeholder="選填，簡短描述此模板用途"/>
+      </div>
+      <hr>
+      <div class="mb-2 fw-semibold">頁面顯示設定</div>
+      <p class="text-muted small mb-3">勾選此模板的使用者可在後台側欄看到哪些功能頁面。未勾選的頁面將會隱藏。</p>
+      <div id="tmpl-pages-list" class="row g-2"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+      <button class="btn btn-primary" onclick="saveTemplate()">儲存</button>
     </div>
   </div></div>
 </div>
@@ -1675,7 +1807,7 @@ let CURRENT_WH_ID      = null;
 const _bsModal = {};
 ['modal-category','modal-product','modal-warehouse','modal-location',
  'modal-adjust','modal-create-order','modal-order-detail','modal-add-item','modal-user',
- 'modal-pos-sale','modal-delivery-order']
+ 'modal-pos-sale','modal-delivery-order','modal-template']
   .forEach(id => _bsModal[id] = new bootstrap.Modal(document.getElementById(id)));
 
 const _toastEl = document.getElementById('toast');
@@ -1799,11 +1931,20 @@ async function initApp() {
   document.getElementById('sidebar-username').textContent = UNAME;
   document.getElementById('sidebar-role').textContent = ROLE;
   document.getElementById('topbar-user').textContent = UNAME;
+
+  // 先套用使用者模板（控制頁面顯示）
+  const meR = await api('GET', '/auth/me');
+  if (meR.ok && meR.data.pages_enabled) {
+    _applyPagesEnabled(meR.data.pages_enabled);
+  }
+
+  // 角色硬性限制（最後套用，不可被模板覆蓋）
   if (ROLE !== 'admin') document.getElementById('nav-users').style.display = 'none';
   if (ROLE === 'viewer') {
     document.querySelectorAll('#btn-add-cat,#btn-add-prod,#btn-add-wh,#btn-add-loc')
       .forEach(el => el && (el.style.display = 'none'));
   }
+
   await Promise.all([loadWarehouseCache(), loadProductCache(), loadCategoryCache()]);
   populateWarehouseFilters();
   navigateTo('dashboard');
@@ -1846,6 +1987,7 @@ const PAGE_TITLES = {
   'delivery-orders':'外送訂單', 'delivery-settings':'外送平台設定',
   menus: '菜單管理',
   settings: '系統設定',
+  'cust-orders': '訂單管理',
 };
 const PAGE_LOADERS = {
   dashboard:    loadDashboard,
@@ -1864,6 +2006,7 @@ const PAGE_LOADERS = {
   'delivery-settings': loadDeliverySettings,
   menus:        loadMenus,
   settings:     loadSettings,
+  'cust-orders': loadCustOrders,
 };
 
 function navigateTo(page) {
@@ -2868,58 +3011,119 @@ async function loadMovements() {
 // ════════════════════════════════════════════
 //  Users
 // ════════════════════════════════════════════
+let _allTemplates = [];   // 模板快取（供使用者 modal 下拉用）
+
 async function loadUsers() {
-  const r = await api('GET', '/user/');
-  if (!r.ok) return;
-  const users = r.data.data || [];
+  // 同時取使用者與模板（需要模板名稱顯示）
+  const [rU, rT] = await Promise.all([
+    api('GET', '/user/'),
+    api('GET', '/user/templates/'),
+  ]);
+  if (!rU.ok) return;
+  const users = rU.data.data || [];
+  _allTemplates = rT.ok ? (rT.data.data || []) : [];
+
+  const tmplMap = Object.fromEntries(_allTemplates.map(t => [t._id, t.name]));
   const roleColor = {admin:'danger', operator:'primary', viewer:'secondary'};
   const tbody = document.querySelector('#tbl-users tbody');
   if (!users.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">無使用者</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">無使用者</td></tr>';
     return;
   }
-  tbody.innerHTML = users.map(u => `
+  tbody.innerHTML = users.map(u => {
+    const tmplName = u.template_id ? (tmplMap[u.template_id] || u.template_id) : '';
+    const tmplBadge = tmplName
+      ? `<span class="badge bg-info text-dark">${tmplName}</span>`
+      : '<span class="text-muted small">—</span>';
+    return `
     <tr>
       <td><i class="bi bi-person-circle me-1 text-muted"></i><strong>${u.username}</strong></td>
       <td><span class="badge bg-${roleColor[u.role]||'secondary'}">${u.role}</span></td>
+      <td>${tmplBadge}</td>
       <td class="text-muted small">${fmtDate(u.created_at)}</td>
       <td>
         <button class="btn btn-sm btn-outline-primary me-1"
-          onclick="openUserModal('${u._id}','${u.username}','${u.role}')">
+          onclick="openUserModal('${u._id}','${u.username}','${u.role}','${u.template_id||''}')">
           <i class="bi bi-pencil"></i>
         </button>
-        <button class="btn btn-sm btn-outline-danger"
-          onclick="deleteUser('${u._id}','${u.username}')">
-          <i class="bi bi-trash"></i>
-        </button>
+        ${u.username === 'admin'
+          ? `<button class="btn btn-sm btn-outline-secondary" disabled title="系統管理員帳號不可刪除">
+               <i class="bi bi-lock-fill"></i>
+             </button>`
+          : `<button class="btn btn-sm btn-outline-danger"
+               onclick="deleteUser('${u._id}','${u.username}')">
+               <i class="bi bi-trash"></i>
+             </button>`
+        }
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
-function openUserModal(id, username, role) {
+function _populateTemplateSelect(selId, selectedId) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— 不指派 —</option>';
+  const roleLabel = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' };
+  _allTemplates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t._id;
+    opt.textContent = `${t.name}（${roleLabel[t.role] || t.role}）${t.is_system ? ' 🔒' : ''}`;
+    if (t._id === selectedId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function _updateRoleBadgeFromTemplate(templateId) {
+  const badge = document.getElementById('user-role-badge');
+  if (!badge) return;
+  const roleColor = { admin: 'danger', operator: 'primary', viewer: 'secondary' };
+  const roleLabel = { admin: 'Admin（管理員）', operator: 'Operator（操作員）', viewer: 'Viewer（唯讀）' };
+  const tmpl = _allTemplates.find(t => t._id === templateId);
+  if (tmpl) {
+    badge.textContent = roleLabel[tmpl.role] || tmpl.role;
+    badge.className = `badge bg-${roleColor[tmpl.role] || 'secondary'}`;
+  } else {
+    badge.textContent = '—';
+    badge.className = 'badge bg-secondary';
+  }
+}
+
+async function openUserModal(id, username, role, templateId) {
+  // 若 _allTemplates 還沒載入，先拉一次
+  if (!_allTemplates.length) {
+    const rT = await api('GET', '/user/templates/');
+    _allTemplates = rT.ok ? (rT.data.data || []) : [];
+  }
   document.getElementById('user-id').value       = id || '';
   document.getElementById('user-username').value = username || '';
   document.getElementById('user-username').disabled = !!id;
   document.getElementById('user-password').value = '';
-  document.getElementById('user-role').value     = role || 'viewer';
-  document.getElementById('pwd-required').style.display = id ? 'none' : 'inline';
+  document.getElementById('pwd-required').style.display  = id ? 'none' : 'inline';
+  // 新增時必填模板；編輯時可不改
+  document.getElementById('tmpl-required').style.display = id ? 'none' : 'inline';
+  _populateTemplateSelect('user-template', templateId || '');
+  _updateRoleBadgeFromTemplate(templateId || '');
   _bsModal['modal-user'].show();
 }
 
 async function saveUser() {
-  const id  = document.getElementById('user-id').value;
-  const pwd = document.getElementById('user-password').value;
-  const role= document.getElementById('user-role').value;
+  const id         = document.getElementById('user-id').value;
+  const pwd        = document.getElementById('user-password').value;
+  const templateId = document.getElementById('user-template').value;   // '' = 不指派/清除
   if (id) {
-    const body = {role};
+    // 編輯：更新密碼 + 模板（模板為空則清除）
+    const body = { template_id: templateId };
     if (pwd) body.password = pwd;
     const r = await api('PUT', `/user/${id}`, body);
     if (r.ok) { toast('已更新'); _bsModal['modal-user'].hide(); loadUsers(); }
     else toast(r.data.message || '更新失敗', 'danger');
   } else {
+    // 新增：必須選擇模板（角色由模板決定）
     const uname = document.getElementById('user-username').value.trim();
-    if (!uname || !pwd) return toast('帳號與密碼不得為空', 'danger');
-    const r = await api('POST', '/user/', {username: uname, password: pwd, role});
+    if (!uname || !pwd)  return toast('帳號與密碼不得為空', 'danger');
+    if (!templateId)     return toast('請選擇使用者模板', 'danger');
+    const r = await api('POST', '/user/', { username: uname, password: pwd, template_id: templateId });
     if (r.ok) { toast('已建立'); _bsModal['modal-user'].hide(); loadUsers(); }
     else toast(r.data.message || '建立失敗', 'danger');
   }
@@ -2930,6 +3134,240 @@ async function deleteUser(id, uname) {
   const r = await api('DELETE', `/user/${id}`);
   if (r.ok) { toast('已刪除'); loadUsers(); }
   else toast(r.data.message || '刪除失敗', 'danger');
+}
+
+// ════════════════════════════════════════════
+//  User Templates
+// ════════════════════════════════════════════
+async function loadTemplates() {
+  const [rT, rU] = await Promise.all([
+    api('GET', '/user/templates/'),
+    api('GET', '/user/'),
+  ]);
+  if (!rT.ok) return;
+  _allTemplates = rT.data.data || [];
+  const users   = rU.ok ? (rU.data.data || []) : [];
+
+  // 計算每個模板被幾個使用者使用
+  const usageMap = {};
+  users.forEach(u => { if (u.template_id) usageMap[u.template_id] = (usageMap[u.template_id] || 0) + 1; });
+
+  const roleColor = { admin: 'danger', operator: 'primary', viewer: 'secondary' };
+  const roleLabel = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' };
+  const tbody = document.querySelector('#tbl-templates tbody');
+  if (!_allTemplates.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">尚無使用者模板</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _allTemplates.map(t => {
+    const systemBadge = t.is_system
+      ? ' <span class="badge bg-warning text-dark ms-1"><i class="bi bi-lock-fill"></i> 系統</span>'
+      : '';
+    const deleteBtn = t.is_system ? '' : `
+        <button class="btn btn-sm btn-outline-danger"
+          onclick="deleteTemplate('${t._id}','${t.name}')">
+          <i class="bi bi-trash"></i>
+        </button>`;
+    return `
+    <tr>
+      <td><strong>${t.name}</strong>${systemBadge}</td>
+      <td><span class="badge bg-${roleColor[t.role]||'secondary'}">${roleLabel[t.role]||t.role}</span></td>
+      <td class="text-muted small">${t.description || '—'}</td>
+      <td class="text-center">${usageMap[t._id] || 0}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary me-1"
+          onclick="openTemplateModal('${t._id}')">
+          <i class="bi bi-pencil"></i>
+        </button>${deleteBtn}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function _renderTemplatePageCheckboxes(map) {
+  const el = document.getElementById('tmpl-pages-list');
+  if (!el) return;
+  const groups = {};
+  _NAV_PAGES.forEach(p => { (groups[p.group] = groups[p.group] || []).push(p); });
+  el.innerHTML = Object.entries(groups).map(([g, pages]) => `
+    <div class="col-12">
+      <div class="fw-semibold text-muted small mb-1"
+           style="font-size:.72rem;letter-spacing:.05em;text-transform:uppercase">${g}</div>
+      <div class="d-flex flex-wrap gap-2 mb-1">
+        ${pages.map(p => {
+          if (p.system) {
+            // 系統頁面：固定顯示，不可透過模板關閉
+            return `<div class="form-check form-check-inline" title="系統頁面，不可透過模板關閉">
+              <input class="form-check-input" type="checkbox"
+                id="tmpl-chk-${p.key}" value="${p.key}" checked disabled>
+              <label class="form-check-label small text-muted" for="tmpl-chk-${p.key}">
+                <i class="bi bi-lock-fill me-1" style="font-size:.7rem"></i>${p.label}</label>
+            </div>`;
+          }
+          const checked = map[p.key] !== false ? 'checked' : '';
+          return `<div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox"
+              id="tmpl-chk-${p.key}" value="${p.key}" ${checked}>
+            <label class="form-check-label small" for="tmpl-chk-${p.key}">${p.label}</label>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('<div class="col-12"><hr class="my-1"></div>');
+}
+
+async function openTemplateModal(tid) {
+  document.getElementById('tmpl-id').value        = tid || '';
+  document.getElementById('tmpl-name').value      = '';
+  document.getElementById('tmpl-desc').value      = '';
+  document.getElementById('tmpl-role').value      = 'viewer';
+  document.getElementById('tmpl-is-system').value = '';
+  document.getElementById('modal-template-title').textContent = tid ? '編輯使用者模板' : '新增使用者模板';
+
+  let pagesMap = {};
+  let isSystem = false;
+  if (tid) {
+    const tmpl = _allTemplates.find(t => t._id === tid);
+    if (tmpl) {
+      document.getElementById('tmpl-name').value = tmpl.name;
+      document.getElementById('tmpl-desc').value = tmpl.description || '';
+      document.getElementById('tmpl-role').value = tmpl.role || 'viewer';
+      isSystem = !!tmpl.is_system;
+      document.getElementById('tmpl-is-system').value = isSystem ? '1' : '';
+      pagesMap = tmpl.pages_enabled || {};
+    }
+  }
+  // 系統模板：鎖定名稱與角色
+  document.getElementById('tmpl-name').disabled = isSystem;
+  document.getElementById('tmpl-role').disabled = isSystem;
+  const notice = document.getElementById('tmpl-system-notice');
+  if (notice) notice.classList.toggle('d-none', !isSystem);
+
+  _renderTemplatePageCheckboxes(pagesMap);
+  _bsModal['modal-template'].show();
+}
+
+async function saveTemplate() {
+  const tid      = document.getElementById('tmpl-id').value;
+  const isSystem = document.getElementById('tmpl-is-system').value === '1';
+  const name     = document.getElementById('tmpl-name').value.trim();
+  const role     = document.getElementById('tmpl-role').value;
+  const desc     = document.getElementById('tmpl-desc').value.trim();
+  if (!name) return toast('模板名稱不得為空', 'danger');
+
+  // 收集頁面勾選狀態（系統頁面固定啟用，不寫入 pages_enabled 以避免誤覆蓋）
+  const pages = {};
+  _NAV_PAGES.forEach(p => {
+    if (p.system) return;   // 系統頁鎖定，不透過模板控制
+    const chk = document.getElementById(`tmpl-chk-${p.key}`);
+    if (chk) pages[p.key] = chk.checked;
+  });
+
+  // 系統模板：只送 pages_enabled（名稱、角色由後端保護）
+  const body = isSystem
+    ? { pages_enabled: pages }
+    : { name, role, description: desc, pages_enabled: pages };
+
+  const r = tid
+    ? await api('PUT',  `/user/templates/${tid}`, body)
+    : await api('POST', '/user/templates/', body);
+
+  if (r.ok) {
+    const msg = tid ? `模板已更新${r.data?.synced_users ? `（已同步 ${r.data.synced_users} 個使用者角色）` : ''}` : '模板已建立';
+    toast(msg, 'success');
+    _bsModal['modal-template'].hide();
+    loadTemplates();
+  } else {
+    toast(r.data?.message || '儲存失敗', 'danger');
+  }
+}
+
+async function deleteTemplate(tid, name) {
+  if (!confirm(`確定刪除使用者模板「${name}」？\n已指派此模板的使用者角色與頁面設定將不再受此模板控制。`)) return;
+  const r = await api('DELETE', `/user/templates/${tid}`);
+  if (r.ok) { toast('模板已刪除'); loadTemplates(); }
+  else toast(r.data?.message || '刪除失敗', 'danger');
+}
+
+// ════════════════════════════════════════════
+//  Customer Orders
+// ════════════════════════════════════════════
+const CO_STATUS_LABEL = {
+  pending: '待處理', processing: '處理中', completed: '已完成', cancelled: '已取消'
+};
+const CO_STATUS_BADGE = {
+  pending:    'bg-warning text-dark',
+  processing: 'bg-primary',
+  completed:  'bg-success',
+  cancelled:  'bg-secondary',
+};
+
+async function loadCustOrders() {
+  const status = document.getElementById('co-status-filter')?.value || '';
+  const date   = document.getElementById('co-date-filter')?.value   || '';
+  const qs = new URLSearchParams();
+  if (status) qs.set('status', status);
+  if (date)   qs.set('date',   date.replace(/-/g,''));
+  qs.set('limit', '200');
+
+  const [ordR, stR] = await Promise.all([
+    api('GET', `/customer-order/?${qs}`),
+    api('GET', '/customer-order/stats'),
+  ]);
+
+  if (stR.ok) _renderCoStats(stR.data.raw);
+  if (!ordR.ok) return;
+
+  const tbody = document.querySelector('#tbl-cust-orders tbody');
+  const rows  = ordR.data.data || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">無訂單資料</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(o => {
+    const items = (o.items || []).map(it =>
+      `${it.item_name}×${it.qty}` +
+      (it.customizations?.length ? ` (${it.customizations.join('·')})` : '')
+    ).join('、');
+    const badge = `<span class="badge ${CO_STATUS_BADGE[o.status]||'bg-secondary'}">${CO_STATUS_LABEL[o.status]||o.status}</span>`;
+    const time  = o.created_at ? new Date(o.created_at+'Z').toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    const actions = (o.status === 'pending' || o.status === 'processing')
+      ? `<button class="btn btn-xs btn-outline-success me-1" onclick="updateCustOrderStatus('${o._id}','${o.status==='pending'?'processing':'completed'}')">
+           ${o.status==='pending'?'處理':'完成'}
+         </button>
+         <button class="btn btn-xs btn-outline-danger" onclick="updateCustOrderStatus('${o._id}','cancelled')">取消</button>`
+      : `<span class="text-muted small">${o.handled_by||'-'}</span>`;
+    return `<tr>
+      <td class="fw-semibold">${o.order_no}</td>
+      <td>${o.table_no}</td>
+      <td class="small text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${items}">${items}</td>
+      <td class="text-end">$${o.total}</td>
+      <td>${badge}</td>
+      <td class="small text-muted">${time}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+function _renderCoStats(raw) {
+  const el = document.getElementById('co-stats');
+  if (!el || !raw) return;
+  const items = [
+    { label:'待處理', key:'pending',    cls:'text-warning' },
+    { label:'處理中', key:'processing', cls:'text-primary' },
+    { label:'已完成', key:'completed',  cls:'text-success' },
+    { label:'已取消', key:'cancelled',  cls:'text-muted'   },
+  ];
+  el.innerHTML = items.map(i =>
+    `<span class="small"><span class="${i.cls} fw-bold">${raw[i.key]?.count??0}</span> ${i.label}，$${raw[i.key]?.total??0}</span>`
+  ).join('<span class="text-muted">·</span>');
+}
+
+async function updateCustOrderStatus(oid, status) {
+  if (status === 'cancelled' && !confirm('確定取消此訂單？')) return;
+  const r = await api('PUT', `/customer-order/${oid}/status`, {status});
+  if (r.ok) { loadCustOrders(); }
+  else toast(r.data?.message || '操作失敗', 'danger');
 }
 
 // ════════════════════════════════════════════
@@ -4284,6 +4722,49 @@ async function loadSettings() {
     sel.insertAdjacentHTML('beforeend',
       `<option value="${w._id}">${w.name}</option>`));
   sel.value = _settingsCache.default_warehouse_id || '';
+
+}
+
+// 所有可開關的頁面定義
+const _NAV_PAGES = [
+  { key: 'cust-orders',      label: '訂單管理',   group: '顧客點單' },
+  { key: 'kitchen-link',    label: '備餐顯示',   group: '顧客點單' },
+  { key: 'order-link',      label: '顧客點單頁', group: '顧客點單' },
+  { key: 'categories',       label: '產品分類',   group: '商品管理' },
+  { key: 'products',         label: '產品資料',   group: '商品管理' },
+  { key: 'warehouses',       label: '倉庫管理',   group: '倉儲管理' },
+  { key: 'inventory',        label: '庫存查詢',   group: '倉儲管理' },
+  { key: 'inbound',          label: '入庫管理',   group: '出入庫' },
+  { key: 'outbound',         label: '出庫管理',   group: '出入庫' },
+  { key: 'movements',        label: '庫存移動',   group: '出入庫' },
+  { key: 'quick-io',         label: '快速出入庫', group: '出入庫' },
+  { key: 'pos-sales',        label: '銷售記錄',   group: 'POS 收銀' },
+  { key: 'pos-report',       label: '日結報表',   group: 'POS 收銀' },
+  { key: 'menus',            label: '菜單管理',   group: 'POS 收銀' },
+  { key: 'pos-link',         label: '開啟收銀台', group: 'POS 收銀' },
+  { key: 'delivery-orders',  label: '外送訂單',   group: '外送平台' },
+  { key: 'delivery-settings',label: '平台設定',   group: '外送平台' },
+  { key: 'users',            label: '使用者管理', group: '系統', system: true },
+  { key: 'logs',             label: '操作紀錄',   group: '系統', system: true },
+];
+
+function _applyPagesEnabled(map) {
+  // 套用每個可開關的 nav-link
+  _NAV_PAGES.forEach(p => {
+    const el = document.querySelector(`[data-nav-key="${p.key}"]`);
+    if (!el) return;
+    const show = map[p.key] !== false;
+    el.style.display = show ? '' : 'none';
+  });
+  // 若某 group 的所有項目都隱藏，隱藏該 group 標題
+  const groups = {};
+  _NAV_PAGES.forEach(p => { (groups[p.group] = groups[p.group] || []).push(p); });
+  Object.entries(groups).forEach(([g, pages]) => {
+    const hdr = document.querySelector(`[data-nav-group="${g}"]`);
+    if (!hdr) return;
+    const anyVisible = pages.some(p => map[p.key] !== false);
+    hdr.style.display = anyVisible ? '' : 'none';
+  });
 }
 
 async function saveSettings() {

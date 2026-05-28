@@ -1,0 +1,27 @@
+# ============================================================
+# Stage 1：Node.js 建置 Vue 3 前端
+# ============================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+# 先只複製 package 檔，讓 npm install 這層可被 cache
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm ci
+
+# 再複製其餘原始碼，執行 build
+# vite.config.ts 的 outDir: '../frontend-dist'
+# → 產物輸出至 /build/frontend-dist/
+COPY frontend/ ./frontend/
+RUN cd frontend && npm run build
+
+# ============================================================
+# Stage 2：nginx 僅保留靜態產物，不含 Node/npm
+# ============================================================
+FROM nginx:1.26-alpine
+
+# 將 builder 的打包結果複製進 nginx 預設目錄
+COPY --from=builder /build/frontend-dist /usr/share/nginx/html
+
+# nginx.conf / 範本 / 憑證 仍由 docker-compose volume 掛入
+# CMD 沿用 nginx 官方映像的預設值

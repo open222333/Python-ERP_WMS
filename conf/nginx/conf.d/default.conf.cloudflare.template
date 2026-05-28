@@ -13,11 +13,10 @@
 #   3. SSL/TLS 模式改為「Full (Strict)」以確保端到端加密
 # ============================================================
 upstream flask_app {
-    server app:5000;
+    server app:${FLASK_PORT};
 }
 
 # HTTP → HTTPS 強制導向
-# （Cloudflare 啟用「Always Use HTTPS」後此段可省略，但保留以備直連伺服器時用）
 server {
     listen      80;
     server_name ${DOMAIN};
@@ -50,7 +49,6 @@ server {
 
     # --------------------------------------------------------
     # 還原訪客真實 IP（Cloudflare 會用自己的 IP 連進來）
-    # 讓 $remote_addr 回到真實訪客 IP
     # 清單來源：https://www.cloudflare.com/ips/
     # --------------------------------------------------------
     # IPv4
@@ -77,10 +75,14 @@ server {
     set_real_ip_from  2405:8100::/32;
     set_real_ip_from  2a06:98c0::/29;
     set_real_ip_from  2c0f:f248::/32;
-    # 使用 CF-Connecting-IP header 取得真實 IP
     real_ip_header    CF-Connecting-IP;
 
-    location / {
+    # Vue SPA 靜態檔
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # ── Flask API 路徑（全部反向代理到 Flask）───────────────
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|settings|customer-order|apidocs)/ {
         proxy_pass         http://flask_app;
         proxy_http_version 1.1;
 
@@ -95,7 +97,17 @@ server {
         proxy_read_timeout    120s;
     }
 
-    location /nginx-health {
+    # Swagger UI
+    location = /apidocs {
+        return 301 https://$host/apidocs/;
+    }
+
+    # ── SPA 路由 fallback ────────────────────────────────────
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /nginx-health {
         access_log  off;
         return      200 "ok\n";
         add_header  Content-Type text/plain;

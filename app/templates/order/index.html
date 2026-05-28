@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>點餐</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root { --accent:#3b82f6; --cart-h:72px; }
+    body { background:#f8f9fa; }
+
+    /* ── 頂部 ── */
+    .top-bar {
+      position: sticky; top: 0; z-index: 50;
+      background: #fff; border-bottom: 1px solid #e2e8f0;
+      padding: .6rem 1rem;
+    }
+    .top-bar h5 { margin: 0; font-size: 1rem; font-weight: 700; }
+
+    /* ── 分類 tabs ── */
+    #cat-tabs {
+      position: sticky; top: 53px; z-index: 40;
+      background: #fff; border-bottom: 1px solid #e2e8f0;
+      display: flex; overflow-x: auto; gap: 0;
+      scrollbar-width: none;
+    }
+    #cat-tabs::-webkit-scrollbar { display: none; }
+    .cat-tab {
+      flex-shrink: 0; padding: .55rem 1rem; font-size: .85rem; font-weight: 600;
+      border: none; background: none; color: #64748b; border-bottom: 2px solid transparent;
+      cursor: pointer; white-space: nowrap;
+    }
+    .cat-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── 品項 ── */
+    .item-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: .75rem; padding: 1rem;
+    }
+    .item-card {
+      background: #fff; border-radius: .75rem; overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08); cursor: pointer; transition: transform .1s;
+    }
+    .item-card:active { transform: scale(.97); }
+    .item-card.out-of-stock { opacity: .45; cursor: default; }
+    .item-img {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #f1f5f9;
+      display: flex; align-items: center; justify-content: center; color: #94a3b8;
+      font-size: 2rem;
+    }
+    .item-img img { width: 100%; height: 100%; object-fit: cover; }
+    .item-info { padding: .6rem .75rem; }
+    .item-name { font-weight: 600; font-size: .88rem; margin-bottom: .2rem; }
+    .item-price { color: var(--accent); font-weight: 700; font-size: .9rem; }
+
+    /* ── 購物車按鈕 ── */
+    #cart-btn {
+      position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+      z-index: 60; min-width: 220px;
+      box-shadow: 0 4px 16px rgba(59,130,246,.4);
+    }
+
+    /* ── 客製化 modal body ── */
+    #cust-body { max-height: 55vh; overflow-y: auto; }
+
+    /* ── 確認送出頁 ── */
+    #page-confirm { display: none; }
+    #page-success  { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ════════ 頂部 ════════ -->
+<div class="top-bar">
+  <h5 id="menu-title"><i class="bi bi-cup-hot me-1 text-primary"></i>點餐</h5>
+</div>
+
+<!-- ════════ 分類 tabs ════════ -->
+<div id="cat-tabs"></div>
+
+<!-- ════════ 主頁：品項列表 ════════ -->
+<div id="page-menu">
+  <div id="item-grid" class="item-grid"></div>
+  <!-- 購物車按鈕 -->
+  <button id="cart-btn" class="btn btn-primary rounded-pill px-4 py-2 d-none"
+          onclick="openCart()">
+    <i class="bi bi-cart3 me-1"></i>
+    <span id="cart-count">0</span> 項 ·
+    <span id="cart-total-btn">$0</span>
+    <span class="ms-2">查看購物車 →</span>
+  </button>
+</div>
+
+<!-- ════════ 購物車 / 確認頁 ════════ -->
+<div id="page-confirm" class="container py-3" style="max-width:520px">
+  <button class="btn btn-link text-secondary mb-2 ps-0" onclick="backToMenu()">
+    <i class="bi bi-arrow-left me-1"></i>繼續點餐
+  </button>
+  <h5 class="fw-bold mb-3">確認訂單</h5>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold">桌號 / 姓名 <span class="text-danger">*</span></label>
+    <input id="table-no" type="text" class="form-control" placeholder="例如：3號桌 或 王小明">
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body p-2">
+      <div id="cart-items-list"></div>
+      <div class="d-flex justify-content-between fw-bold border-top pt-2 mt-2 px-1">
+        <span>合計</span>
+        <span class="text-primary" id="cart-total-confirm">$0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">備註（選填）</label>
+    <textarea id="order-remark" class="form-control" rows="2" placeholder="例如：不要香菜、過敏資訊"></textarea>
+  </div>
+
+  <button class="btn btn-primary w-100 py-2 fw-bold" onclick="submitOrder()">
+    <i class="bi bi-check-circle me-1"></i>送出訂單
+  </button>
+</div>
+
+<!-- ════════ 成功頁 ════════ -->
+<div id="page-success" class="container py-5 text-center" style="max-width:400px">
+  <div class="display-1 mb-3">🎉</div>
+  <h4 class="fw-bold mb-1">訂單已送出！</h4>
+  <p class="text-muted mb-1">訂單編號</p>
+  <h3 class="text-primary fw-bold mb-4" id="success-order-no">-</h3>
+  <p class="text-muted small">請稍候，我們將盡快為您備餐。</p>
+  <button class="btn btn-outline-primary mt-3" onclick="resetOrder()">
+    <i class="bi bi-plus-circle me-1"></i>再次點餐
+  </button>
+</div>
+
+<!-- ════════ 客製化 Modal ════════ -->
+<div class="modal fade" id="modal-cust" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <div class="fw-bold" id="cust-item-name"></div>
+          <div class="text-primary small" id="cust-item-price"></div>
+        </div>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3" id="cust-body"></div>
+      <div class="modal-footer py-2">
+        <div class="d-flex align-items-center gap-2 me-auto">
+          <button class="btn btn-outline-secondary btn-sm" onclick="custQty(-1)">－</button>
+          <span id="cust-qty" class="fw-bold" style="min-width:1.5rem;text-align:center">1</span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="custQty(1)">＋</button>
+        </div>
+        <button class="btn btn-primary" onclick="addToCart()">
+          加入購物車 <span id="cust-total-price"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════
+let _menu    = null;
+let _cart    = [];   // [{item_id, item_name, qty, price, customizations, note}]
+let _custItem = null;
+let _custQty  = 1;
+let _custModal = null;
+
+// ══════════════════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════════════════
+async function init() {
+  _custModal = new bootstrap.Modal(document.getElementById('modal-cust'));
+  await loadMenu();
+}
+
+async function loadMenu() {
+  const urlParams = new URLSearchParams(location.search);
+  const menuId = urlParams.get('menu_id') || '';
+  const qs = menuId ? `?menu_id=${menuId}` : '';
+  try {
+    const r = await fetch(`/customer-order/menu${qs}`);
+    const data = await r.json();
+    if (!data.success) { showError(data.message || '無法載入菜單'); return; }
+    _menu = data.data;
+    renderMenu();
+  } catch(e) {
+    showError('網路錯誤，請重新整理');
+  }
+}
+
+function showError(msg) {
+  document.getElementById('item-grid').innerHTML =
+    `<div class="col-12 text-center py-5 text-muted"><i class="bi bi-exclamation-circle fs-1"></i><p class="mt-2">${msg}</p></div>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  Render Menu
+// ══════════════════════════════════════════════════════
+function renderMenu() {
+  if (!_menu) return;
+  document.getElementById('menu-title').innerHTML =
+    `<i class="bi bi-cup-hot me-1 text-primary"></i>${_menu.name}`;
+
+  const items    = (_menu.items || []).filter(i => i.status === 1);
+  const catOrder = (_menu.categories || []).map(c => c.name);
+  const cats     = [...new Set(items.map(i => i.category || '其他'))];
+  cats.sort((a, b) => {
+    const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+  });
+
+  // Tabs
+  const tabs = document.getElementById('cat-tabs');
+  tabs.innerHTML = ['全部', ...cats].map((c, i) =>
+    `<button class="cat-tab${i===0?' active':''}" onclick="filterCat('${c}',this)">${c}</button>`
+  ).join('');
+
+  // Items
+  renderItems(items);
+}
+
+function filterCat(cat, btn) {
+  document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  btn.scrollIntoView({inline:'center', behavior:'smooth'});
+  const items = (_menu.items || []).filter(i => i.status === 1);
+  renderItems(cat === '全部' ? items : items.filter(i => (i.category||'其他') === cat));
+}
+
+function renderItems(items) {
+  const grid = document.getElementById('item-grid');
+  if (!items.length) {
+    grid.innerHTML = '<p class="text-muted text-center py-4 col-12">目前無品項</p>';
+    return;
+  }
+  grid.innerHTML = items.map(it => `
+    <div class="item-card" onclick="openCust('${it._id}')">
+      <div class="item-img">
+        ${it.image_url
+          ? `<img src="${it.image_url}" alt="${it.name}">`
+          : `<i class="bi bi-cup-straw"></i>`}
+      </div>
+      <div class="item-info">
+        <div class="item-name">${it.name}</div>
+        <div class="item-price">$${it.price}</div>
+        ${it.description ? `<div class="text-muted" style="font-size:.75rem">${it.description}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  客製化 Modal
+// ══════════════════════════════════════════════════════
+function openCust(itemId) {
+  const items = _menu.items || [];
+  const it = items.find(i => i._id === itemId);
+  if (!it) return;
+  _custItem = it;
+  _custQty  = 1;
+
+  document.getElementById('cust-item-name').textContent  = it.name;
+  document.getElementById('cust-item-price').textContent = `$${it.price}`;
+
+  // 組合選項（applied_group_ids + customizations）
+  const ogs = _menu.option_groups || [];
+  const appliedOgs = (it.applied_group_ids || []).map(gid =>
+    ogs.find(og => og._id === gid)
+  ).filter(Boolean);
+
+  const body = document.getElementById('cust-body');
+  let html = '';
+
+  // 選項群組
+  appliedOgs.forEach(og => {
+    html += `<div class="mb-3">
+      <div class="fw-semibold small mb-1">${og.name}${og.required ? ' <span class="text-danger">*</span>':''}</div>`;
+    (og.choices || []).forEach((ch, i) => {
+      const type = og.type === 'multiple' ? 'checkbox' : 'radio';
+      const name = `og-${og._id}`;
+      const id   = `${name}-${i}`;
+      const extra = ch.extra_price ? ` <span class="text-muted small">+$${ch.extra_price}</span>` : '';
+      html += `<div class="form-check">
+        <input class="form-check-input" type="${type}" name="${name}" id="${id}" value="${ch.name}" data-extra="${ch.extra_price||0}" ${i===0&&og.required?'checked':''}>
+        <label class="form-check-label small" for="${id}">${ch.name}${extra}</label>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  // 自訂選項（customizations）
+  (it.customizations || []).forEach(c => {
+    html += `<div class="mb-3">
+      <div class="fw-semibold small mb-1">${c.name}${c.required ? ' <span class="text-danger">*</span>':''}</div>`;
+    (c.choices || []).forEach((ch, i) => {
+      const type = c.type === 'multiple' ? 'checkbox' : 'radio';
+      const nm   = `cust-${c.name}`;
+      const id   = `${nm}-${i}`;
+      const extra = ch.extra_price ? ` <span class="text-muted small">+$${ch.extra_price}</span>` : '';
+      html += `<div class="form-check">
+        <input class="form-check-input" type="${type}" name="${nm}" id="${id}" value="${ch.name}" data-extra="${ch.extra_price||0}" ${i===0&&c.required?'checked':''}>
+        <label class="form-check-label small" for="${id}">${ch.name}${extra}</label>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  // 備註
+  html += `<div class="mt-2">
+    <label class="form-label small">備註（選填）</label>
+    <input type="text" class="form-control form-control-sm" id="item-note" placeholder="例如：不要冰">
+  </div>`;
+
+  body.innerHTML = html || '<p class="text-muted small">無客製化選項</p>';
+  updateCustPrice();
+  _custModal.show();
+}
+
+function custQty(d) {
+  _custQty = Math.max(1, _custQty + d);
+  document.getElementById('cust-qty').textContent = _custQty;
+  updateCustPrice();
+}
+
+function updateCustPrice() {
+  if (!_custItem) return;
+  let extra = 0;
+  document.querySelectorAll('#cust-body input:checked').forEach(el => {
+    extra += parseFloat(el.dataset.extra || 0);
+  });
+  document.getElementById('#cust-body input').addEventListener?.('change', updateCustPrice);
+  const total = (_custItem.price + extra) * _custQty;
+  document.getElementById('cust-total-price').textContent = `$${total}`;
+}
+
+// 監聽選項變更更新價格
+document.getElementById('cust-body').addEventListener('change', updateCustPrice);
+
+function addToCart() {
+  const it = _custItem;
+  if (!it) return;
+
+  // 收集客製化
+  const custs = {};
+  let extra = 0;
+  document.querySelectorAll('#cust-body input').forEach(el => {
+    if (!el.name) return;
+    if (!custs[el.name]) custs[el.name] = [];
+    if (el.checked || el.type === 'text') {
+      if (el.type !== 'text' && el.type !== 'radio' && el.type !== 'checkbox') return;
+      if ((el.type === 'radio' || el.type === 'checkbox') && el.checked) {
+        custs[el.name].push(el.value);
+        extra += parseFloat(el.dataset.extra || 0);
+      }
+    }
+  });
+  const note = (document.getElementById('item-note')?.value || '').trim();
+  const custArr = Object.entries(custs)
+    .map(([k, v]) => `${k}: ${v.join('、')}`)
+    .filter(s => !s.endsWith(': '));
+
+  const unitPrice = it.price + extra;
+
+  // 判斷是否可合併（相同品項 + 相同客製化 + 相同備註）
+  const sig = JSON.stringify({id: it._id, custs, note});
+  const existing = _cart.find(c => c._sig === sig);
+  if (existing) {
+    existing.qty += _custQty;
+  } else {
+    _cart.push({
+      _sig:           sig,
+      item_id:        it._id,
+      item_name:      it.name,
+      qty:            _custQty,
+      price:          unitPrice,
+      customizations: custArr,
+      note:           note,
+    });
+  }
+  _custModal.hide();
+  updateCartBtn();
+}
+
+// ══════════════════════════════════════════════════════
+//  Cart
+// ══════════════════════════════════════════════════════
+function updateCartBtn() {
+  const count = _cart.reduce((s, c) => s + c.qty, 0);
+  const total = _cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const btn = document.getElementById('cart-btn');
+  document.getElementById('cart-count').textContent = count;
+  document.getElementById('cart-total-btn').textContent = `$${total}`;
+  btn.classList.toggle('d-none', count === 0);
+}
+
+function cartTotal() {
+  return _cart.reduce((s, c) => s + c.price * c.qty, 0);
+}
+
+function openCart() {
+  // 渲染購物車清單
+  const list = document.getElementById('cart-items-list');
+  list.innerHTML = _cart.map((c, i) => `
+    <div class="d-flex align-items-start gap-2 py-2 border-bottom">
+      <div class="flex-grow-1">
+        <div class="fw-semibold small">${c.item_name}</div>
+        ${c.customizations.length ? `<div class="text-muted" style="font-size:.75rem">${c.customizations.join(' · ')}</div>` : ''}
+        ${c.note ? `<div class="text-muted" style="font-size:.75rem">備註：${c.note}</div>` : ''}
+        <div class="text-primary small">$${c.price} × ${c.qty} = $${c.price * c.qty}</div>
+      </div>
+      <div class="d-flex align-items-center gap-1 flex-shrink-0">
+        <button class="btn btn-outline-secondary btn-sm px-2 py-0" onclick="changeQty(${i}, -1)">－</button>
+        <span class="small fw-bold" style="min-width:1.2rem;text-align:center">${c.qty}</span>
+        <button class="btn btn-outline-secondary btn-sm px-2 py-0" onclick="changeQty(${i}, 1)">＋</button>
+      </div>
+    </div>
+  `).join('') || '<p class="text-muted small py-2">購物車是空的</p>';
+
+  document.getElementById('cart-total-confirm').textContent = `$${cartTotal()}`;
+  showPage('confirm');
+}
+
+function changeQty(idx, d) {
+  _cart[idx].qty += d;
+  if (_cart[idx].qty <= 0) _cart.splice(idx, 1);
+  updateCartBtn();
+  if (_cart.length === 0) { backToMenu(); return; }
+  openCart();
+}
+
+function backToMenu() {
+  showPage('menu');
+}
+
+// ══════════════════════════════════════════════════════
+//  Submit Order
+// ══════════════════════════════════════════════════════
+async function submitOrder() {
+  const tableNo = document.getElementById('table-no').value.trim();
+  if (!tableNo) {
+    document.getElementById('table-no').focus();
+    document.getElementById('table-no').classList.add('is-invalid');
+    return;
+  }
+  document.getElementById('table-no').classList.remove('is-invalid');
+  if (!_cart.length) return;
+
+  const payload = {
+    table_no: tableNo,
+    items:    _cart.map(c => ({
+      item_id:        c.item_id,
+      item_name:      c.item_name,
+      qty:            c.qty,
+      price:          c.price,
+      customizations: c.customizations,
+      note:           c.note,
+    })),
+    total:    cartTotal(),
+    remark:   document.getElementById('order-remark').value.trim(),
+    menu_id:  _menu?._id || '',
+  };
+
+  try {
+    const r = await fetch('/customer-order/', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!data.success) { alert(data.message || '送出失敗，請重試'); return; }
+    document.getElementById('success-order-no').textContent = data.order_no;
+    _cart = [];
+    updateCartBtn();
+    showPage('success');
+  } catch(e) {
+    alert('網路錯誤，請重試');
+  }
+}
+
+function resetOrder() {
+  _cart = [];
+  updateCartBtn();
+  document.getElementById('table-no').value    = '';
+  document.getElementById('order-remark').value = '';
+  showPage('menu');
+}
+
+// ══════════════════════════════════════════════════════
+//  Page switcher
+// ══════════════════════════════════════════════════════
+function showPage(name) {
+  ['menu','confirm','success'].forEach(p =>
+    document.getElementById(`page-${p}`).style.display = p === name ? '' : 'none'
+  );
+  if (name === 'menu') {
+    document.getElementById('cat-tabs').style.display = '';
+  } else {
+    document.getElementById('cat-tabs').style.display = 'none';
+  }
+  window.scrollTo(0, 0);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

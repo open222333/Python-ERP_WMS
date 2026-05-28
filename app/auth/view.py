@@ -4,6 +4,7 @@ from flask_jwt_extended import (
     jwt_required, get_jwt_identity,
 )
 from src.models.user import User
+from src.models.user_template import UserTemplate
 
 app_auth = Blueprint('auth', __name__)
 
@@ -101,7 +102,7 @@ def refresh():
 @jwt_required()
 def me():
     """
-    驗證 token 並回傳目前使用者資訊
+    驗證 token 並回傳目前使用者資訊（含角色模板頁面設定）
     ---
     tags:
       - Auth
@@ -112,9 +113,12 @@ def me():
         description: Token 有效
         schema:
           properties:
-            success:  {type: boolean}
-            username: {type: string}
-            role:     {type: string}
+            success:       {type: boolean}
+            username:      {type: string}
+            role:          {type: string}
+            template_id:   {type: string}
+            template_name: {type: string}
+            pages_enabled: {type: object, description: "模板頁面顯示設定，無模板時為 null"}
       401:
         description: Token 無效或過期
     """
@@ -122,4 +126,22 @@ def me():
     user = User.find_by_username(username)
     if not user:
         return jsonify({'success': False, 'message': '使用者不存在'}), 401
-    return jsonify({'success': True, 'username': username, 'role': user.get('role', 'viewer')})
+
+    template_id   = user.get('template_id')
+    template_name = None
+    pages_enabled = None
+
+    if template_id:
+        tmpl = UserTemplate.find_by_id(str(template_id))
+        if tmpl:
+            template_name = tmpl.get('name')
+            pages_enabled = tmpl.get('pages_enabled')
+
+    return jsonify({
+        'success':       True,
+        'username':      username,
+        'role':          user.get('role', 'viewer'),
+        'template_id':   str(template_id) if template_id else None,
+        'template_name': template_name,
+        'pages_enabled': pages_enabled,   # None 表示無模板（顯示全部）
+    })

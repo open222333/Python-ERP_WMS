@@ -407,22 +407,24 @@ def sync_menu(platform):
     # ── 取得平台菜單 ──────────────────────────────
     try:
         if platform == 'ubereats':
-            from app.delivery.adapters.ubereats import parse_menu_items
+            from app.delivery.adapters.ubereats import parse_menu_items, parse_option_groups
             client = _get_ubereats_client()
             if not client or not client.client_id:
                 return jsonify({'success': False,
                                 'message': 'UberEats 尚未設定 API 金鑰'}), 400
-            raw_menu = client.get_menu()
-            items    = parse_menu_items(raw_menu)
+            raw_menu      = client.get_menu()
+            items         = parse_menu_items(raw_menu)
+            option_groups = parse_option_groups(raw_menu)
 
         elif platform == 'foodpanda':
-            from app.delivery.adapters.foodpanda import parse_menu_items
+            from app.delivery.adapters.foodpanda import parse_menu_items, parse_option_groups
             client = _get_foodpanda_client()
             if not client or not client.api_key:
                 return jsonify({'success': False,
                                 'message': 'foodpanda 尚未設定 API 金鑰'}), 400
-            raw_menu = client.get_menu()
-            items    = parse_menu_items(raw_menu)
+            raw_menu      = client.get_menu()
+            items         = parse_menu_items(raw_menu)
+            option_groups = parse_option_groups(raw_menu)
 
         else:
             return jsonify({'success': False, 'message': '不支援的平台'}), 400
@@ -438,7 +440,7 @@ def sync_menu(platform):
 
     if platform_menu:
         mid = platform_menu['_id']
-        platform_menu = Menu.find_by_id(mid)   # 重新取含品項的完整資料
+        platform_menu = Menu.find_by_id(mid)   # 重新取含品項與選項組的完整資料
     else:
         mid = Menu.create(
             name=menu_name,
@@ -447,7 +449,52 @@ def sync_menu(platform):
         )
         platform_menu = Menu.find_by_id(mid)
 
-    # 現有品項：name.lower() → item dict
+    # ── 同步選項組（modifier / topping groups）───
+    # name.lower() → existing WMS option_group dict
+    existing_ogs = {
+        og['name'].lower(): og
+        for og in (platform_menu.get('option_groups') or [])
+    }
+    # 平台 external_id → WMS _id 的對照表（供後續品項套用）
+    ext_id_to_wms_id: dict = {}
+    groups_created = groups_updated = 0
+
+    for og in option_groups:
+        og_name = (og.get('name') or '').strip()
+        if not og_name:
+            continue
+        choices = [
+            {
+                'name':        (ch.get('name') or '').strip(),
+                'extra_price': float(ch.get('extra_price', 0)),
+                'is_default':  bool(ch.get('is_default', False)),
+            }
+            for ch in (og.get('choices') or [])
+            if (ch.get('name') or '').strip()
+        ]
+        og_payload = {
+            'name':     og_name,
+            'type':     og.get('type', 'single'),
+            'required': og.get('required', False),
+            'choices':  choices,
+        }
+        ext_id = og.get('external_id', '')
+
+        if og_name.lower() in existing_ogs:
+            wms_og = existing_ogs[og_name.lower()]
+            wms_id = wms_og['_id']
+            Menu.update_option_group(mid, wms_id, og_payload)
+            groups_updated += 1
+        else:
+            new_og = Menu.add_option_group(mid, og_payload)
+            wms_id = new_og['_id']
+            groups_created += 1
+            existing_ogs[og_name.lower()] = new_og  # 避免同批次重複建立
+
+        if ext_id:
+            ext_id_to_wms_id[ext_id] = wms_id
+
+    # ── 現有品項：name.lower() → item dict ───────
     existing_items = {
         i['name'].lower(): i
         for i in (platform_menu.get('items') or [])
@@ -467,14 +514,20 @@ def sync_menu(platform):
         desc     = item.get('description', '').strip()
         category = item.get('category', '').strip()
 
+        # 將平台 modifier_group_ids 轉為 WMS applied_group_ids
+        ext_gids   = item.get('modifier_group_ids') or []
+        applied_ids = [ext_id_to_wms_id[eid] for eid in ext_gids if eid in ext_id_to_wms_id]
+
         if name.lower() in existing_items:
-            # 更新既有品項：售價必更新；描述、分類有值才覆蓋
+            # 更新既有品項：售價必更新；描述 / 分類 / 選項組有值才覆蓋
             existing = existing_items[name.lower()]
             upd = {'price': price}
             if desc:
                 upd['description'] = desc
             if category:
                 upd['category'] = category
+            if applied_ids:
+                upd['applied_group_ids'] = applied_ids
             Menu.update_item(mid, existing['_id'], upd)
             updated += 1
         else:
@@ -486,19 +539,23 @@ def sync_menu(platform):
                 'category':          category,
                 'consume_inventory': False,
                 'sort_order':        0,
+                'applied_group_ids': applied_ids,
             })
             created += 1
 
     Log.create(operator, '菜單從平台同步',
                f'platform={platform} menu={mid} '
-               f'created={created} updated={updated} skipped={skipped}')
+               f'items: created={created} updated={updated} skipped={skipped} '
+               f'groups: created={groups_created} updated={groups_updated}')
     return jsonify({
-        'success': True,
-        'menu_id': mid,
-        'total':   len(items),
-        'created': created,
-        'updated': updated,
-        'skipped': skipped,
+        'success':        True,
+        'menu_id':        mid,
+        'total':          len(items),
+        'created':        created,
+        'updated':        updated,
+        'skipped':        skipped,
+        'groups_created': groups_created,
+        'groups_updated': groups_updated,
     })
 
 

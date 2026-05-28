@@ -99,6 +99,18 @@
     .fc .fc-title { font-weight: 600; font-size: .9rem; margin-bottom: .2rem; }
     .fc .fc-desc  { font-size: .8rem; color: #64748b; }
 
+    /* ── 狀態流程圖 ── */
+    .flow-row { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin: .75rem 0; }
+    .flow-state {
+      background: #fff; border: 1px solid #cbd5e1;
+      border-radius: .4rem; padding: .3rem .8rem;
+      font-size: .82rem; font-weight: 600;
+    }
+    .flow-state.active { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+    .flow-state.done   { background: #dcfce7; border-color: #86efac; color: #166534; }
+    .flow-state.cancel { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+    .flow-arrow { color: #64748b; font-size: 1.1rem; }
+
     code { background: #f1f5f9; padding: .1em .35em; border-radius: .25rem; font-size: .85em; }
 
     @media (max-width: 768px) {
@@ -137,15 +149,22 @@
   <a class="nav-link" href="#pos-sales">銷售記錄</a>
   <a class="nav-link" href="#pos-report">日結報表</a>
 
+  <div class="nav-section">顧客點單</div>
+  <a class="nav-link" href="#cust-order-page">顧客點單頁面</a>
+  <a class="nav-link" href="#cust-order-mgmt">訂單管理</a>
+  <a class="nav-link" href="#kitchen">廚房顯示</a>
+
   <div class="nav-section">外送平台</div>
   <a class="nav-link" href="#delivery">外送訂單</a>
   <a class="nav-link" href="#delivery-settings">平台設定</a>
 
   <div class="nav-section">系統</div>
   <a class="nav-link" href="#settings">系統設定</a>
+  <a class="nav-link" href="#page-visibility">頁面顯示管理</a>
   <a class="nav-link" href="#roles">角色與權限</a>
   <a class="nav-link" href="#user-mgmt">使用者管理</a>
   <a class="nav-link" href="#logs">操作紀錄</a>
+  <a class="nav-link" href="#env">環境設定（.env）</a>
 </nav>
 
 <!-- ══════════════════════════ 主內容 ══════════════════════════ -->
@@ -169,6 +188,8 @@
       <div class="fc-desc">點餐、結帳、折扣快捷、退款、日結報表</div></div>
     <div class="fc"><div class="fc-title"><i class="bi bi-menu-button-wide me-1 text-info"></i>菜單管理</div>
       <div class="fc-desc">菜單、分類、品項、客製化選項、產品庫存連動</div></div>
+    <div class="fc"><div class="fc-title"><i class="bi bi-qr-code-scan me-1 text-primary"></i>顧客點單</div>
+      <div class="fc-desc">顧客掃碼自助點餐、廚房顯示與訂單處理</div></div>
     <div class="fc"><div class="fc-title"><i class="bi bi-truck me-1 text-secondary"></i>外送平台</div>
       <div class="fc-desc">外送訂單追蹤、第三方平台同步</div></div>
   </div>
@@ -180,9 +201,11 @@
   <table class="table doc-table table-bordered">
     <thead><tr><th style="width:160px">功能</th><th>網址</th><th>說明</th></tr></thead>
     <tbody>
-      <tr><td>後台管理</td><td><span class="url-pill">/admin/</span></td><td>系統主要管理介面</td></tr>
-      <tr><td>收銀台 POS</td><td><span class="url-pill">/pos/</span></td><td>適合平板 / 行動裝置</td></tr>
-      <tr><td>快速出入庫</td><td><span class="url-pill">/quick-io/</span></td><td>快速批次庫存異動</td></tr>
+      <tr><td>後台管理</td><td><span class="url-pill">/admin/</span></td><td>系統主要管理介面（需登入）</td></tr>
+      <tr><td>收銀台 POS</td><td><span class="url-pill">/pos/</span></td><td>適合平板 / 行動裝置（需登入）</td></tr>
+      <tr><td>快速出入庫</td><td><span class="url-pill">/quick-io/</span></td><td>快速批次庫存異動（需登入）</td></tr>
+      <tr><td>顧客點單</td><td><span class="url-pill">/order/</span></td><td>顧客自助點餐頁面（<strong>無需登入</strong>，公開）</td></tr>
+      <tr><td>廚房顯示</td><td><span class="url-pill">/kitchen/</span></td><td>備餐人員訂單顯示介面（需 Token）</td></tr>
       <tr><td>API 文件</td><td><span class="url-pill">/apidocs/</span></td><td>Swagger 互動式文件</td></tr>
       <tr><td>使用說明</td><td><span class="url-pill">/docs/</span></td><td>本頁</td></tr>
     </tbody>
@@ -199,7 +222,11 @@
   </ol>
   <div class="tip-box">
     <i class="bi bi-info-circle me-1"></i>
-    <strong>自動登入：</strong>後台登入後，直接開啟 <span class="url-pill">/pos/</span> 或 <span class="url-pill">/quick-io/</span> 會自動沿用同一憑證，無需重新輸入帳密。
+    <strong>自動登入：</strong>後台登入後，直接開啟 <span class="url-pill">/pos/</span>、<span class="url-pill">/quick-io/</span>、<span class="url-pill">/kitchen/</span> 會自動沿用同一憑證，無需重新輸入帳密。
+  </div>
+  <div class="tip-box">
+    <i class="bi bi-key me-1"></i>
+    <strong>預設帳號：</strong>首次啟動系統時自動建立帳號 <code>admin</code> / 密碼 <code>admin</code>，請登入後立即修改。
   </div>
 
   <!-- ────────────────── 產品分類 ────────────────── -->
@@ -327,7 +354,7 @@
   </table>
   <div class="tip-box">
     <i class="bi bi-info-circle me-1"></i>
-    POS 銷售觸發的庫存異動僅系統內部記錄，不顯示於此清單（避免與正式出庫單混淆）。
+    POS 銷售、顧客點單觸發的庫存異動僅系統內部記錄，不顯示於此清單（避免與正式出庫單混淆）。
   </div>
 
   <!-- ────────────────── 快速出入庫 ────────────────── -->
@@ -349,7 +376,7 @@
   <h2 class="section-title" id="menus">
     <i class="bi bi-menu-button-wide me-2 text-primary"></i>菜單管理
   </h2>
-  <p>後台側欄 → <strong>菜單管理</strong>。管理 POS 收銀台顯示的菜單、品項與客製化選項。</p>
+  <p>後台側欄 → <strong>菜單管理</strong>。管理 POS 收銀台與顧客點單頁面顯示的菜單、品項與客製化選項。</p>
 
   <h3 class="sub-title">建立菜單</h3>
   <ol class="step-list">
@@ -363,8 +390,8 @@
   <h3 class="sub-title">菜單品項</h3>
   <ol class="step-list">
     <li>點擊「＋ 新增品項」，填入品項名稱、所屬分類、售價。</li>
-    <li>可上傳品項圖片。</li>
-    <li>勾選「連動庫存」後選擇對應產品，POS 出單時自動扣減產品庫存。</li>
+    <li>可上傳品項圖片（顯示於顧客點單頁面）。</li>
+    <li>勾選「連動庫存」後選擇對應產品，POS 或顧客出單時自動扣減產品庫存。</li>
     <li>可為品項套用「選項群組」（如：冰塊、甜度）。</li>
   </ol>
 
@@ -372,7 +399,7 @@
   <ol class="step-list">
     <li>在菜單下建立選項群組（如：「甜度」），設定各選項（如：全糖、少糖、無糖）。</li>
     <li>每個選項可附加額外費用。</li>
-    <li>品項套用選項群組後，POS 點餐時自動彈出客製化選項供顧客選擇。</li>
+    <li>品項套用選項群組後，POS 點餐或顧客點單時自動彈出客製化選項供顧客選擇。</li>
   </ol>
 
   <h3 class="sub-title">菜單匯入 / 匯出</h3>
@@ -441,6 +468,120 @@
     <li>熱銷品項排行（依銷售數量排序）。</li>
   </ul>
 
+  <!-- ════════════════ 顧客點單 ════════════════ -->
+
+  <!-- ────────────────── 顧客點單頁面 ────────────────── -->
+  <h2 class="section-title" id="cust-order-page">
+    <i class="bi bi-qr-code-scan me-2 text-primary"></i>顧客點單頁面
+  </h2>
+  <p>
+    網址：<span class="url-pill">/order/</span>。顧客無需登入即可直接瀏覽菜單並自助點餐，
+    適合放置 QR Code 於桌面讓顧客掃碼使用。
+  </p>
+
+  <h3 class="sub-title">顧客操作流程</h3>
+  <ol class="step-list">
+    <li>顧客掃描 QR Code（或輸入網址），進入點單頁面。</li>
+    <li>畫面自動載入目前啟用的菜單，依分類顯示品項與圖片。</li>
+    <li>點擊品項，彈出客製化選項（甜度、冰塊等），確認後加入購物車。</li>
+    <li>購物車可調整數量、刪除品項，右下角顯示合計金額。</li>
+    <li>填入桌號（或外帶編號），點擊「送出訂單」。</li>
+    <li>送出後顯示訂單編號，顧客可憑此號碼取餐。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    顧客點單頁面使用的菜單由<strong>系統設定 → 顧客點單菜單</strong>決定；若未設定則自動使用第一個啟用中的菜單。
+  </div>
+
+  <!-- ────────────────── 訂單管理 ────────────────── -->
+  <h2 class="section-title" id="cust-order-mgmt">
+    <i class="bi bi-receipt me-2 text-primary"></i>訂單管理
+  </h2>
+  <p>後台側欄 → <strong>訂單管理</strong>（需在頁面顯示管理中啟用）。查看與管理顧客點單訂單。</p>
+
+  <h3 class="sub-title">訂單狀態流程</h3>
+  <div class="flow-row">
+    <span class="flow-state">待處理<br><small class="text-muted">pending</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-state active">處理中<br><small>processing</small></span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-state done">已完成<br><small>completed</small></span>
+  </div>
+  <div class="flow-row mt-0">
+    <small class="text-muted">任何階段皆可</small>
+    <span class="flow-arrow">→</span>
+    <span class="flow-state cancel">已取消<br><small>cancelled</small></span>
+  </div>
+
+  <table class="table doc-table table-bordered mt-3">
+    <thead><tr><th>狀態</th><th>說明</th><th>操作者</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge bg-warning text-dark">待處理</span></td>
+        <td>顧客送出後進入隊列，等待廚房處理</td>
+        <td>系統自動</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-primary">處理中</span></td>
+        <td>員工點擊「開始處理」，廚房開始備餐</td>
+        <td>員工</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-success">已完成</span></td>
+        <td>員工點擊「完成」，顧客已取餐</td>
+        <td>員工</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-danger">已取消</span></td>
+        <td>任何階段均可取消</td>
+        <td>員工</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">篩選與統計</h3>
+  <ul>
+    <li>可依狀態（全部 / 待處理 / 處理中 / 已完成 / 已取消）篩選。</li>
+    <li>可依日期篩選，統計列顯示當日各狀態筆數與總金額。</li>
+  </ul>
+
+  <!-- ────────────────── 廚房顯示 ────────────────── -->
+  <h2 class="section-title" id="kitchen">
+    <i class="bi bi-display me-2 text-primary"></i>廚房顯示
+  </h2>
+  <p>
+    網址：<span class="url-pill">/kitchen/</span>。深色主題的備餐顯示介面，
+    適合放置於廚房顯示器。後台登入後直接開啟即可使用，
+    或輸入 <code>kitchen_token</code>（帳密登入）。
+  </p>
+
+  <h3 class="sub-title">介面說明</h3>
+  <ul>
+    <li>顯示所有「待處理」與「處理中」的訂單卡片，依下單時間由早到晚排列（FIFO）。</li>
+    <li>每張卡片顯示：訂單編號、桌號、品項（含客製化選項）、等待時間。</li>
+    <li>等待超過 <strong>10 分鐘</strong>的訂單顯示紅色警示標籤。</li>
+    <li>頁面每 <strong>15 秒</strong>自動重整，無需手動操作。</li>
+  </ul>
+
+  <h3 class="sub-title">員工操作</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>目前狀態</th><th>可執行操作</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge bg-warning text-dark">待處理</span></td>
+        <td>開始處理 / 取消</td>
+        <td>點「開始處理」→ 變更為「處理中」</td>
+      </tr>
+      <tr>
+        <td><span class="badge bg-primary">處理中</span></td>
+        <td>完成 / 取消</td>
+        <td>點「完成」→ 訂單從畫面移除（已完成）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ════════════════ 外送平台 ════════════════ -->
+
   <!-- ────────────────── 外送訂單 ────────────────── -->
   <h2 class="section-title" id="delivery">
     <i class="bi bi-scooter me-2 text-primary"></i>外送訂單
@@ -500,6 +641,40 @@
     </tbody>
   </table>
 
+  <h3 class="sub-title">顧客點單設定</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>項目</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>顧客點單菜單</td><td>指定 <span class="url-pill">/order/</span> 頁面使用的菜單；未指定時自動使用第一個啟用中的菜單</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── 頁面顯示管理 ────────────────── -->
+  <h2 class="section-title" id="page-visibility">
+    <i class="bi bi-layout-sidebar me-2 text-primary"></i>頁面顯示管理
+  </h2>
+  <p>後台側欄 → <strong>系統設定</strong> → 下滑找到「頁面顯示管理」（需 <code>admin</code> 角色）。</p>
+  <p>控制後台左側導覽列各功能頁的顯示或隱藏，可依實際使用需求精簡介面。</p>
+  <ol class="step-list">
+    <li>勾選要顯示的功能頁（取消勾選即隱藏該頁面的側欄連結）。</li>
+    <li>點擊「儲存」，設定立即生效並套用至所有使用者。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    隱藏頁面只是不顯示側欄連結，直接輸入對應網址仍可存取。若需完整限制功能，請搭配角色權限設定。
+  </div>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>功能群組</th><th>可管理頁面</th></tr></thead>
+    <tbody>
+      <tr><td>商品管理</td><td>產品分類、產品資料</td></tr>
+      <tr><td>倉儲管理</td><td>倉庫管理、庫存查詢、入庫管理、出庫管理、庫存移動</td></tr>
+      <tr><td>POS 收銀</td><td>菜單管理、收銀台、銷售記錄、日結報表</td></tr>
+      <tr><td>顧客點單</td><td>訂單管理、廚房顯示連結、顧客點單頁連結</td></tr>
+      <tr><td>外送平台</td><td>外送訂單、平台設定</td></tr>
+      <tr><td>系統</td><td>使用者管理、操作紀錄</td></tr>
+    </tbody>
+  </table>
+
   <!-- ────────────────── 角色與權限 ────────────────── -->
   <h2 class="section-title" id="roles">
     <i class="bi bi-person-badge me-2 text-primary"></i>角色與權限
@@ -509,11 +684,11 @@
     <tbody>
       <tr>
         <td><span class="badge bg-danger">admin</span></td>
-        <td>全部功能，含使用者管理、系統設定、刪除資料</td>
+        <td>全部功能，含使用者管理、系統設定（含頁面顯示管理）、刪除資料</td>
       </tr>
       <tr>
         <td><span class="badge bg-warning text-dark">operator</span></td>
-        <td>產品、倉庫、庫存、入出庫、菜單、POS、外送；<br>不可管理使用者及系統設定</td>
+        <td>產品、倉庫、庫存、入出庫、菜單、POS、顧客訂單管理、外送；<br>不可管理使用者及系統設定</td>
       </tr>
       <tr>
         <td><span class="badge bg-secondary">viewer</span></td>
@@ -542,6 +717,75 @@
     <i class="bi bi-journal-text me-2 text-primary"></i>操作紀錄
   </h2>
   <p>後台側欄 → <strong>操作紀錄</strong>。記錄所有登入、新增、修改、刪除等操作，可依使用者或操作類型篩選，用於稽核追蹤。</p>
+
+  <!-- ────────────────── 環境設定 ────────────────── -->
+  <h2 class="section-title" id="env">
+    <i class="bi bi-file-earmark-code me-2 text-primary"></i>環境設定（.env）
+  </h2>
+  <p>系統部署時透過專案根目錄的 <code>.env</code> 檔案設定環境參數（由 <code>.env.default</code> 複製後修改）。</p>
+
+  <h3 class="sub-title">Port 設定</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>變數</th><th>預設值</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>FLASK_PORT</code></td><td><code>5000</code></td>
+        <td>Flask 內部 Port。若 5000 被佔用（macOS AirPlay），可改為 <code>5001</code>；nginx 會自動跟著連對應 Port</td>
+      </tr>
+      <tr>
+        <td><code>APP_PORT</code></td><td><code>80</code></td>
+        <td>nginx 對外監聽 Port，使用者實際連線的 Port</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">SSL / 網域設定</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>變數</th><th>預設值</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>NGINX_MODE</code></td><td><code>http</code></td>
+        <td>
+          nginx 模式：<br>
+          <code>http</code> — 純 HTTP，本機 / IP 直連使用<br>
+          <code>cloudflare</code> — Cloudflare Origin CA SSL<br>
+          <code>https-letsencrypt</code> — Let's Encrypt SSL
+        </td>
+      </tr>
+      <tr>
+        <td><code>DOMAIN</code></td><td><code>_</code></td>
+        <td>對外域名。<code>_</code> 代表接受任何域名（IP 直連）；啟用 SSL 時填入實際域名</td>
+      </tr>
+      <tr>
+        <td><code>CF_CERT_DIR</code></td><td><code>./conf/nginx/certs/cloudflare</code></td>
+        <td><code>NGINX_MODE=cloudflare</code> 時，存放 <code>origin.pem</code> 與 <code>origin.key</code> 的目錄</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">JWT Token 設定</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>變數</th><th>預設值</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>JWT_ACCESS_TOKEN_EXPIRES_HOURS</code></td><td><code>8</code></td>
+        <td>Access Token 有效時數；超時需重新登入</td>
+      </tr>
+      <tr>
+        <td><code>JWT_REFRESH_TOKEN_EXPIRES_DAYS</code></td><td><code>30</code></td>
+        <td>「記住我」用的 Refresh Token 有效天數</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 class="sub-title">Cloudflare SSL 設定步驟</h3>
+  <ol class="step-list">
+    <li>至 Cloudflare Dashboard → SSL/TLS → Origin Server → <strong>Create Certificate</strong>，下載 <code>.pem</code> 與 <code>.key</code>。</li>
+    <li>將憑證放至 <code>CF_CERT_DIR</code> 指定目錄（預設 <code>conf/nginx/certs/cloudflare/</code>），檔名需為 <code>origin.pem</code> 與 <code>origin.key</code>。</li>
+    <li>在 <code>.env</code> 設定 <code>NGINX_MODE=cloudflare</code>、<code>DOMAIN=your.domain.com</code>。</li>
+    <li>Cloudflare SSL/TLS 模式改為「Full (Strict)」。</li>
+    <li>執行 <code>docker compose up -d nginx</code> 重啟 nginx 使設定生效。</li>
+  </ol>
 
   <div class="text-muted small mt-5 pt-3 border-top">
     WMS 倉儲管理系統 &copy; {{ now }} &nbsp;|&nbsp;

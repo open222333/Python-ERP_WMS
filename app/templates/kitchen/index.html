@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>訂單管理</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root { --pending:#f59e0b; --processing:#3b82f6; --completed:#22c55e; --cancelled:#ef4444; }
+    body { background:#0f172a; color:#f1f5f9; min-height:100vh; }
+
+    .top-bar {
+      background:#1e293b; padding:.75rem 1.25rem;
+      display:flex; align-items:center; justify-content:space-between;
+      border-bottom:1px solid #334155; position:sticky; top:0; z-index:50;
+    }
+    .top-bar h5 { margin:0; font-weight:700; color:#f1f5f9; font-size:1rem; }
+    .top-bar .stats { display:flex; gap:1rem; font-size:.8rem; }
+    .top-bar .stat  { text-align:center; }
+    .top-bar .stat .n { font-size:1.2rem; font-weight:700; }
+    .top-bar .stat .l { color:#94a3b8; }
+
+    /* ── 訂單卡片 ── */
+    .orders-grid {
+      display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap:1rem; padding:1rem;
+    }
+    .order-card {
+      background:#1e293b; border-radius:.75rem; overflow:hidden;
+      border:2px solid transparent; transition:border-color .2s;
+    }
+    .order-card.pending    { border-color: var(--pending); }
+    .order-card.processing { border-color: var(--processing); }
+
+    .card-header-bar {
+      padding:.6rem 1rem; display:flex; align-items:center; justify-content:space-between;
+    }
+    .order-card.pending    .card-header-bar { background: rgba(245,158,11,.15); }
+    .order-card.processing .card-header-bar { background: rgba(59,130,246,.15); }
+
+    .order-no   { font-weight:700; font-size:.9rem; }
+    .order-time { font-size:.75rem; color:#94a3b8; }
+    .table-tag  {
+      background:#334155; border-radius: 999px; padding:.2rem .7rem;
+      font-size:.8rem; font-weight:600;
+    }
+
+    .card-body-area { padding:.75rem 1rem; }
+    .item-row { display:flex; gap:.5rem; align-items:baseline; padding:.2rem 0; font-size:.88rem; }
+    .item-qty  { color:#94a3b8; min-width:2rem; font-weight:600; }
+    .item-name { flex:1; }
+    .item-custs { font-size:.75rem; color:#64748b; }
+    .item-note  { font-size:.75rem; color:#f59e0b; }
+
+    .card-footer-bar {
+      padding:.6rem 1rem; border-top:1px solid #334155;
+      display:flex; gap:.5rem;
+    }
+    .btn-process  { flex:1; }
+    .btn-complete { background:var(--completed); border-color:var(--completed); flex:1; }
+    .btn-cancel   { background:transparent; border:1px solid #475569; color:#94a3b8; flex:1; }
+
+    .elapsed-badge {
+      font-size:.7rem; padding:.15rem .5rem; border-radius:999px;
+      background:#334155; color:#94a3b8;
+    }
+    .elapsed-badge.warn { background:rgba(239,68,68,.2); color:#f87171; }
+
+    /* ── 空狀態 ── */
+    .empty-state { text-align:center; padding:4rem 1rem; color:#475569; }
+    .empty-state i { font-size:3rem; }
+
+    /* ── 登入遮罩 ── */
+    #login-overlay {
+      position:fixed; inset:0; background:#0f172a; z-index:999;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .login-box { background:#1e293b; border-radius:1rem; padding:2rem; width:320px; }
+    .login-box h5 { color:#f1f5f9; font-weight:700; margin-bottom:1.25rem; }
+  </style>
+</head>
+<body>
+
+<!-- ════════ 登入遮罩 ════════ -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h5><i class="bi bi-receipt me-2 text-primary"></i>訂單管理</h5>
+    <div class="mb-3">
+      <label class="form-label text-light small">Email</label>
+      <input id="login-email" type="email" class="form-control bg-dark text-light border-secondary"
+             placeholder="帳號" autocomplete="username">
+    </div>
+    <div class="mb-3">
+      <label class="form-label text-light small">密碼</label>
+      <input id="login-pass" type="password" class="form-control bg-dark text-light border-secondary"
+             placeholder="密碼" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <div id="login-err" class="text-danger small mb-2" style="display:none"></div>
+    <button class="btn btn-primary w-100" onclick="login()">登入</button>
+  </div>
+</div>
+
+<!-- ════════ 頂部狀態列 ════════ -->
+<div class="top-bar">
+  <h5><i class="bi bi-receipt me-2 text-primary"></i>訂單管理</h5>
+  <div class="stats">
+    <div class="stat">
+      <div class="n text-warning" id="stat-pending">-</div>
+      <div class="l">待處理</div>
+    </div>
+    <div class="stat">
+      <div class="n text-primary" id="stat-processing">-</div>
+      <div class="l">處理中</div>
+    </div>
+    <div class="stat">
+      <div class="n text-success" id="stat-completed">-</div>
+      <div class="l">今日完成</div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted small" id="last-refresh"></span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="loadOrders()">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="logout()">
+      <i class="bi bi-box-arrow-right"></i>
+    </button>
+  </div>
+</div>
+
+<!-- ════════ 訂單清單 ════════ -->
+<div id="orders-grid" class="orders-grid"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════
+//  Auth
+// ══════════════════════════════════════════════════════
+let TOKEN = localStorage.getItem('kitchen_token') ||
+            localStorage.getItem('wms_token') || '';
+let _refreshTimer = null;
+
+async function login() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const err   = document.getElementById('login-err');
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/auth/login', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({email, password: pass}),
+    });
+    const data = await r.json();
+    if (!data.success) { err.textContent = data.message || '登入失敗'; err.style.display = ''; return; }
+    TOKEN = data.access_token;
+    localStorage.setItem('kitchen_token', TOKEN);
+    document.getElementById('login-overlay').style.display = 'none';
+    startApp();
+  } catch(e) {
+    err.textContent = '網路錯誤'; err.style.display = '';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('kitchen_token');
+  TOKEN = '';
+  location.reload();
+}
+
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: {'Authorization': `Bearer ${TOKEN}`, 'Content-Type':'application/json'},
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (r.status === 401) { document.getElementById('login-overlay').style.display = ''; }
+  return r.json();
+}
+
+// ══════════════════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════════════════
+function startApp() {
+  loadOrders();
+  _refreshTimer = setInterval(loadOrders, 15000);  // 每15秒自動刷新
+}
+
+async function loadOrders() {
+  try {
+    const [ordR, stR] = await Promise.all([
+      api('GET', '/customer-order/active'),
+      api('GET', '/customer-order/stats'),
+    ]);
+    if (ordR.success) renderOrders(ordR.data);
+    if (stR.success)  renderStats(stR.raw);
+    document.getElementById('last-refresh').textContent =
+      '更新 ' + new Date().toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  } catch(e) { console.error(e); }
+}
+
+// ══════════════════════════════════════════════════════
+//  Render
+// ══════════════════════════════════════════════════════
+function renderStats(raw) {
+  document.getElementById('stat-pending').textContent    = raw?.pending?.count    ?? 0;
+  document.getElementById('stat-processing').textContent = raw?.processing?.count ?? 0;
+  document.getElementById('stat-completed').textContent  = raw?.completed?.count  ?? 0;
+}
+
+function renderOrders(orders) {
+  const grid = document.getElementById('orders-grid');
+  if (!orders.length) {
+    grid.innerHTML = `<div class="empty-state col-12">
+      <i class="bi bi-check2-circle text-success"></i>
+      <p class="mt-3 fs-5 text-success">目前沒有待處理訂單</p>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = orders.map(o => orderCard(o)).join('');
+}
+
+function orderCard(o) {
+  const elapsed = elapsedStr(o.created_at);
+  const warnCls = elapsedMin(o.created_at) >= 10 ? 'warn' : '';
+  const isPending = o.status === 'pending';
+
+  const items = (o.items || []).map(it => `
+    <div class="item-row">
+      <span class="item-qty">×${it.qty}</span>
+      <div>
+        <div class="item-name">${it.item_name}</div>
+        ${it.customizations?.length ? `<div class="item-custs">${it.customizations.join(' · ')}</div>` : ''}
+        ${it.note ? `<div class="item-note">備註：${it.note}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  const remarkHtml = o.remark ? `<div class="text-warning small mt-1"><i class="bi bi-chat-left-text me-1"></i>${o.remark}</div>` : '';
+
+  const actionBtns = isPending
+    ? `<button class="btn btn-primary btn-sm btn-process" onclick="updateStatus('${o._id}','processing')">
+         <i class="bi bi-play-fill me-1"></i>開始處理
+       </button>
+       <button class="btn btn-sm btn-cancel" onclick="updateStatus('${o._id}','cancelled')">取消</button>`
+    : `<button class="btn btn-success btn-sm btn-complete" onclick="updateStatus('${o._id}','completed')">
+         <i class="bi bi-check-lg me-1"></i>完成
+       </button>
+       <button class="btn btn-sm btn-cancel" onclick="updateStatus('${o._id}','cancelled')">取消</button>`;
+
+  return `
+    <div class="order-card ${o.status}" id="card-${o._id}">
+      <div class="card-header-bar">
+        <div>
+          <div class="order-no">${o.order_no}</div>
+          <div class="order-time">${fmtTime(o.created_at)}</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="elapsed-badge ${warnCls}">${elapsed}</span>
+          <span class="table-tag"><i class="bi bi-people me-1"></i>${o.table_no}</span>
+        </div>
+      </div>
+      <div class="card-body-area">
+        ${items}
+        ${remarkHtml}
+      </div>
+      <div class="card-footer-bar">${actionBtns}</div>
+    </div>
+  `;
+}
+
+// ══════════════════════════════════════════════════════
+//  Actions
+// ══════════════════════════════════════════════════════
+async function updateStatus(oid, status) {
+  const label = {processing:'開始處理', completed:'完成', cancelled:'取消'}[status];
+  if (status === 'cancelled' && !confirm(`確定要取消此訂單？`)) return;
+
+  // 即時 UI 反饋：卡片淡出
+  const card = document.getElementById(`card-${oid}`);
+  if (card) card.style.opacity = '.4';
+
+  try {
+    const r = await api('PUT', `/customer-order/${oid}/status`, {status});
+    if (r.success) {
+      await loadOrders();
+    } else {
+      if (card) card.style.opacity = '1';
+      alert(r.message || '操作失敗');
+    }
+  } catch(e) {
+    if (card) card.style.opacity = '1';
+    alert('網路錯誤');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  Utils
+// ══════════════════════════════════════════════════════
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'});
+}
+
+function elapsedMin(iso) {
+  if (!iso) return 0;
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  return Math.floor((Date.now() - d.getTime()) / 60000);
+}
+
+function elapsedStr(iso) {
+  const m = elapsedMin(iso);
+  if (m < 1)  return '剛剛';
+  if (m < 60) return `${m} 分鐘`;
+  return `${Math.floor(m/60)} 小時 ${m%60} 分`;
+}
+
+// ══════════════════════════════════════════════════════
+//  Start
+// ══════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  if (TOKEN) {
+    document.getElementById('login-overlay').style.display = 'none';
+    startApp();
+  }
+});
+</script>
+</body>
+</html>
