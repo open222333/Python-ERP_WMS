@@ -45,10 +45,19 @@ def get_order_menu():
 @app_customer_order.route('/', methods=['POST'])
 def create_order():
     """
-    公開 API：顧客建立點餐訂單（不需登入）
+    公開 API：顧客建立點餐訂單
+    若攜帶有效 JWT，以帳號 identity 作識別；否則必須帶 table_no。
     body: { table_no, items, total, remark, menu_id }
     items: [{item_id, item_name, qty, price, customizations, note}]
     """
+    # 嘗試取得 JWT identity（選用）
+    customer_id = None
+    try:
+        verify_jwt_in_request(optional=True)
+        customer_id = get_jwt_identity()
+    except Exception:
+        pass
+
     data = request.get_json(silent=True) or {}
     table_no = (data.get('table_no') or '').strip()
     items    = data.get('items', [])
@@ -56,8 +65,12 @@ def create_order():
     remark   = data.get('remark', '')
     menu_id  = data.get('menu_id', '')
 
+    # 已登入：帳號作識別碼（table_no 可省略，或以帳號覆蓋）
+    if customer_id:
+        table_no = table_no or customer_id
+
     if not table_no:
-        return jsonify({'success': False, 'message': '請輸入桌號或姓名'}), 400
+        return jsonify({'success': False, 'message': '請登入或輸入桌號/姓名'}), 400
     if not items:
         return jsonify({'success': False, 'message': '請至少選擇一個品項'}), 400
     if not isinstance(items, list):

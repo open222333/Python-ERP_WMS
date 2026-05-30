@@ -15,9 +15,10 @@
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
+- **顧客點餐頁**：帳號登入識別、同頁購物車（桌機分欄 / 手機抽屜）、客製化選項、無圖片大字排版
 - **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除
 - **Swagger UI**：自動產生 API 文件
-- **Docker 部署**：一鍵啟動
+- **Docker 部署**：一鍵啟動；純主機部署（gunicorn + nginx）
 
 測試環境：Python 3.11
 
@@ -28,7 +29,8 @@
 - [專案結構](#專案結構)
 - [快速開始（本機）](#快速開始本機)
 - [Docker 部署](#docker-部署)
-- [主機 nginx 部署](#主機-nginx-部署)
+- [主機 nginx 部署](#主機-nginx-部署)（Docker app + 主機 nginx）
+- [純主機部署（不使用 Docker）](#純主機部署不使用-docker)
 - [API 端點總覽](#api-端點總覽)
 - [業務流程說明](#業務流程說明)
 - [角色與權限](#角色與權限)
@@ -344,6 +346,8 @@ docker compose build --no-cache app  # 重新建置 Flask 映像
 
 ```
 使用者 → 主機 nginx:80/443 → 127.0.0.1:5000（Docker app 容器）→ MongoDB 容器
+                ↓ 靜態檔
+         /opt/wms/frontend-dist/（主機本地目錄）
 ```
 
 設定檔位置：
@@ -353,6 +357,22 @@ docker compose build --no-cache app  # 重新建置 Flask 映像
 | `conf/nginx/host/http.conf` | 純 HTTP（IP 直連或 Cloudflare 代理） |
 | `conf/nginx/host/cloudflare.conf` | Cloudflare Origin CA SSL |
 | `conf/nginx/host/https-letsencrypt.conf` | Let's Encrypt 免費 SSL |
+
+---
+
+### Step 0：建置前端（在開發機或伺服器上執行）
+
+```bash
+# 於開發機建置後上傳
+cd frontend
+npm ci && npm run build          # 產物輸出至 ../frontend-dist/
+
+# 同步至伺服器（以 /opt/wms 為例）
+rsync -av --delete frontend-dist/ user@server:/opt/wms/frontend-dist/
+```
+
+> 若直接在伺服器上 build，需先安裝 Node.js 18+（`apt install -y nodejs npm` 或 nvm）。
+> Build 完成後即可解除安裝，nginx 只需要 `frontend-dist/` 目錄。
 
 ---
 
@@ -386,13 +406,17 @@ sudo systemctl enable --now nginx
 # ── 模式一：HTTP（IP 直連或 Cloudflare 代理） ──────────────
 sudo cp conf/nginx/host/http.conf /etc/nginx/sites-available/flask-app
 sudo nano /etc/nginx/sites-available/flask-app
-# 將 YOUR_DOMAIN 改為實際域名，或改為 _ 接受所有請求
+# 替換兩個佔位符：
+#   YOUR_DOMAIN       → 實際域名，或 _ 接受所有請求
+#   YOUR_PROJECT_PATH → 專案根目錄，例如 /opt/wms
 
 # ── 模式二：Cloudflare Origin CA SSL ──────────────────────
 # 前置：建立 Cloudflare 憑證（參見檔案頂部說明）
 sudo cp conf/nginx/host/cloudflare.conf /etc/nginx/sites-available/flask-app
 sudo nano /etc/nginx/sites-available/flask-app
-# 將 YOUR_DOMAIN 替換為實際域名（共 2 處）
+# 替換兩個佔位符：
+#   YOUR_DOMAIN       → 實際域名（共 2 處）
+#   YOUR_PROJECT_PATH → 專案根目錄，例如 /opt/wms
 
 # ── 模式三：Let's Encrypt SSL ──────────────────────────────
 sudo apt install -y certbot python3-certbot-nginx
@@ -401,7 +425,9 @@ sudo certbot certonly --nginx -d your.domain.com
 # 憑證申請成功後換用 letsencrypt 設定：
 sudo cp conf/nginx/host/https-letsencrypt.conf /etc/nginx/sites-available/flask-app
 sudo nano /etc/nginx/sites-available/flask-app
-# 將所有 YOUR_DOMAIN 替換為實際域名（共 4 處）
+# 替換兩個佔位符：
+#   YOUR_DOMAIN       → 實際域名（共 4 處）
+#   YOUR_PROJECT_PATH → 專案根目錄，例如 /opt/wms
 ```
 
 ### Step 4：啟用站台並重載
@@ -428,6 +454,317 @@ sudo systemctl restart nginx                        # 完整重啟
 sudo tail -f /var/log/nginx/flask-app-error.log    # 錯誤日誌
 sudo tail -f /var/log/nginx/flask-app-access.log   # 訪問日誌
 sudo certbot renew --dry-run                        # 測試 Let's Encrypt 自動續約
+```
+
+---
+
+## 純主機部署（不使用 Docker）
+
+> **適用情境**：伺服器上不安裝 Docker，直接以 Python + gunicorn 跑 Flask，再以 nginx 作為反向代理。
+
+```
+使用者 → nginx:80/443 → 127.0.0.1:5000（gunicorn）→ MongoDB（本機或遠端）
+```
+
+### 前置需求
+
+| 項目 | 版本建議 |
+|---|---|
+| Python | 3.11+ |
+| MongoDB | 6.0 / 7.0 |
+| nginx | 1.18+ |
+| gunicorn | 21+ |
+
+---
+
+### Step 1：安裝系統套件
+
+```bash
+# Ubuntu / Debian
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv nginx
+
+# 安裝 MongoDB（官方 repo，以 Ubuntu 22.04 為例）
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+  sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] \
+  https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+  sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt update && sudo apt install -y mongodb-org
+sudo systemctl enable --now mongod
+```
+
+---
+
+### Step 2：建立專案目錄與虛擬環境
+
+```bash
+# 建議放在 /opt/wms（可自訂）
+sudo mkdir -p /opt/wms
+sudo chown $USER:$USER /opt/wms
+
+# 上傳或 git clone 專案
+cd /opt/wms
+git clone <你的倉庫網址> .   # 或 scp / rsync 上傳
+
+# 建立虛擬環境並安裝套件
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install gunicorn          # 正式部署用 WSGI 伺服器
+```
+
+---
+
+### Step 2.5：建置前端（Vue SPA）
+
+```bash
+# 在開發機 build 後 rsync 上傳（推薦）
+cd frontend
+npm ci && npm run build        # 輸出至 ../frontend-dist/
+rsync -av --delete ../frontend-dist/ user@server:/opt/wms/frontend-dist/
+
+# 或直接在伺服器上 build（需 Node.js 18+）
+# curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# sudo apt install -y nodejs
+cd /opt/wms/frontend && npm ci && npm run build
+```
+
+> `frontend-dist/` 為純靜態檔案，build 後 Node.js 可以移除，不影響 nginx serving。
+
+---
+
+### Step 3：複製並調整設定檔
+
+```bash
+cp conf/config.ini.default conf/config.ini
+cp conf/flask.json.default conf/flask.json
+```
+
+編輯 `conf/config.ini`：
+
+```ini
+[SETTING]
+ADMIN_TITLE=WMS 倉儲管理系統
+
+[MONGO]
+MONGO_URI=mongodb://127.0.0.1:27017   # 本機 MongoDB
+MONGO_DB=wms
+```
+
+> `flask.json` 的 `SECRET_KEY` 留空，`run.py` 啟動時自動產生並寫入。
+
+---
+
+### Step 4：建立 systemd 服務（gunicorn）
+
+建立服務檔 `/etc/systemd/system/wms.service`：
+
+```ini
+[Unit]
+Description=WMS Flask App (gunicorn)
+After=network.target mongod.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/wms
+Environment="PATH=/opt/wms/venv/bin"
+ExecStart=/opt/wms/venv/bin/gunicorn \
+    --workers 4 \
+    --bind 127.0.0.1:5000 \
+    --timeout 120 \
+    --access-logfile /var/log/wms/access.log \
+    --error-logfile  /var/log/wms/error.log \
+    "run:app"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# 建立 log 目錄並設定權限
+sudo mkdir -p /var/log/wms
+sudo chown www-data:www-data /var/log/wms
+
+# 也需要讓 www-data 能讀取專案（包含 conf/）
+sudo chown -R www-data:www-data /opt/wms
+
+# 啟用並啟動服務
+sudo systemctl daemon-reload
+sudo systemctl enable --now wms
+
+# 確認狀態
+sudo systemctl status wms
+```
+
+> **workers 數量建議**：`2 × CPU 核心數 + 1`，例如 2 核心建議設 `--workers 5`。
+
+---
+
+### Step 5：設定 nginx
+
+三種 SSL 模式的 nginx 設定邏輯相同：API 路徑（帶 trailing slash）proxy 到 gunicorn，其餘路徑由 nginx 直接 serve Vue SPA 靜態檔並做 SPA fallback。
+
+**模式一：HTTP（無 SSL）**
+
+建立 `/etc/nginx/sites-available/wms`：
+
+```nginx
+server {
+    listen 80;
+    server_name _;   # 或填入你的域名 / IP
+
+    client_max_body_size 20M;
+
+    # ── Flask API（trailing slash 區分 API vs SPA 路由）──────
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|settings|customer-order|apidocs)/ {
+        proxy_pass         http://127.0.0.1:5000;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location = /apidocs {
+        return 301 /apidocs/;
+    }
+
+    # ── Vue SPA 靜態檔案 ─────────────────────────────────────
+    location / {
+        root  /opt/wms/frontend-dist;
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+**模式二：Cloudflare SSL**
+
+```nginx
+upstream gunicorn {
+    server 127.0.0.1:5000;
+}
+
+server {
+    listen 80;
+    server_name your.domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name your.domain.com;
+
+    ssl_certificate     /etc/ssl/cloudflare/origin.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/origin.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+
+    client_max_body_size 20M;
+
+    # Cloudflare 真實 IP 還原（略，參見 conf/nginx/host/cloudflare.conf）
+
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|settings|customer-order|apidocs)/ {
+        proxy_pass         http://gunicorn;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location = /apidocs {
+        return 301 /apidocs/;
+    }
+
+    location / {
+        root  /opt/wms/frontend-dist;
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+**模式三：Let's Encrypt SSL**
+
+```bash
+# 先以 HTTP 模式（模式一）啟動 nginx，再申請憑證
+sudo certbot --nginx -d your.domain.com
+# certbot 自動加入 HTTPS block 後，手動補上 API regex location 與 Vue root（同模式二邏輯）
+```
+
+**啟用站台**：
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/wms /etc/nginx/sites-enabled/wms
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t      # 驗證語法
+sudo systemctl reload nginx
+```
+
+---
+
+### Step 6：初次啟動與確認
+
+```bash
+# 手動執行一次以產生 SECRET_KEY 並建立預設 admin（需在虛擬環境中）
+cd /opt/wms
+source venv/bin/activate
+python run.py   # 看到 [init] 訊息後 Ctrl+C，交由 systemd 管理
+
+# 重啟 gunicorn 服務
+sudo systemctl restart wms
+
+# 檢查是否正常
+curl http://127.0.0.1/
+```
+
+| 服務 | 網址 |
+|---|---|
+| **後台管理** | http://你的IP或域名/admin/ |
+| **POS 收銀** | http://你的IP或域名/pos/ |
+| **顧客點餐** | http://你的IP或域名/order/ |
+| Swagger UI | http://你的IP或域名/apidocs |
+
+---
+
+### 常用維運指令
+
+```bash
+# Flask 應用
+sudo systemctl status wms           # 查看狀態
+sudo systemctl restart wms          # 重啟（更新程式碼後）
+sudo systemctl stop wms             # 停止
+sudo journalctl -u wms -f           # 即時 log（journald）
+sudo tail -f /var/log/wms/error.log # gunicorn error log
+
+# nginx
+sudo nginx -t                       # 驗證設定語法
+sudo systemctl reload nginx         # 重載（不中斷連線）
+sudo tail -f /var/log/nginx/error.log
+
+# MongoDB
+sudo systemctl status mongod
+mongosh wms --eval "db.users.countDocuments()"   # 快速確認資料
+```
+
+### 更新程式碼
+
+```bash
+cd /opt/wms
+git pull                           # 拉取最新版本
+
+# 若有新套件
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 若有前端變更（在開發機 build 後 rsync 上傳 frontend-dist）
+rsync -av --delete frontend-dist/ server:/opt/wms/frontend-dist/
+
+sudo systemctl restart wms         # 重啟 gunicorn
 ```
 
 ---
