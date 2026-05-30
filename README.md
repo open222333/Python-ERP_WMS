@@ -15,7 +15,9 @@
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
+- **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）
 - **顧客點餐頁**：帳號登入識別、同頁購物車（桌機分欄 / 手機抽屜）、客製化選項、無圖片大字排版
+- **廚房看板**：即時顯示待處理 / 處理中訂單（先進先出），無需後台登入
 - **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除
 - **Swagger UI**：自動產生 API 文件
 - **Docker 部署**：一鍵啟動；純主機部署（gunicorn + nginx）
@@ -32,6 +34,8 @@
 - [主機 nginx 部署](#主機-nginx-部署)（Docker app + 主機 nginx）
 - [純主機部署（不使用 Docker）](#純主機部署不使用-docker)
 - [API 端點總覽](#api-端點總覽)
+  - [菜單管理 /menu](#菜單管理-menu)
+  - [顧客點餐 /customer-order](#顧客點餐-customer-order)
 - [業務流程說明](#業務流程說明)
 - [角色與權限](#角色與權限)
 - [設定檔說明](#設定檔說明)
@@ -64,6 +68,12 @@ Python-ERP_WMS/
 │   ├── outbound/view.py                # 出庫單管理
 │   ├── analytics/view.py               # 分析報表 + 庫存警示
 │   ├── pos/view.py                     # POS 收銀（銷售、退款、CSV 匯出入、銷售報表）
+│   ├── menu/view.py                    # 菜單管理（菜單/分類/品項/選項組 CRUD + JSON 匯出入）
+│   ├── customer_order/
+│   │   ├── page.py                     # GET /order/ → 顧客點餐前端頁面
+│   │   └── view.py                     # 公開：取得菜單 / 建立訂單；登入：查詢 / 狀態更新
+│   ├── kitchen/view.py                 # GET /kitchen/ → 廚房看板頁面（免登入）
+│   ├── quick_io/view.py                # GET /quick-io/ → 快速出入庫頁面
 │   ├── delivery/                       # 外送平台整合
 │   │   ├── view.py                     # Webhook + 訂單 + 菜單同步 + 設定端點
 │   │   └── adapters/
@@ -101,6 +111,9 @@ Python-ERP_WMS/
         ├── inbound.py                  # InboundOrder（含 embedded items）
         ├── outbound.py                 # OutboundOrder（含 embedded items）
         ├── pos.py                      # PosOrder（POS 銷售單 + bulk_import）
+        ├── menu.py                     # Menu（菜單/分類/品項/選項組，全 embedded）
+        ├── customer_order.py           # CustomerOrder（顧客點餐訂單）
+        ├── user_template.py            # UserTemplate（頁面權限模板）
         └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
 ```
 
@@ -249,6 +262,9 @@ docker compose up -d --build
 |---|---|
 | **後台管理** | http://127.0.0.1/admin/ |
 | **POS 收銀** | http://127.0.0.1/pos/ |
+| **顧客點餐** | http://127.0.0.1/order/ |
+| **廚房看板** | http://127.0.0.1/kitchen/ |
+| **快速出入庫** | http://127.0.0.1/quick-io/ |
 | Swagger UI | http://127.0.0.1/apidocs |
 | 健康檢查 | http://127.0.0.1/ |
 
@@ -498,14 +514,23 @@ sudo systemctl enable --now mongod
 
 ### Step 2：建立專案目錄與虛擬環境
 
+> **注意：請勿將專案放在 `/root/` 下。**  
+> nginx 以 `www-data` 執行，`/root/` 權限為 `700`，nginx 無法讀取靜態檔，會出現 `(13: Permission denied)` 錯誤。  
+> 若已部署在 `/root/`，請先搬移：
+> ```bash
+> sudo mv /root/<專案目錄名稱> /opt/wms
+> sudo chown -R www-data:www-data /opt/wms
+> ```
+
 ```bash
 # 建議放在 /opt/wms（可自訂）
 sudo mkdir -p /opt/wms
-sudo chown $USER:$USER /opt/wms
+sudo chown -R www-data:www-data /opt/wms
 
-# 上傳或 git clone 專案
+# 上傳或 git clone 專案（以 www-data 身份，或 clone 後再 chown）
 cd /opt/wms
 git clone <你的倉庫網址> .   # 或 scp / rsync 上傳
+sudo chown -R www-data:www-data /opt/wms
 
 # 建立虛擬環境並安裝套件
 python3 -m venv venv
@@ -1100,6 +1125,112 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 
 ---
 
+### 菜單管理 `/menu`
+
+#### 菜單 CRUD
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/menu/` | 已登入 | 列出菜單（`?status=1` 只取啟用） |
+| GET | `/menu/<mid>` | 已登入 | 取得單一菜單（含品項、分類、選項組） |
+| POST | `/menu/` | operator+ | 建立菜單（`name`、`description`、`sort_order`） |
+| PUT | `/menu/<mid>` | operator+ | 更新菜單基本資料 |
+| DELETE | `/menu/<mid>` | admin | 刪除菜單 |
+
+#### 品項 CRUD
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| POST | `/menu/<mid>/item` | operator+ | 新增品項（`name`、`price`、`category`、`consume_inventory`、`applied_group_ids` 等） |
+| PUT | `/menu/<mid>/item/<item_id>` | operator+ | 更新品項 |
+| DELETE | `/menu/<mid>/item/<item_id>` | operator+ | 刪除品項 |
+
+#### 分類 CRUD
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| POST | `/menu/<mid>/category` | operator+ | 新增分類 |
+| PUT | `/menu/<mid>/category/<cat_id>` | operator+ | 更新分類（改名時同步更新品項 `category` 欄位） |
+| DELETE | `/menu/<mid>/category/<cat_id>` | operator+ | 刪除分類（品項 `category` 字串保留，不清除） |
+
+#### 客製化選項組
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/menu/<mid>/option-group` | 已登入 | 列出所有選項組 |
+| POST | `/menu/<mid>/option-group` | operator+ | 新增選項組（`name`、`type: single\|multiple`、`required`、`choices`） |
+| PUT | `/menu/<mid>/option-group/<gid>` | operator+ | 更新選項組 |
+| DELETE | `/menu/<mid>/option-group/<gid>` | operator+ | 刪除選項組（自動從品項 `applied_group_ids` 移除） |
+
+**選項組結構**：
+```json
+{
+  "name": "辣度",
+  "type": "single",
+  "required": true,
+  "choices": [
+    {"name": "不辣", "extra_price": 0, "is_default": true},
+    {"name": "小辣", "extra_price": 0},
+    {"name": "大辣", "extra_price": 10}
+  ]
+}
+```
+
+#### 菜單匯出 / 匯入
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/menu/<mid>/export` | operator+ | 匯出單一菜單（含分類、選項組、品項）為 JSON 檔 |
+| POST | `/menu/<mid>/import` | operator+ | 匯入 JSON 至指定菜單（分類/選項組同名略過，品項同名更新）；選項組 ID 自動重映射 |
+| GET | `/menu/export-all` | operator+ | 匯出**全部**菜單為 JSON 檔（適合整機備份） |
+| POST | `/menu/import-all` | operator+ | 從 JSON 批次匯入全部菜單（菜單同名沿用，不覆蓋基本資料） |
+
+---
+
+### 顧客點餐 `/customer-order`
+
+| 方法 | 路徑 | 登入 | 說明 |
+|---|---|---|---|
+| GET | `/customer-order/menu` | 不需要 | 取得點餐用菜單（優先 `settings.order_menu_id`，fallback 第一個啟用菜單） |
+| POST | `/customer-order/` | 不需要（帶 JWT 則以帳號識別） | 顧客建立訂單；未登入時必須帶 `table_no` |
+| GET | `/customer-order/` | 需要 | 查詢訂單列表（可篩選 `status`、`date`） |
+| GET | `/customer-order/active` | 需要 | 廚房用：取得待處理 + 處理中訂單（先進先出） |
+| GET | `/customer-order/stats` | 需要 | 今日各狀態訂單數量與金額 |
+| GET | `/customer-order/<oid>` | 需要 | 取得單筆訂單 |
+| PUT | `/customer-order/<oid>/status` | operator+ | 更新訂單狀態（`pending→processing→completed\|cancelled`） |
+
+**POST `/customer-order/` — 建立訂單**：
+
+```bash
+curl -X POST http://127.0.0.1/customer-order/ \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "table_no": "A1",
+    "items": [
+      {
+        "item_id": "<item_id>",
+        "item_name": "珍珠奶茶",
+        "qty": 2,
+        "price": 55,
+        "customizations": [
+          {"group_id": "<gid>", "group_name": "甜度", "choice_id": "<cid>", "choice_name": "七分", "extra_price": 0}
+        ]
+      }
+    ],
+    "total": 110,
+    "remark": "少冰",
+    "menu_id": "<mid>"
+  }'
+# → {"success": true, "order_id": "...", "order_no": "20260530-0001"}
+```
+
+> 若攜帶有效 JWT，`table_no` 可省略（以登入帳號 username 作識別碼）。
+
+**訂單狀態流程**：`pending（待處理）→ processing（處理中）→ completed（已完成）| cancelled（已取消）`
+
+---
+
 ### 使用者管理 `/user`
 
 | 方法 | 路徑 | 角色 | 說明 |
@@ -1338,7 +1469,8 @@ from src.permissions import require_role
 | `inbound_orders` | 入庫單（含 embedded items array） |
 | `outbound_orders` | 出庫單（含 embedded items array） |
 | `pos_orders` | POS 銷售單（含 embedded items、付款資訊、`source` 欄位區分 POS/外送） |
-| `menus` | POS 菜單（含 `option_groups` 客製化選項群組） |
+| `menus` | POS 菜單（含 `categories`、`option_groups`、`items`，全 embedded） |
+| `customer_orders` | 顧客點餐訂單（`table_no` / 帳號識別，含品項、客製化選項、狀態） |
 | `delivery_orders` | 外送平台訂單（UberEats / foodpanda） |
 | `delivery_mappings` | 系統商品 ID ↔ 平台商品 ID 映射表 |
 | `delivery_settings` | 各平台啟用狀態、自動接單設定 |
