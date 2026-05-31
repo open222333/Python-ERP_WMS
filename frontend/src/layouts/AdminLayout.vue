@@ -182,10 +182,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCacheStore } from '@/stores/cache'
+import { useThemeStore } from '@/stores/theme'
 import AppToast from '@/components/AppToast.vue'
 
 const auth   = useAuthStore()
 const cache  = useCacheStore()
+const theme  = useThemeStore()
 const router = useRouter()
 const route  = useRoute()
 
@@ -198,8 +200,8 @@ function _onUnauthorized() {
 }
 
 onMounted(async () => {
+  theme.applyTheme(theme.themeId)          // restore saved theme
   window.addEventListener('app:unauthorized', _onUnauthorized)
-  // Refresh user info from server and prefetch common data
   await auth.fetchMe()
   cache.loadAll().catch(() => {})
 })

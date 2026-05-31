@@ -2,8 +2,10 @@
 import { ref, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { useThemeStore, THEMES } from '@/stores/theme'
 
 const toast = useToastStore()
+const themeStore = useThemeStore()
 
 // ── Types ────────────────────────────────────────────────
 interface Warehouse { _id: string; name: string; code?: string }
@@ -50,6 +52,27 @@ const zPaySecret   = ref('')
 const zPaySandbox  = ref(true)
 const savingZPay   = ref(false)
 
+// ── 外觀主題 ─────────────────────────────────────────────
+const adminTheme  = ref(themeStore.themeId)
+const savingTheme = ref(false)
+
+function selectTheme(id: string) {
+  adminTheme.value = id
+  themeStore.applyTheme(id)          // 即時預覽
+}
+
+async function saveTheme() {
+  savingTheme.value = true
+  try {
+    await http.put('/settings/', { admin_theme: adminTheme.value })
+    toast.show('配色設定已儲存', 'success')
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
+  } finally {
+    savingTheme.value = false
+  }
+}
+
 // ── Load ─────────────────────────────────────────────────
 async function load() {
   loading.value = true
@@ -71,6 +94,10 @@ async function load() {
     logRetentionDays.value   = Number(s.log_retention_days ?? 0)
     logLastCleanup.value     = s.log_last_cleanup_at   || null
     discountPresets.value    = s.pos_discount_presets  || []
+    if (s.admin_theme) {
+      adminTheme.value = s.admin_theme
+      themeStore.applyTheme(s.admin_theme)
+    }
 
     // payment methods — fallback to cash if empty
     const pm: PayMethod[] = pmR.data?.data || []
@@ -680,5 +707,109 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- ── 後台外觀配色 ──────────────────────────────── -->
+    <div class="col-12">
+      <div class="table-card">
+        <div class="table-header">
+          <h6><i class="bi bi-palette me-1 text-primary"></i>後台外觀配色</h6>
+        </div>
+        <div class="p-4">
+          <p class="text-muted small mb-3">選擇側欄配色主題，點擊即時預覽，儲存後下次開啟自動套用。</p>
+          <div class="theme-grid mb-4">
+            <div
+              v-for="t in THEMES" :key="t.id"
+              class="theme-card"
+              :class="{ active: adminTheme === t.id }"
+              @click="selectTheme(t.id)"
+            >
+              <div class="theme-preview" :style="{ background: t.sidebarBg }">
+                <div class="tp-row">
+                  <div class="tp-dot" :style="{ background: t.accent }"></div>
+                  <div class="tp-line" :style="{ background: t.accent, opacity: .9 }"></div>
+                </div>
+                <div class="tp-row" style="opacity:.3">
+                  <div class="tp-dot"></div>
+                  <div class="tp-line"></div>
+                </div>
+                <div class="tp-row" style="opacity:.2">
+                  <div class="tp-dot"></div>
+                  <div class="tp-line"></div>
+                </div>
+                <div class="tp-accent-bar" :style="{ background: t.accent }"></div>
+                <div v-if="adminTheme === t.id" class="tp-check">
+                  <i class="bi bi-check-lg"></i>
+                </div>
+              </div>
+              <div class="theme-label">{{ t.name }}</div>
+            </div>
+          </div>
+          <button class="btn btn-primary" :disabled="savingTheme" @click="saveTheme">
+            <span v-if="savingTheme" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-palette me-1"></i>儲存配色設定
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
+
+<style scoped>
+/* ── 主題選擇器 ── */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 768px) { .theme-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .theme-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.theme-card {
+  cursor: pointer;
+  border-radius: 10px;
+  border: 2.5px solid #e2e8f0;
+  overflow: hidden;
+  transition: border-color .15s, transform .12s, box-shadow .15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+  user-select: none;
+}
+.theme-card:hover  { border-color: #94a3b8; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+.theme-card.active { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+
+.theme-preview {
+  height: 72px;
+  padding: 10px 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+.tp-row  { display: flex; align-items: center; gap: 5px; }
+.tp-dot  { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); flex-shrink: 0; }
+.tp-line { height: 5px; flex: 1; border-radius: 3px; background: rgba(255,255,255,.25); }
+
+.tp-accent-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 8px;
+}
+.tp-check {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  width: 26px; height: 26px;
+  background: rgba(255,255,255,.92);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #16a34a; font-size: .95rem; font-weight: 800;
+}
+
+.theme-label {
+  padding: 7px 8px;
+  font-size: .77rem;
+  font-weight: 600;
+  text-align: center;
+  background: #fff;
+  color: #374151;
+}
+</style>
