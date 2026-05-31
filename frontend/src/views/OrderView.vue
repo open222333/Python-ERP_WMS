@@ -124,6 +124,7 @@ async function loadMenu() {
     const params: Record<string, string> = {}
     if (qrToken.value) params.t = qrToken.value
     if (menuId)        params.menu_id = menuId
+    params._ts = String(Date.now())   // iOS Safari GET 快取防護
     const qs  = new URLSearchParams(params).toString()
     const res = await http.get(`/customer-order/menu${qs ? '?' + qs : ''}`)
     if (!res.data.success) { errorMsg.value = res.data.message || '無法載入菜單'; return }

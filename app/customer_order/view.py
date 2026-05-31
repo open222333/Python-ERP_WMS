@@ -124,22 +124,26 @@ def get_order_menu():
     if menu_id:
         m = Menu.find_by_id(menu_id)
         if m and m.get('status', 1) == 1:
-            return jsonify({
+            resp = jsonify({
                 'success': True, 'data': m,
                 'table_no': resolved_table, 'table_label': resolved_label,
                 'session_token': session_token,
             })
+            resp.headers['Cache-Control'] = 'no-store'
+            return resp
 
     # fallback：第一個啟用菜單
     menus = Menu.find_all(status=1)
     if not menus:
         return jsonify({'success': False, 'message': '目前無可用菜單'}), 404
     m = Menu.find_by_id(menus[0]['_id'])
-    return jsonify({
+    resp = jsonify({
         'success': True, 'data': m,
         'table_no': resolved_table, 'table_label': resolved_label,
         'session_token': session_token,
     })
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 # ── 公開：顧客建立訂單 ────────────────────────────

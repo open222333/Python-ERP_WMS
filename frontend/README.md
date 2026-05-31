@@ -90,6 +90,8 @@ docker compose up -d
 
 **Session 生命週期**：`session_token` 存於 `localStorage`，重整頁面後自動恢復 SSE 連線。訂單狀態變為 `completed` 或 `cancelled` 時，後端關閉 Session，SSE 推播 `session_closed` 事件，頁面顯示「感謝光臨」全螢幕提示。
 
+**快取防護**：`loadMenu()` 每次呼叫 `GET /customer-order/menu` 時附加 `_ts=Date.now()` 時間戳，確保每次掃碼都產生不同 URL、不被瀏覽器快取。後端亦對此端點回應設定 `Cache-Control: no-store`，防止 iOS Safari 等瀏覽器快取舊 `session_token` 導致短時間重複掃碼時取得過期 Session。
+
 **即時更新（SSE）**：`GET /customer-order/customer-stream?token=<session_token>` 長連線；推播事件：
 - `order_update`：訂單狀態變更，刷新我的訂單列表
 - `session_closed`：Session 已關閉，切換至結束畫面
