@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import QRCode from 'qrcode'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
@@ -23,8 +23,10 @@ const qrUrls      = ref<Record<string, string>>({})
 const loading     = ref(false)
 const saving      = ref(false)
 const refreshing  = ref(false)
-const sessionMap  = ref<Record<string, { active: boolean; created_at?: string; expires_at?: string }>>({})
-const closingSession = ref<string | null>(null)
+const sessionMap          = ref<Record<string, { active: boolean; created_at?: string; expires_at?: string }>>({})
+const closingSession      = ref<string | null>(null)
+const refreshingSessions  = ref(false)
+let   sessionPollTimer    = 0
 
 // Token 設定
 const ttlHours     = ref(24)
@@ -58,21 +60,25 @@ async function genAll() {
   }
 }
 
+function toUtcDate(isoStr: string): Date {
+  return new Date(isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z')
+}
+
 function isExpired(e: TableEntry) {
   if (!e.expires_at) return false
-  return new Date(e.expires_at) < new Date()
+  return toUtcDate(e.expires_at) < new Date()
 }
 
 function fmtExpiry(isoStr: string) {
   if (!isoStr) return '--'
-  const d = new Date(isoStr)
+  const d = toUtcDate(isoStr)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function nextRefreshStr() {
   if (!lastRefresh.value) return '--'
-  const next = new Date(new Date(lastRefresh.value).getTime() + ttlHours.value * 3600 * 1000)
+  const next = new Date(toUtcDate(lastRefresh.value).getTime() + ttlHours.value * 3600 * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${next.getFullYear()}-${pad(next.getMonth()+1)}-${pad(next.getDate())} ${pad(next.getHours())}:${pad(next.getMinutes())}`
 }
@@ -194,7 +200,22 @@ async function batchGenerate() {
   if (added) await saveTables()
 }
 
-// ── 桌況 Session ─────────────────────────────────────────
+// ── 桌況 Session 刷新（輕量，不重產 QR）────────────────────
+async function refreshSessions(manual = false) {
+  if (refreshingSessions.value) return
+  refreshingSessions.value = true
+  try {
+    const res = await http.get('/customer-order/tokens')
+    sessionMap.value = res.data.data?.sessions || {}
+    if (manual) toast.show('Session 狀態已更新', 'success')
+  } catch {
+    if (manual) toast.show('刷新失敗', 'danger')
+  } finally {
+    refreshingSessions.value = false
+  }
+}
+
+// ── 桌況 Session 關閉 ─────────────────────────────────────
 async function closeSession(table_no: string, label: string) {
   if (!confirm(`確定要結束「${label}」的桌況 session 嗎？\n顧客點餐頁面將立即顯示結束提示。`)) return
   closingSession.value = table_no
@@ -246,7 +267,11 @@ const activeSessionCount = computed(() =>
   Object.values(sessionMap.value).filter(s => s.active).length
 )
 
-onMounted(loadTokens)
+onMounted(() => {
+  loadTokens()
+  sessionPollTimer = window.setInterval(() => refreshSessions(), 30_000)
+})
+onUnmounted(() => clearInterval(sessionPollTimer))
 </script>
 
 <template>
@@ -269,6 +294,13 @@ onMounted(loadTokens)
         </small>
       </div>
       <div class="d-flex gap-2 no-print">
+        <button class="btn btn-outline-info btn-sm"
+                :disabled="refreshingSessions"
+                @click="refreshSessions(true)"
+                title="刷新各桌 Session 活躍狀態">
+          <span v-if="refreshingSessions" class="spinner-border spinner-border-sm"></span>
+          <i v-else class="bi bi-arrow-repeat me-1"></i>Session 狀態
+        </button>
         <button class="btn btn-outline-secondary btn-sm" @click="printAll">
           <i class="bi bi-printer me-1"></i>列印全部
         </button>

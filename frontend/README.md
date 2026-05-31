@@ -69,14 +69,16 @@ docker compose up -d
 
 ## 路由結構
 
-| 路徑 | 元件 | 需要登入 | 說明 |
-|------|------|---------|------|
-| `/login` | LoginView | ✗ | 後台登入 |
-| `/admin/*` | AdminLayout + 子頁面 | ✓ | 後台管理 |
-| `/pos` | PosView | ✓ | POS 收銀台 |
-| `/quick-io` | QuickIoView | ✓ | 快速出入庫 |
-| `/kitchen` | KitchenView | ✗ | 廚房看板（免登入） |
-| `/order` | OrderView | ✗ | 顧客點餐（QR 掃碼） |
+| 路徑 | 元件 | 需要登入 | 瀏覽器標題 | 說明 |
+|------|------|---------|-----------|------|
+| `/login` | LoginView | ✗ | 登入 — WMS | 後台登入 |
+| `/admin/*` | AdminLayout + 子頁面 | ✓ | 功能名稱 — WMS | 後台管理 |
+| `/pos` | PosView | ✓ | POS 收銀台 — WMS | POS 收銀台 |
+| `/quick-io` | QuickIoView | ✓ | 快速出入庫 — WMS | 快速出入庫 |
+| `/kitchen` | KitchenView | ✗ | 備餐顯示 — WMS | 廚房看板（免登入） |
+| `/order` | OrderView | ✗ | 顧客點餐 — WMS | 顧客點餐（QR 掃碼） |
+
+瀏覽器標題由 router 的 `afterEach` hook 統一設定（`meta.title — WMS`），各頁面元件不需自行操作 `document.title`。
 
 ## 顧客點餐（OrderView）說明
 
@@ -100,10 +102,19 @@ docker compose up -d
 
 後台「QR 碼管理」頁除桌位 Token 管理外，亦整合桌況 Session 狀態：
 
-| 欄位 | 說明 |
+| 欄位 / 功能 | 說明 |
 |------|------|
 | **桌況 Session** 欄 | 顯示各桌目前是否有活躍 Session（顧客正在使用點餐頁），以及 Session 到期時間 |
 | **結束 session** 按鈕 | 管理員可手動強制關閉指定桌的 Session，顧客端 SSE 即時收到 `session_closed` 事件並顯示「感謝光臨」提示（用於顧客離席但未結帳時） |
 | 標題列統計 | 顯示「N 桌活躍中」綠色計數，一目了然全場使用狀況 |
+| **自動刷新** | Session 狀態每 30 秒自動從後端拉取（僅更新 sessionMap，不重產 QR Code） |
+| **手動刷新按鈕** | 標題列「Session 狀態」按鈕，可立即刷新各桌 Session 活躍狀態 |
 
-**資料來源**：頁面載入時呼叫 `GET /customer-order/tokens`，後端同時回傳 `sessions` 欄位（各桌從 Redis 查詢的即時 TableSession 狀態）。關閉 Session 呼叫 `DELETE /customer-order/session/<table_no>`（需 operator+ 權限）。
+**資料來源**：頁面載入及輪詢時呼叫 `GET /customer-order/tokens`，後端同時回傳 `sessions` 欄位（各桌從 Redis 查詢的即時 TableSession 狀態）。關閉 Session 呼叫 `DELETE /customer-order/session/<table_no>`（需 operator+ 權限）。
+
+## 備餐顯示（KitchenView）
+
+| 功能 | 說明 |
+|------|------|
+| 訂單等待時間（elapsed） | 每秒即時更新，正確處理後端 UTC 時間（自動補 `Z` suffix 避免瀏覽器時區誤判） |
+| 建立時間（fmtTime） | 顯示為本地時間，同樣使用 UTC 修正邏輯 |

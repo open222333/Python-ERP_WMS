@@ -9,13 +9,21 @@ const orders  = ref([])
 const stats   = ref({ pending: 0, processing: 0, completed: 0 })
 const loading = ref(false)
 const nowStr  = ref('')
+const nowTs   = ref(Date.now())
 let   es      = null
 let   clock   = null
 
 function tickClock() {
-  const d = new Date()
+  nowTs.value = Date.now()
+  const d = new Date(nowTs.value)
   const pad = (n) => String(n).padStart(2, '0')
   nowStr.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+// 補 Z suffix：後端以 datetime.utcnow().isoformat() 存 UTC，無 suffix 時 JS 視為本地時間
+function toUtcDate(isoStr) {
+  if (!isoStr) return null
+  return new Date(isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z')
 }
 
 const STATUS_LABEL = {
@@ -90,7 +98,9 @@ async function updateStatus(id, status) {
 // ── 時間格式 ─────────────────────────────────────────────────
 function elapsedStr(createdAt) {
   if (!createdAt) return '--'
-  const sec = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000)
+  const base = toUtcDate(createdAt)
+  if (!base) return '--'
+  const sec = Math.floor((nowTs.value - base.getTime()) / 1000)
   if (sec < 0) return '--'
   const d = Math.floor(sec / 86400)
   const h = Math.floor((sec % 86400) / 3600)
@@ -104,7 +114,8 @@ function elapsedStr(createdAt) {
 
 function fmtTime(createdAt) {
   if (!createdAt) return '--'
-  const d = new Date(createdAt)
+  const d = toUtcDate(createdAt)
+  if (!d) return '--'
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }

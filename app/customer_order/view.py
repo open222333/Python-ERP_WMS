@@ -353,7 +353,7 @@ def update_order_status(oid):
             pass
 
     # 結帳或取消 → 關閉桌況 session（通知顧客端 SSE）
-    if status in ('completed', 'cancelled') and order:
+    if status in ('completed', 'cancelled') and order and order.get('table_no'):
         try:
             TableSession.close(order['table_no'])
         except Exception:
