@@ -9,14 +9,14 @@
 - **入庫單**：建立 → 確認 → 完成（自動入帳庫存）+ 條碼掃描新增品項
 - **出庫單**：建立 → 確認（自動驗證庫存）→ 完成（自動扣減）+ 條碼掃描
 - **庫存移動紀錄**：完整異動歷史
-- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、計算機數字鍵盤（1000/500/100/50 面額快鍵、+/− 模式、符合金額）、找零、印收據、退款管理、預設菜單設定
+- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、計算機數字鍵盤（1000/500/100/50 面額快鍵、+/− 模式、符合金額）、找零、印收據、退款管理、預設菜單設定；今日銷售記錄可點擊展開完整品項明細（含客製化選項、數量 × 單價、折扣）
 - **銷售報表**：日 / 週 / 月 / 年多期間銷售統計、每日/每月明細、付款方式分析
 - **銷售記錄**：查詢、篩選、CSV 匯出 / 歷史資料匯入
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
-- **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、品項批次設定客製化選項（多選 + 3 狀態套用/移除/不改）、菜單列表預設展開（☆ 標記，localStorage 記憶）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）
-- **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號，無需登入；訪客 JWT Session（4 小時，`__guest__` 系統帳號簽發）完整隔離多桌並發；向下相容舊式 `?table=` URL；客製化選項、購物車結帳；不帶參數時顯示空白頁
+- **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、品項批次設定客製化選項（多選 + 3 狀態套用/移除/不改）、菜單列表預設展開（☆ 標記，localStorage 記憶）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）；新增表單（產品 / 品項 / 分類 / 選項組）關閉不儲存自動保留草稿，儲存成功後清空
+- **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號，無需登入；桌號共享 Session Token（Redis 儲存），同桌多支裝置共用同一 Session；結帳或取消訂單時自動關閉 Session；SSE 即時推播訂單狀態更新與 Session 關閉事件（「感謝光臨」全螢幕提示）；Session Token 存入 `localStorage` 支援重整恢復連線；向下相容舊式 `?table=` URL；客製化選項、購物車結帳；不帶參數時顯示空白頁
 - **QR 碼管理**：桌號識別碼（SKU 式 `T-001`，自動生成可手動修改）+ 輪替安全 Token 雙層設計；後台設定各桌 Token TTL（小時）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新
 - **後台安全**：登入 API 速率限制（10 次/分鐘；50 次/小時），Redis 跨 Worker 共享計數；`__guest__` 系統帳號自動建立，`locked` 鎖定不可刪改
 - **廚房看板**：即時顯示待處理 / 處理中訂單（先進先出），無需後台登入
@@ -118,6 +118,7 @@ Python-ERP_WMS/
         ├── pos.py                      # PosOrder（POS 銷售單 + bulk_import）
         ├── menu.py                     # Menu（菜單/分類/品項/選項組，全 embedded）
         ├── customer_order.py           # CustomerOrder（顧客點餐訂單）
+        ├── table_session.py            # TableSession（Redis 桌號共享 Session，結帳 / 取消時自動關閉）
         ├── user_template.py            # UserTemplate（頁面權限模板）
         └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
 ```
@@ -1219,25 +1220,27 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 
 | 方法 | 路徑 | 登入 | 說明 |
 |---|---|---|---|
-| GET | `/customer-order/menu` | 不需要 | 取得點餐用菜單；帶 `?t=TOKEN` 時驗證 QR Token、回傳訪客 JWT（`session_token`，4 小時有效）並自動帶入桌號，同時觸發 Token 懶觸發刷新 |
-| POST | `/customer-order/` | 不需要（QR 模式帶訪客 JWT） | 建立訂單；QR 掃碼流程帶 `Authorization: Bearer <session_token>`，桌號由 JWT claims 讀取；一般模式帶 `table_no` |
+| GET | `/customer-order/menu` | 不需要 | 取得點餐用菜單；帶 `?t=TOKEN` 時驗證 QR Token，建立（或取回）桌號共享 Session，回傳 `session_token`（Redis TableSession）並自動帶入桌號，同時觸發 Token 懶觸發刷新 |
+| POST | `/customer-order/` | 不需要 | 建立訂單；Body 帶 `session_token` 以驗證桌號 Session；Session 無效回傳 401 |
+| GET | `/customer-order/session` | 不需要 | 顧客驗證 Session Token（`?token=TOKEN`），回傳桌號與標籤資訊；Token 無效回傳 401 |
+| GET | `/customer-order/customer-stream` | 不需要 | SSE 即時串流（`?token=TOKEN`）；推播 `order_update`（訂單狀態更新）與 `session_closed`（Session 關閉，顯示「感謝光臨」）事件 |
+| DELETE | `/customer-order/session/<table_no>` | operator+ | 管理員手動關閉指定桌號 Session（強制觸發 SSE `session_closed` 推播） |
 | GET | `/customer-order/` | 需要 | 查詢訂單列表（可篩選 `status`、`date`） |
 | GET | `/customer-order/active` | 需要 | 廚房用：取得待處理 + 處理中訂單（先進先出） |
 | GET | `/customer-order/stats` | 需要 | 今日各狀態訂單數量與金額 |
 | GET | `/customer-order/<oid>` | 需要 | 取得單筆訂單 |
-| PUT | `/customer-order/<oid>/status` | operator+ | 更新訂單狀態（`pending→processing→completed\|cancelled`） |
+| PUT | `/customer-order/<oid>/status` | operator+ | 更新訂單狀態（`pending→processing→completed\|cancelled`）；狀態變為 `completed` 或 `cancelled` 時自動關閉該桌 Session |
 | GET | `/customer-order/tokens` | admin | 取得桌號 Token 清單、TTL 設定、上次刷新時間 |
 | POST | `/customer-order/tokens/refresh` | admin | 立即刷新所有桌號 Token（可同時更新 TTL） |
 | PUT | `/customer-order/tokens/tables` | admin | 新增 / 更新桌號清單，保留現有 Token；`enabled` 欄位可啟停個別桌號 |
 
-**POST `/customer-order/` — 建立訂單**：
+**POST `/customer-order/` — 建立訂單（QR 掃碼模式）**：
 
 ```bash
 curl -X POST http://127.0.0.1/customer-order/ \
-  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "table_no": "A1",
+    "session_token": "<table_session_token>",
     "items": [
       {
         "item_id": "<item_id>",
@@ -1256,9 +1259,11 @@ curl -X POST http://127.0.0.1/customer-order/ \
 # → {"success": true, "order_id": "...", "order_no": "20260530-0001"}
 ```
 
-> 若攜帶有效 JWT，`table_no` 可省略（以登入帳號 username 作識別碼）。
+> `session_token` 由 `GET /customer-order/menu?t=TOKEN` 回傳，存於 `localStorage`。Session 無效（過期 / 已關閉）時回傳 401，顧客需重新掃碼。
 
 **訂單狀態流程**：`pending（待處理）→ processing（處理中）→ completed（已完成）| cancelled（已取消）`
+
+> 訂單狀態變為 `completed` 或 `cancelled` 時，系統自動關閉對應桌號的 TableSession 並透過 SSE 推播 `session_closed` 事件，顧客頁面顯示「感謝光臨」畫面。
 
 ---
 
@@ -1502,6 +1507,7 @@ from src.permissions import require_role
 | `pos_orders` | POS 銷售單（含 embedded items、付款資訊、`source` 欄位區分 POS/外送） |
 | `menus` | POS 菜單（含 `categories`、`option_groups`、`items`，全 embedded） |
 | `customer_orders` | 顧客點餐訂單（`table_no` / 帳號識別，含品項、客製化選項、狀態） |
+| _(Redis)_ `table_session:{table_no}` | TableSession（桌號共享 Session Token，JSON 儲存；`table_session_tok:{token}` 提供反向查詢；`table_session_closed:{table_no}` 為關閉旗標，5 分鐘 TTL） |
 | `delivery_orders` | 外送平台訂單（UberEats / foodpanda） |
 | `delivery_mappings` | 系統商品 ID ↔ 平台商品 ID 映射表 |
 | `delivery_settings` | 各平台啟用狀態、自動接單設定 |
@@ -1546,5 +1552,6 @@ from src.permissions import require_role
 | 正式部署 | 建議使用 gunicorn + nginx，不直接暴露 Flask 開發伺服器 |
 | POS PWA | `/pos/` 支援「加入主畫面」（PWA），加入後可從手機桌面直接啟動並自動鎖定橫向 |
 | Redis | 用於登入速率限制；僅內網時無需設密碼；`swallow_errors=True` 確保 Redis 斷線時靜默放行，不影響正常登入 |
-| `__guest__` 帳號 | 啟動時自動建立，`locked=True` 防止誤刪；為 QR 掃碼訪客 JWT 的身份識別，不提供正常登入能力 |
+| `__guest__` 帳號 | 啟動時自動建立，`locked=True` 防止誤刪；為系統保留帳號，不提供正常登入能力 |
+| TableSession | 顧客點餐 Session 存於 Redis（非 MongoDB）；桌號共享，同桌多支裝置使用同一 Token；結帳 / 取消後自動刪除並設置 5 分鐘關閉旗標供 SSE 推播 |
 | QR 點餐域名隔離 | 點餐域名（`order.example.com`）的 nginx 設定在 API 層封鎖所有後台路由（403），掃碼顧客無從得知後台入口 |

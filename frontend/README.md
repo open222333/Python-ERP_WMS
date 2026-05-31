@@ -82,8 +82,16 @@ docker compose up -d
 
 | 進入方式 | 行為 |
 |---------|------|
-| `/order?t=TOKEN` | 驗證 QR Token → 後端簽發 4 小時訪客 JWT → 自動載入菜單 |
-| `/order?table=桌號` | 舊式 URL 相容，直接顯示點餐頁（需手動登入） |
+| `/order?t=TOKEN` | 驗證 QR Token → 後端建立 / 取回桌號 TableSession → 回傳 `session_token` → 自動載入菜單並建立 SSE 連線 |
+| `/order?table=桌號` | 舊式 URL 相容，直接顯示點餐頁 |
 | `/order`（無參數） | 顯示空白頁，不載入任何內容 |
 
-訪客 JWT（`session_token`）僅存於 Vue 元件的記憶體變數，不寫入 `localStorage`，重整頁面後需重新掃碼。
+**Session 生命週期**：`session_token` 存於 `localStorage`，重整頁面後自動恢復 SSE 連線。訂單狀態變為 `completed` 或 `cancelled` 時，後端關閉 Session，SSE 推播 `session_closed` 事件，頁面顯示「感謝光臨」全螢幕提示。
+
+**即時更新（SSE）**：`GET /customer-order/customer-stream?token=<session_token>` 長連線；推播事件：
+- `order_update`：訂單狀態變更，刷新我的訂單列表
+- `session_closed`：Session 已關閉，切換至結束畫面
+
+## 後台表單草稿保留
+
+新增模式下（ProductsView、MenusView 的品項 / 分類 / 選項組），關閉 Modal 不儲存會自動保留已填寫的內容；再次點開「新增」時恢復草稿。儲存成功後自動清空，下次從空白開始。編輯模式（傳入既有資料）不受影響，永遠從現有資料載入。

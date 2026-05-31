@@ -1,16 +1,24 @@
 """
 顧客訂單 Blueprint  /customer-order
-- GET  /menu              公開：取得點單用菜單（支援 ?t=QR_TOKEN）
-- POST /                  公開：顧客建立訂單（支援 body.qr_token）
-- GET  /                  登入：查詢訂單列表
-- GET  /active            登入：取得待處理 + 處理中訂單（廚房用）
-- GET  /stats             登入：今日統計
-- GET  /stream            登入（token=query）：SSE 即時訂單推送
-- GET  /<oid>             登入：取得單筆訂單
-- PUT  /<oid>/status      登入：更新訂單狀態（operator+）
-- GET  /tokens            admin：取得 QR Token 清單與設定
-- POST /tokens/refresh    admin：手動刷新所有 QR Token
-- PUT  /tokens/tables     admin：更新桌位清單（新增/刪除/開關）
+公開（掃碼後）：
+- GET  /menu              取得點單菜單（?t=QR_TOKEN），回傳共享 session_token
+- GET  /session           驗證 session token（?token=SESSION_TOKEN）
+- POST /                  顧客建立訂單（body.session_token）
+- GET  /customer-stream   SSE 即時推播訂單狀態（?token=SESSION_TOKEN）
+
+管理員操作：
+- GET  /                  查詢訂單列表（需登入）
+- GET  /active            待處理 + 處理中訂單（廚房用，需登入）
+- GET  /stats             今日統計（需登入）
+- GET  /stream            SSE 廚房訂單推送（需登入，?token=JWT）
+- GET  /<oid>             取得單筆訂單（需登入）
+- PUT  /<oid>/status      更新訂單狀態（operator+；完成/取消時自動關閉桌況）
+- DELETE /session/<table_no>  手動關閉桌況 session（admin）
+
+QR Token 管理：
+- GET  /tokens            取得 QR Token 清單與設定（admin）
+- POST /tokens/refresh    手動刷新所有 QR Token（admin）
+- PUT  /tokens/tables     更新桌位清單（admin）
 """
 import time
 import json
@@ -20,9 +28,10 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_jwt_extended import (
     jwt_required, get_jwt_identity, verify_jwt_in_request,
-    decode_token, create_access_token, get_jwt,
+    decode_token, get_jwt,
 )
 from src.models.customer_order import CustomerOrder, ORDER_STATUS_LABEL
+from src.models.table_session import TableSession
 from src.models.menu import Menu
 from src.models.settings import SystemSettings
 from src.models.log import Log
@@ -103,13 +112,12 @@ def get_order_menu():
         if SystemSettings.get('table_tokens', {}):
             return jsonify({'success': False, 'message': '請使用 QR Code 掃描進入'}), 401
 
-    # 產生 guest session token（掃碼後 4 小時內有效）
+    # 取得（或建立）此桌的共享 session token
     session_token = None
     if resolved_table:
-        session_token = create_access_token(
-            identity='__guest__',
-            additional_claims={'table_no': resolved_table, 'table_label': resolved_label or resolved_table},
-            expires_delta=timedelta(hours=4),
+        session_token = TableSession.get_or_create(
+            resolved_table,
+            table_label=resolved_label or resolved_table,
         )
 
     menu_id = request.args.get('menu_id') or SystemSettings.get('order_menu_id', '')
@@ -154,16 +162,23 @@ def create_order():
     except Exception:
         pass
 
-    data      = request.get_json(silent=True) or {}
-    qr_token  = (data.get('qr_token') or '').strip()
-    table_no  = (data.get('table_no') or '').strip()
-    items     = data.get('items', [])
-    total     = data.get('total', 0)
-    remark    = data.get('remark', '')
-    menu_id   = data.get('menu_id', '')
+    data          = request.get_json(silent=True) or {}
+    session_token = (data.get('session_token') or '').strip()
+    qr_token      = (data.get('qr_token') or '').strip()
+    table_no      = (data.get('table_no') or '').strip()
+    items         = data.get('items', [])
+    total         = data.get('total', 0)
+    remark        = data.get('remark', '')
+    menu_id       = data.get('menu_id', '')
 
-    # Guest session JWT（掃碼後換取的 4h token）
-    if customer_id == '__guest__':
+    # 優先使用桌況 session token（掃碼後由 /menu 回傳）
+    if session_token:
+        session = TableSession.get_by_token(session_token)
+        if not session:
+            return jsonify({'success': False, 'message': '桌況已結束，請重新掃描 QR Code'}), 401
+        table_no = session['table_no']
+    # 舊版 guest JWT 相容
+    elif customer_id == '__guest__':
         table_no = jwt_claims.get('table_no', '') or table_no
     elif qr_token:
         # 舊模式相容：body 帶 qr_token
@@ -335,9 +350,98 @@ def update_order_status(oid):
             from src.models.pos import PosOrder
             PosOrder.create_from_cust_order(order, operator)
         except Exception:
-            pass   # 連動失敗不影響主流程
+            pass
+
+    # 結帳或取消 → 關閉桌況 session（通知顧客端 SSE）
+    if status in ('completed', 'cancelled') and order:
+        try:
+            TableSession.close(order['table_no'])
+        except Exception:
+            pass
 
     return jsonify({'success': True})
+
+
+# ── 公開：顧客查詢 session 狀態 ──────────────────
+@app_customer_order.route('/session', methods=['GET'])
+def get_session():
+    """
+    公開 API：驗證桌況 session token 是否有效，回傳桌位資訊。
+    ?token=SESSION_TOKEN
+    """
+    raw_token = request.args.get('token', '').strip()
+    session = TableSession.get_by_token(raw_token) if raw_token else None
+    if not session:
+        return jsonify({'success': False, 'message': '桌況已結束，請重新掃描 QR Code'}), 401
+    return jsonify({'success': True, 'data': {
+        'table_no':    session['table_no'],
+        'table_label': session['table_label'],
+        'expires_at':  session.get('expires_at'),
+    }})
+
+
+# ── 公開：顧客點餐 SSE ────────────────────────────
+@app_customer_order.route('/customer-stream', methods=['GET'])
+def customer_stream():
+    """
+    SSE 推播顧客點餐頁面（?token=SESSION_TOKEN）
+    事件類型：
+      order_update   — 此桌今日訂單有變更時推送
+      session_closed — 結帳/取消/管理員關閉後推送，前端應顯示結束提示
+    """
+    raw_token = request.args.get('token', '').strip()
+    session = TableSession.get_by_token(raw_token) if raw_token else None
+    if not session:
+        return jsonify({'success': False, 'message': '桌況已結束，請重新掃描 QR Code'}), 401
+
+    table_no = session['table_no']
+
+    def generate():
+        last_hash = None
+        while True:
+            try:
+                if TableSession.is_closed(table_no):
+                    yield 'event: session_closed\ndata: {}\n\n'
+                    break
+
+                orders = CustomerOrder.find_by_table(table_no)
+                h = hashlib.md5(
+                    json.dumps(orders, sort_keys=True, default=str).encode()
+                ).hexdigest()
+                if h != last_hash:
+                    last_hash = h
+                    payload = {'orders': orders, 'table_no': table_no}
+                    yield f"event: order_update\ndata: {json.dumps(payload, default=str)}\n\n"
+
+                time.sleep(2)
+            except GeneratorExit:
+                break
+            except Exception:
+                break
+
+    return Response(
+        stream_with_context(generate()),
+        content_type='text/event-stream',
+        headers={
+            'Cache-Control':    'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection':       'keep-alive',
+        },
+    )
+
+
+# ── Admin：手動關閉桌況 session ───────────────────
+@app_customer_order.route('/session/<table_no>', methods=['DELETE'])
+@jwt_required()
+@require_role('admin', 'operator')
+def close_table_session(table_no):
+    """
+    管理員手動關閉桌況（會觸發顧客端 SSE session_closed 事件）
+    """
+    closed = TableSession.close(table_no)
+    operator = get_jwt_identity()
+    Log.create(operator, '關閉桌況 session', f'table={table_no}')
+    return jsonify({'success': True, 'closed': closed})
 
 
 # ── Admin：取得 QR Token 清單與設定 ──────────────

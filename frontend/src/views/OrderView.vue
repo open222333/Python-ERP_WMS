@@ -13,8 +13,13 @@ const tableFromUrl = computed(() => ((route.query.table as string) || '').trim()
 
 // 後端解析後的桌號（token 模式由 /menu 回傳）
 const resolvedTable  = ref('')
-// 掃碼後換取的 guest session token（4h，僅存記憶體）
-const sessionToken   = ref('')
+// 同桌共用 session token（Redis-backed，存 localStorage 供頁面重整後恢復）
+const sessionToken   = ref(localStorage.getItem('order_session_token') || '')
+
+// SSE：顧客點餐即時推播
+const myOrders      = ref<any[]>([])
+const sessionClosed = ref(false)
+let   sseConn: EventSource | null = null
 
 // ── Types ─────────────────────────────────────────
 interface SelectionItem {
@@ -50,9 +55,42 @@ async function doLogin() {
 
 function handleLogout() {
   auth.logout()
-  cart.value    = []
-  remark.value  = ''
+  cart.value     = []
+  remark.value   = ''
   menuData.value = null
+}
+
+// ── 顧客 SSE ──────────────────────────────────────
+function connectCustomerSSE(token: string) {
+  if (sseConn) { sseConn.close(); sseConn = null }
+  sseConn = new EventSource(`/customer-order/customer-stream?token=${encodeURIComponent(token)}`)
+  sseConn.addEventListener('order_update', (e: MessageEvent) => {
+    try {
+      const d = JSON.parse(e.data)
+      if (Array.isArray(d.orders)) myOrders.value = d.orders
+    } catch {}
+  })
+  sseConn.addEventListener('session_closed', () => {
+    sessionClosed.value = true
+    localStorage.removeItem('order_session_token')
+    sessionToken.value = ''
+    if (sseConn) { sseConn.close(); sseConn = null }
+  })
+}
+
+function statusLabel(s: string): string {
+  const map: Record<string, string> = {
+    pending: '等待中', processing: '製作中', completed: '已完成', cancelled: '已取消',
+  }
+  return map[s] || s
+}
+
+function statusBadge(s: string): string {
+  const map: Record<string, string> = {
+    pending: 'bg-warning text-dark', processing: 'bg-info text-dark',
+    completed: 'bg-success', cancelled: 'bg-secondary',
+  }
+  return map[s] || 'bg-secondary'
 }
 
 // ── 菜單 ──────────────────────────────────────────
@@ -92,7 +130,11 @@ async function loadMenu() {
     menuData.value      = res.data.data
     menuTitle.value     = menuData.value?.name || '點餐'
     resolvedTable.value = res.data.table_no || tableFromUrl.value || ''
-    if (res.data.session_token) sessionToken.value = res.data.session_token
+    if (res.data.session_token) {
+      sessionToken.value = res.data.session_token
+      localStorage.setItem('order_session_token', res.data.session_token)
+      connectCustomerSSE(res.data.session_token)
+    }
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.message || '網路錯誤，請重新整理'
   } finally {
@@ -147,15 +189,14 @@ async function submitOrder() {
         extra_price: s.extra_price,
       })),
     }))
-    const headers: Record<string, string> = {}
-    if (sessionToken.value) headers['Authorization'] = `Bearer ${sessionToken.value}`
     const res = await http.post('/customer-order/', {
-      table_no: resolvedTable.value || auth.username,
+      session_token: sessionToken.value || undefined,
+      table_no:      resolvedTable.value || auth.username,
       items,
-      total:   cartSubtotal.value,
-      note:    remark.value,
-      menu_id: menuData.value?._id,
-    }, { headers })
+      total:         cartSubtotal.value,
+      remark:        remark.value,
+      menu_id:       menuData.value?._id,
+    })
     orderNo.value      = res.data.order_no || '—'
     showSuccess.value  = true
     showCartDrawer.value = false
@@ -258,21 +299,34 @@ function applyBodyStyle() {
 onMounted(async () => {
   if (auth.isLoggedIn && !auth.username) await auth.fetchMe()
   if (auth.isLoggedIn || tableFromUrl.value || qrToken.value) await loadMenu()
+  // loadMenu 會連 SSE；若 sessionToken 已存在（頁面重整）且 SSE 尚未連接，補連
+  if (sessionToken.value && !sseConn) connectCustomerSSE(sessionToken.value)
   applyBodyStyle()
   window.addEventListener('resize', applyBodyStyle)
 })
 onUnmounted(() => {
   document.body.style.overflow = ''
   window.removeEventListener('resize', applyBodyStyle)
+  if (sseConn) { sseConn.close(); sseConn = null }
 })
 </script>
 
 <template>
+  <!-- 桌況已結束 → 全屏感謝頁 -->
+  <div v-if="sessionClosed" class="session-ended-screen">
+    <div class="session-ended-card">
+      <div style="font-size:3.5rem">🙏</div>
+      <h4 class="fw-bold mt-3 mb-2">感謝您的光臨</h4>
+      <p class="text-muted mb-1">本次用餐已結束</p>
+      <p class="text-muted small">如需再次點餐，請重新掃描桌上的 QR Code</p>
+    </div>
+  </div>
+
   <!-- 無參數且未登入 → 空白（防止直接瀏覽） -->
-  <template v-if="!qrToken && !tableFromUrl && !auth.isLoggedIn"></template>
+  <template v-else-if="!qrToken && !tableFromUrl && !auth.isLoggedIn"></template>
 
   <!-- 有 tableFromUrl 但未登入 → 顯示登入遮罩（內部人員用） -->
-  <div v-else-if="tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
+  <div v-else-if="!sessionClosed && tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
     <div class="login-card">
       <i class="bi bi-cup-hot text-primary" style="font-size:2.2rem"></i>
       <h5 class="mt-2 mb-1 fw-bold">點餐系統</h5>
@@ -297,7 +351,7 @@ onUnmounted(() => {
   </div>
 
   <!-- ── 主畫面 ──────────────────────────────────── -->
-  <div v-else id="order-app">
+  <div v-else-if="!sessionClosed" id="order-app">
 
     <!-- 頂部列 -->
     <div id="order-topbar">
@@ -305,8 +359,9 @@ onUnmounted(() => {
         <i class="bi bi-cup-hot me-1 text-primary"></i>{{ menuTitle }}
       </h6>
       <div class="topbar-right">
-        <span class="text-muted small me-2 d-none d-sm-inline">
-          <i class="bi bi-geo-alt me-1"></i>{{ tableFromUrl || auth.username }}
+        <span v-if="resolvedTable || tableFromUrl || auth.username"
+              class="text-muted small me-2 d-none d-sm-inline">
+          <i class="bi bi-geo-alt me-1"></i>{{ resolvedTable || tableFromUrl || auth.username }}
         </span>
         <button v-if="auth.isLoggedIn" class="btn btn-sm btn-outline-secondary me-1" @click="handleLogout">登出</button>
         <!-- 手機版購物車按鈕 -->
@@ -419,6 +474,23 @@ onUnmounted(() => {
             <i v-else class="bi bi-check-circle me-1"></i>送出訂單
           </button>
         </div>
+
+        <!-- 訂單狀態（SSE 即時更新） -->
+        <div v-if="myOrders.length" class="order-status-section">
+          <div class="order-status-title">
+            <i class="bi bi-receipt me-1"></i>我的訂單
+          </div>
+          <div v-for="o in myOrders" :key="o._id" class="osc">
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="osc-no">#{{ o.order_no }}</span>
+              <span :class="`badge ${statusBadge(o.status)}`">{{ statusLabel(o.status) }}</span>
+            </div>
+            <div class="osc-items">
+              {{ o.items.slice(0, 3).map((i: any) => i.item_name).join('、') }}
+              <span v-if="o.items.length > 3">…</span>
+            </div>
+          </div>
+        </div>
       </div><!-- /panel-cart -->
 
     </div><!-- /order-body -->
@@ -472,6 +544,23 @@ onUnmounted(() => {
             <span v-if="submitting" class="spinner-border spinner-border-sm me-1"></span>
             <i v-else class="bi bi-check-circle me-1"></i>送出訂單
           </button>
+
+          <!-- 訂單狀態（SSE 即時更新） -->
+          <div v-if="myOrders.length" class="order-status-section mt-3">
+            <div class="order-status-title">
+              <i class="bi bi-receipt me-1"></i>我的訂單
+            </div>
+            <div v-for="o in myOrders" :key="o._id" class="osc">
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="osc-no">#{{ o.order_no }}</span>
+                <span :class="`badge ${statusBadge(o.status)}`">{{ statusLabel(o.status) }}</span>
+              </div>
+              <div class="osc-items">
+                {{ o.items.slice(0, 3).map((i: any) => i.item_name).join('、') }}
+                <span v-if="o.items.length > 3">…</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -875,6 +964,45 @@ onUnmounted(() => {
   width: 100%;
   box-shadow: 0 8px 40px rgba(0,0,0,.12);
 }
+
+/* ── 桌況結束全屏 ─────────────────────────────── */
+.session-ended-screen {
+  position: fixed;
+  inset: 0;
+  background: #f8fafc;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.session-ended-card {
+  text-align: center;
+  max-width: 320px;
+}
+
+/* ── 訂單狀態區塊 ─────────────────────────────── */
+.order-status-section {
+  padding-top: .75rem;
+  border-top: 1px solid #e2e8f0;
+}
+.order-status-title {
+  font-weight: 700;
+  font-size: .78rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-bottom: .5rem;
+}
+.osc {
+  background: #f8fafc;
+  border-radius: .5rem;
+  padding: .45rem .6rem;
+  margin-bottom: .35rem;
+}
+.osc-no    { font-weight: 700; font-size: .8rem; color: #1e293b; }
+.osc-items { font-size: .7rem; color: #64748b; margin-top: .15rem;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── 桌機：固定高度內部滾動 ────────────────────── */
 @media (min-width: 768px) {

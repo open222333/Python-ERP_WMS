@@ -209,7 +209,7 @@ function openMenuModal(m?: MenuData) {
       _id: m._id, name: m.name,
       description: m.description || '', sort_order: m.sort_order || 0, status: m.status ?? 1,
     }
-  } else {
+  } else if (menuForm.value._id) {
     menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1 }
   }
   showMenuModal.value = true
@@ -218,6 +218,7 @@ function openMenuModal(m?: MenuData) {
 async function saveMenu() {
   if (!menuForm.value.name.trim()) { toast.show('請填寫菜單名稱', 'danger'); return }
   saving.value = true
+  const isNew = !menuForm.value._id
   try {
     if (menuForm.value._id) {
       await http.put(`/menu/${menuForm.value._id}`, menuForm.value)
@@ -226,6 +227,7 @@ async function saveMenu() {
     }
     toast.show('儲存成功', 'success')
     showMenuModal.value = false
+    if (isNew) menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1 }
     await loadMenus()
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
@@ -271,7 +273,7 @@ async function openItemModal(item?: MenuItemData) {
       })),
       applied_group_ids: [...(src.applied_group_ids || [])],
     }
-  } else {
+  } else if (itemForm.value._id) {
     itemForm.value = {
       _id: '', name: '', category: '', price: 0, description: '',
       sort_order: 0, status: 1, consume_inventory: false,
@@ -286,6 +288,7 @@ async function saveItem() {
   if (!itemForm.value.name.trim()) { toast.show('請填寫品項名稱', 'danger'); return }
   if (!selectedMenuId.value) { toast.show('請先選擇菜單', 'danger'); return }
   saving.value = true
+  const isNew = !itemForm.value._id
   try {
     const payload = { ...itemForm.value }
     if (itemForm.value._id) {
@@ -295,6 +298,11 @@ async function saveItem() {
     }
     toast.show('儲存成功', 'success')
     showItemModal.value = false
+    if (isNew) itemForm.value = {
+      _id: '', name: '', category: '', price: 0, description: '',
+      sort_order: 0, status: 1, consume_inventory: false,
+      linked_products: [], applied_group_ids: [],
+    }
     await loadMenuDetail(selectedMenuId.value)
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
@@ -316,9 +324,11 @@ async function delItem(itemId: string) {
 
 // ── 分類 CRUD ──────────────────────────────────────────
 function openCatModal(cat?: MenuCat) {
-  catForm.value = cat
-    ? { _id: cat._id, name: cat.name, sort_order: cat.sort_order ?? 0, status: cat.status ?? 1 }
-    : { _id: '', name: '', sort_order: 0, status: 1 }
+  if (cat) {
+    catForm.value = { _id: cat._id, name: cat.name, sort_order: cat.sort_order ?? 0, status: cat.status ?? 1 }
+  } else if (catForm.value._id) {
+    catForm.value = { _id: '', name: '', sort_order: 0, status: 1 }
+  }
   showCatModal.value = true
 }
 
@@ -326,6 +336,7 @@ async function saveCat() {
   if (!catForm.value.name.trim()) { toast.show('請填寫分類名稱', 'danger'); return }
   if (!selectedMenuId.value) return
   saving.value = true
+  const isNew = !catForm.value._id
   try {
     if (catForm.value._id) {
       await http.put(`/menu/${selectedMenuId.value}/category/${catForm.value._id}`, catForm.value)
@@ -334,6 +345,7 @@ async function saveCat() {
     }
     toast.show('儲存成功', 'success')
     showCatModal.value = false
+    if (isNew) catForm.value = { _id: '', name: '', sort_order: 0, status: 1 }
     await loadMenuDetail(selectedMenuId.value)
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
@@ -363,7 +375,7 @@ function openOgModal(og?: OptionGroup) {
       required: og.required,
       choices:  og.choices.map(c => ({ ...c })),
     }
-  } else {
+  } else if (ogForm.value._id) {
     ogForm.value = { _id: '', name: '', type: 'single', required: true, choices: [] }
   }
   showOgModal.value = true
@@ -390,6 +402,7 @@ async function saveOg() {
   if (!ogForm.value.name.trim()) { toast.show('請填寫選項組名稱', 'danger'); return }
   if (!selectedMenuId.value) return
   ogSaving.value = true
+  const isNew = !ogForm.value._id
   try {
     const payload = {
       name:     ogForm.value.name.trim(),
@@ -410,6 +423,7 @@ async function saveOg() {
     }
     toast.show('儲存成功', 'success')
     showOgModal.value = false
+    if (isNew) ogForm.value = { _id: '', name: '', type: 'single', required: true, choices: [] }
     await loadMenuDetail(selectedMenuId.value)
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')

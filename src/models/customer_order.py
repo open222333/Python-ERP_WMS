@@ -131,6 +131,15 @@ class CustomerOrder:
         except Exception:
             return False
 
+    @classmethod
+    def find_by_table(cls, table_no: str) -> list:
+        """取得此桌今日所有訂單（顧客 SSE 用，先進先出）"""
+        today = datetime.utcnow().strftime('%Y%m%d')
+        docs = cls._col().find(
+            {'table_no': table_no, 'order_date': today}
+        ).sort('created_at', 1)
+        return [_fmt(d) for d in docs]
+
     # ── 統計 ──────────────────────────────────────
     @classmethod
     def today_stats(cls) -> dict:

@@ -106,9 +106,11 @@ function openModal(p?: Product) {
       description: p.description ?? '',
       enabled:     p.enabled ?? true,
     }
-  } else {
+  } else if (form.value._id) {
+    // 上次為編輯模式，切回新增時才清空
     form.value = emptyForm()
   }
+  // 無 _id 且草稿存在 → 保留未儲存內容
   showModal.value = true
 }
 
@@ -119,6 +121,7 @@ async function save() {
     return
   }
   saving.value = true
+  const isNew = !form.value._id
   try {
     const payload = {
       name:        form.value.name.trim(),
@@ -138,6 +141,7 @@ async function save() {
     }
     toast.show('儲存成功', 'success')
     showModal.value = false
+    if (isNew) form.value = emptyForm()  // 新增成功後清空草稿
     await loadProducts()
   } catch (e: any) {
     toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')

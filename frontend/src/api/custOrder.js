@@ -12,6 +12,8 @@ export const custOrderApi = {
   getStats:     ()       => client.get('/customer-order/stats'),
 
   // 顧客點餐
-  getMenu:      ()       => client.get('/customer-order/menu'),
-  createOrder:  (data)   => client.post('/customer-order/', data),
+  getMenu:           ()          => client.get('/customer-order/menu'),
+  createOrder:       (data)      => client.post('/customer-order/', data),
+  getSession:        (token)     => client.get('/customer-order/session', { params: { token } }),
+  closeTableSession: (tableNo)   => client.delete(`/customer-order/session/${tableNo}`),
 }
