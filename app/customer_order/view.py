@@ -5,11 +5,15 @@
 - GET  /               登入：查詢訂單列表
 - GET  /active         登入：取得待處理 + 處理中訂單（廚房用）
 - GET  /stats          登入：今日統計
+- GET  /stream         登入（token=query）：SSE 即時訂單推送
 - GET  /<oid>          登入：取得單筆訂單
 - PUT  /<oid>/status   登入：更新訂單狀態（operator+）
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
+import time
+import json
+import hashlib
+from flask import Blueprint, request, jsonify, Response, stream_with_context
+from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, decode_token
 from src.models.customer_order import CustomerOrder, ORDER_STATUS_LABEL
 from src.models.menu import Menu
 from src.models.settings import SystemSettings
@@ -100,6 +104,51 @@ def create_order():
     }), 201
 
 
+# ── SSE：即時訂單推送 ─────────────────────────────
+@app_customer_order.route('/stream', methods=['GET'])
+def stream_orders():
+    """
+    SSE 推送廚房訂單（每 2 秒檢查，有變更才推送）
+    JWT 以 ?token= query string 傳遞（EventSource 不支援自訂 header）
+    """
+    raw_token = request.args.get('token', '')
+    if not raw_token:
+        return jsonify({'success': False, 'message': '未授權'}), 401
+    try:
+        decode_token(raw_token)
+    except Exception:
+        return jsonify({'success': False, 'message': '未授權'}), 401
+
+    def generate():
+        last_hash = None
+        while True:
+            try:
+                orders = CustomerOrder.find_active()
+                stats  = CustomerOrder.today_stats()
+                payload = {'orders': orders, 'stats': stats}
+                h = hashlib.md5(
+                    json.dumps(payload, sort_keys=True, default=str).encode()
+                ).hexdigest()
+                if h != last_hash:
+                    last_hash = h
+                    yield f"data: {json.dumps(payload, default=str)}\n\n"
+                time.sleep(1)
+            except GeneratorExit:
+                break
+            except Exception:
+                break
+
+    return Response(
+        stream_with_context(generate()),
+        content_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection':  'keep-alive',
+        },
+    )
+
+
 # ── 需登入：查詢訂單列表 ──────────────────────────
 @app_customer_order.route('/', methods=['GET'])
 @jwt_required()
@@ -149,7 +198,7 @@ def get_order(oid):
 
 
 # ── 需登入：更新訂單狀態 ──────────────────────────
-@app_customer_order.route('/<oid>/status', methods=['PUT'])
+@app_customer_order.route('/<oid>/status', methods=['PUT', 'PATCH'])
 @jwt_required()
 @require_role('admin', 'operator')
 def update_order_status(oid):
@@ -170,4 +219,13 @@ def update_order_status(oid):
     order = CustomerOrder.find_by_id(oid)
     Log.create(operator, '更新顧客訂單狀態',
                f"order={order['order_no']} status={status}")
+
+    # 訂單完成時自動建立 POS 銷售記錄
+    if status == 'completed':
+        try:
+            from src.models.pos import PosOrder
+            PosOrder.create_from_cust_order(order, operator)
+        except Exception:
+            pass   # 連動失敗不影響主流程
+
     return jsonify({'success': True})

@@ -3,7 +3,7 @@
 Collection: customer_orders
 狀態: pending → processing → completed | cancelled
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 from src.mongo import get_db
 
@@ -20,7 +20,19 @@ ORDER_STATUS_LABEL = {
 def _fmt(doc) -> dict:
     if doc is None:
         return None
-    d = {k: v for k, v in doc.items() if k != '_id'}
+    d = {}
+    for k, v in doc.items():
+        if k == '_id':
+            continue
+        if isinstance(v, datetime):
+            d[k] = v.isoformat()
+        elif k == 'status_log' and isinstance(v, list):
+            d[k] = [
+                {**e, 'at': e['at'].isoformat() if isinstance(e.get('at'), datetime) else e.get('at')}
+                for e in v
+            ]
+        else:
+            d[k] = v
     d['_id'] = str(doc['_id'])
     return d
 
@@ -58,6 +70,7 @@ class CustomerOrder:
             'menu_id':    menu_id,
             'remark':     remark,
             'handled_by': '',
+            'status_log': [],
             'created_at': now,
             'updated_at': now,
         }
@@ -100,13 +113,19 @@ class CustomerOrder:
         if status not in ORDER_STATUS:
             return False
         try:
+            now = datetime.utcnow()
             result = cls._col().update_one(
                 {'_id': ObjectId(oid)},
-                {'$set': {
-                    'status':     status,
-                    'handled_by': operator,
-                    'updated_at': datetime.utcnow(),
-                }}
+                {
+                    '$set': {
+                        'status':     status,
+                        'handled_by': operator,
+                        'updated_at': now,
+                    },
+                    '$push': {
+                        'status_log': {'status': status, 'by': operator, 'at': now}
+                    },
+                }
             )
             return result.matched_count > 0
         except Exception:

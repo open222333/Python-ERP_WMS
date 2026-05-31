@@ -5,6 +5,22 @@ import { useToastStore } from '@/stores/toast'
 
 const toast = useToastStore()
 
+// ── 商品 / 倉庫（庫存聯動用）─────────────────────────
+interface SimpleProduct   { _id: string; name: string; sku: string }
+interface SimpleWarehouse { _id: string; name: string }
+const products   = ref<SimpleProduct[]>([])
+const warehouses = ref<SimpleWarehouse[]>([])
+async function loadProductsAndWarehouses() {
+  try {
+    const [pRes, wRes] = await Promise.all([
+      http.get('/product/'),
+      http.get('/warehouse/'),
+    ])
+    products.value   = (pRes.data.data   || []).filter((p: any) => p.status === 1)
+    warehouses.value = wRes.data.data    || []
+  } catch { /* 非關鍵，靜默失敗 */ }
+}
+
 // ── Interfaces ─────────────────────────────────────────
 interface MenuCat {
   _id: string
@@ -28,6 +44,12 @@ interface OptionGroup {
   choices:  OptionChoice[]
 }
 
+interface LinkedProduct {
+  product_id:   string
+  warehouse_id: string
+  consume_qty:  number
+}
+
 interface MenuItemData {
   _id:               string
   name:              string
@@ -37,6 +59,7 @@ interface MenuItemData {
   status:            number
   sort_order:        number
   consume_inventory: boolean
+  linked_products:   LinkedProduct[]
   applied_group_ids: string[]
   applied_groups:    OptionGroup[]
 }
@@ -69,12 +92,21 @@ const showItemModal = ref(false)
 const itemForm = ref<{
   _id: string; name: string; category: string; price: number; description: string;
   sort_order: number; status: number; consume_inventory: boolean;
+  linked_products: LinkedProduct[];
   applied_group_ids: string[];
 }>({
   _id: '', name: '', category: '', price: 0, description: '',
   sort_order: 0, status: 1, consume_inventory: false,
+  linked_products: [],
   applied_group_ids: [],
 })
+
+function addLinkedProduct() {
+  itemForm.value.linked_products.push({ product_id: '', warehouse_id: '', consume_qty: 1 })
+}
+function removeLinkedProduct(idx: number) {
+  itemForm.value.linked_products.splice(idx, 1)
+}
 
 // 分類 Modal
 const showCatModal = ref(false)
@@ -189,12 +221,18 @@ async function openItemModal(item?: MenuItemData) {
       price: src.price || 0, description: src.description || '',
       sort_order: src.sort_order || 0, status: src.status ?? 1,
       consume_inventory: !!src.consume_inventory,
+      linked_products: (src.linked_products || []).map(lp => ({
+        product_id:   lp.product_id   || '',
+        warehouse_id: lp.warehouse_id || '',
+        consume_qty:  lp.consume_qty  || 1,
+      })),
       applied_group_ids: [...(src.applied_group_ids || [])],
     }
   } else {
     itemForm.value = {
       _id: '', name: '', category: '', price: 0, description: '',
       sort_order: 0, status: 1, consume_inventory: false,
+      linked_products: [],
       applied_group_ids: [],
     }
   }
@@ -348,7 +386,7 @@ async function delOg(gid: string) {
   }
 }
 
-onMounted(loadMenus)
+onMounted(() => { loadMenus(); loadProductsAndWarehouses() })
 </script>
 
 <template>
@@ -679,6 +717,41 @@ onMounted(loadMenus)
                 </div>
                 <div class="form-text">開啟後，POS 結帳會扣減對應商品庫存。</div>
               </div>
+
+              <!-- 庫存聯動 -->
+              <div class="col-12" v-if="itemForm.consume_inventory">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <label class="form-label fw-semibold mb-0">
+                    <i class="bi bi-link-45deg me-1 text-primary"></i>庫存聯動商品
+                  </label>
+                  <button type="button" class="btn btn-sm btn-outline-primary" @click="addLinkedProduct">
+                    <i class="bi bi-plus"></i> 新增
+                  </button>
+                </div>
+                <div v-if="!itemForm.linked_products.length" class="text-muted small fst-italic mb-1">
+                  尚未設定聯動商品，結帳時不會扣庫存。
+                </div>
+                <div v-for="(lp, idx) in itemForm.linked_products" :key="idx"
+                     class="linked-row d-flex align-items-center gap-2 mb-2">
+                  <select v-model="lp.product_id" class="form-select form-select-sm">
+                    <option value="">-- 選擇商品 --</option>
+                    <option v-for="p in products" :key="p._id" :value="p._id">
+                      {{ p.name }}{{ p.sku ? ` (${p.sku})` : '' }}
+                    </option>
+                  </select>
+                  <select v-model="lp.warehouse_id" class="form-select form-select-sm">
+                    <option value="">預設倉庫</option>
+                    <option v-for="w in warehouses" :key="w._id" :value="w._id">{{ w.name }}</option>
+                  </select>
+                  <input v-model.number="lp.consume_qty" type="number" min="1"
+                         class="form-control form-control-sm lp-qty" placeholder="扣量" />
+                  <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0"
+                          @click="removeLinkedProduct(idx)">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+                <div class="form-text">每賣出 1 份，依上方設定各扣減指定商品庫存數量。</div>
+              </div>
               <!-- 套用客製化選項組 -->
               <div class="col-12" v-if="selectedMenuData?.option_groups?.length">
                 <label class="form-label fw-semibold"><i class="bi bi-sliders2 me-1"></i>客製化選項組</label>
@@ -848,4 +921,9 @@ onMounted(loadMenus)
 /* 選項組 Modal 選項列 */
 .og-choice-list { display: flex; flex-direction: column; gap: 8px; }
 .og-choice-row  { display: flex; align-items: center; gap: 8px; }
+
+/* 庫存聯動列 */
+.linked-row .form-select:first-child { flex: 2; min-width: 0; }
+.linked-row .form-select:nth-child(2) { flex: 1.5; min-width: 0; }
+.lp-qty { width: 70px; flex-shrink: 0; text-align: center; }
 </style>

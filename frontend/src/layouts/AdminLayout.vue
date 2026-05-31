@@ -67,18 +67,32 @@
             <i class="bi bi-qr-code"></i><span>顧客點單頁</span>
             <i class="bi bi-box-arrow-up-right ext-icon"></i>
           </a>
+          <RouterLink v-if="auth.pageVisible('qr-codes')" to="/admin/qr-codes" class="nav-link" @click="closeMobile">
+            <i class="bi bi-qr-code-scan"></i><span>QR 碼管理</span>
+          </RouterLink>
+        </template>
+
+        <!-- 財務 -->
+        <template v-if="auth.pageVisible('pos-sales') || auth.pageVisible('pos-report') || auth.pageVisible('invoices') || auth.pageVisible('invoice-settings')">
+          <div class="nav-section">財務</div>
+          <RouterLink v-if="auth.pageVisible('pos-sales')" to="/admin/pos-sales" class="nav-link" @click="closeMobile">
+            <i class="bi bi-receipt"></i><span>銷售記錄</span>
+          </RouterLink>
+          <RouterLink v-if="auth.pageVisible('pos-report')" to="/admin/pos-report" class="nav-link" @click="closeMobile">
+            <i class="bi bi-bar-chart-line"></i><span>銷售報表</span>
+          </RouterLink>
+          <RouterLink v-if="auth.pageVisible('invoices')" to="/admin/invoices" class="nav-link" @click="closeMobile">
+            <i class="bi bi-receipt-cutoff"></i><span>電子發票</span>
+          </RouterLink>
+          <RouterLink v-if="auth.pageVisible('invoice-settings')" to="/admin/invoice-settings" class="nav-link" @click="closeMobile">
+            <i class="bi bi-gear"></i><span>發票設定</span>
+          </RouterLink>
         </template>
 
         <!-- POS 收銀 -->
-        <template v-if="auth.pageVisible('pos-sales') || auth.pageVisible('pos-report') || auth.pageVisible('menus') || auth.pageVisible('pos-link')">
+        <template v-if="auth.pageVisible('menus') || auth.pageVisible('pos-link')">
           <div class="nav-section">POS 收銀</div>
-          <RouterLink v-if="auth.pageVisible('pos-sales')"   to="/admin/pos-sales"   class="nav-link" @click="closeMobile">
-            <i class="bi bi-receipt"></i><span>銷售記錄</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('pos-report')"  to="/admin/pos-report"  class="nav-link" @click="closeMobile">
-            <i class="bi bi-bar-chart-line"></i><span>銷售報表</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('menus')"       to="/admin/menus"       class="nav-link" @click="closeMobile">
+          <RouterLink v-if="auth.pageVisible('menus')" to="/admin/menus" class="nav-link" @click="closeMobile">
             <i class="bi bi-menu-button-wide"></i><span>菜單管理</span>
           </RouterLink>
           <a v-if="auth.pageVisible('pos-link')" href="/pos" target="_blank" class="nav-link external">
@@ -214,6 +228,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/users':             '使用者管理',
   '/admin/logs':              '操作紀錄',
   '/admin/settings':          '系統設定',
+  '/admin/invoices':          '電子發票',
+  '/admin/invoice-settings':  '發票設定',
 }
 const pageTitle = computed(() => PAGE_TITLES[route.path] ?? 'WMS')
 

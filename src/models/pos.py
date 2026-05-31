@@ -206,14 +206,15 @@ class PosOrder:
             'subtotal':      round(subtotal, 2),
             'discount':      round(discount, 2),
             'total_amount':  total,
-            'payment_type':  pay_type,
-            'cash_amount':   cash_amt,
-            'card_amount':   card_amt,
-            'change_amount': max(change, 0),
-            'cashier':       cashier,
-            'remark':        remark,
-            'status':        'completed',
-            'created_at':    now,
+            'payment_type':           pay_type,
+            'cash_amount':            cash_amt,
+            'card_amount':            card_amt,
+            'change_amount':          max(change, 0),
+            'linepay_transaction_id': str(payment.get('linepay_transaction_id', '')),
+            'cashier':                cashier,
+            'remark':                 remark,
+            'status':                 'completed',
+            'created_at':             now,
         }
         sid = str(db[cls.COLLECTION].insert_one(order_doc).inserted_id)
 
@@ -391,6 +392,53 @@ class PosOrder:
             'sale_id':       sid,
             'skipped_items': skipped,
         }
+
+    @classmethod
+    def create_from_cust_order(cls, cust_order: dict, operator: str) -> str:
+        """
+        顧客點單完成時，自動建立對應的銷售記錄（不扣庫存）。
+        回傳新建的 pos_order _id (str)，若已存在則回傳既有 _id。
+        """
+        co_id = cust_order.get('_id', '')
+        existing = cls._col().find_one({'cust_order_id': co_id, 'source': 'cust_order'})
+        if existing:
+            return str(existing['_id'])
+
+        now   = datetime.utcnow()
+        total = float(cust_order.get('total', 0))
+
+        sale_items = [{
+            'product_id':   None,
+            'product_name': i.get('item_name', ''),
+            'product_sku':  '',
+            'unit':         '份',
+            'quantity':     int(i.get('qty', 1)),
+            'unit_price':   float(i.get('price', 0)),
+            'subtotal':     round(int(i.get('qty', 1)) * float(i.get('price', 0)), 2),
+            'customizations_selected': i.get('customizations', []),
+        } for i in cust_order.get('items', [])]
+
+        order_doc = {
+            'order_no':               f"CO-{cust_order.get('order_no', '')}",
+            'warehouse_id':           None,
+            'warehouse_name':         '',
+            'items':                  sale_items,
+            'subtotal':               total,
+            'discount':               0.0,
+            'total_amount':           total,
+            'payment_type':           'cash',
+            'cash_amount':            total,
+            'card_amount':            0.0,
+            'change_amount':          0.0,
+            'linepay_transaction_id': '',
+            'cashier':                operator,
+            'remark':                 f"顧客點單 桌號：{cust_order.get('table_no', '')}",
+            'status':                 'completed',
+            'source':                 'cust_order',
+            'cust_order_id':          co_id,
+            'created_at':             now,
+        }
+        return str(get_db()[cls.COLLECTION].insert_one(order_doc).inserted_id)
 
     @classmethod
     def bulk_import(cls, rows: list) -> int:

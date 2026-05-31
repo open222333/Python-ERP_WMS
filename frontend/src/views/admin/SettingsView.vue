@@ -38,15 +38,29 @@ const logLastCleanup     = ref<string | null>(null)
 const payMethods         = ref<PayMethod[]>([])
 const discountPresets    = ref<DiscountPreset[]>([])
 
+const linePayEnabled  = ref(false)
+const linePayChId     = ref('')
+const linePaySecret   = ref('')
+const linePaySandbox  = ref(true)
+const savingLinePay   = ref(false)
+
+const zPayEnabled  = ref(false)
+const zPayMchId    = ref('')
+const zPaySecret   = ref('')
+const zPaySandbox  = ref(true)
+const savingZPay   = ref(false)
+
 // ── Load ─────────────────────────────────────────────────
 async function load() {
   loading.value = true
   try {
-    const [whR, settR, pmR, menR] = await Promise.all([
+    const [whR, settR, pmR, menR, lpR, zpR] = await Promise.all([
       http.get('/warehouse/'),
       http.get('/settings/'),
       http.get('/pos/payment-methods'),
       http.get('/menu/?status=1'),
+      http.get('/pos/linepay-settings'),
+      http.get('/pos/zpay-settings'),
     ])
 
     warehouses.value         = whR.data?.data || []
@@ -63,6 +77,18 @@ async function load() {
     payMethods.value = pm.length ? pm : [
       { id: 'cash', label: '現金', enabled: true, has_cash: true, sort_order: 0 }
     ]
+
+    const lp = lpR.data?.data || {}
+    linePayEnabled.value = !!lp.enabled
+    linePayChId.value    = lp.channel_id || ''
+    linePaySecret.value  = lp.channel_secret || ''
+    linePaySandbox.value = lp.sandbox ?? true
+
+    const zp = zpR.data?.data || {}
+    zPayEnabled.value = !!zp.enabled
+    zPayMchId.value   = zp.merchant_id || ''
+    zPaySecret.value  = zp.merchant_secret || ''
+    zPaySandbox.value = zp.sandbox ?? true
   } catch {
     toast.show('載入設定失敗', 'danger')
   } finally {
@@ -141,6 +167,62 @@ async function savePayMethods() {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
   } finally {
     savingPay.value = false
+  }
+}
+
+async function saveLinePaySettings() {
+  savingLinePay.value = true
+  try {
+    await http.put('/pos/linepay-settings', {
+      enabled:        linePayEnabled.value,
+      channel_id:     linePayChId.value,
+      channel_secret: linePaySecret.value,
+      sandbox:        linePaySandbox.value,
+    })
+    const [lpR, pmR2] = await Promise.all([
+      http.get('/pos/linepay-settings'),
+      http.get('/pos/payment-methods'),
+    ])
+    const lp = lpR.data?.data || {}
+    linePayEnabled.value = !!lp.enabled
+    linePayChId.value    = lp.channel_id || ''
+    linePaySecret.value  = lp.channel_secret || ''
+    linePaySandbox.value = lp.sandbox ?? true
+    const pm2: PayMethod[] = pmR2.data?.data || []
+    if (pm2.length) payMethods.value = pm2
+    toast.show('LINE Pay 設定已儲存', 'success')
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
+  } finally {
+    savingLinePay.value = false
+  }
+}
+
+async function saveZPaySettings() {
+  savingZPay.value = true
+  try {
+    await http.put('/pos/zpay-settings', {
+      enabled:         zPayEnabled.value,
+      merchant_id:     zPayMchId.value,
+      merchant_secret: zPaySecret.value,
+      sandbox:         zPaySandbox.value,
+    })
+    const [zpR, pmR2] = await Promise.all([
+      http.get('/pos/zpay-settings'),
+      http.get('/pos/payment-methods'),
+    ])
+    const zp = zpR.data?.data || {}
+    zPayEnabled.value = !!zp.enabled
+    zPayMchId.value   = zp.merchant_id || ''
+    zPaySecret.value  = zp.merchant_secret || ''
+    zPaySandbox.value = zp.sandbox ?? true
+    const pm2: PayMethod[] = pmR2.data?.data || []
+    if (pm2.length) payMethods.value = pm2
+    toast.show('全支付設定已儲存', 'success')
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
+  } finally {
+    savingZPay.value = false
   }
 }
 
@@ -444,6 +526,79 @@ onMounted(async () => {
           <button class="btn btn-primary" :disabled="savingPay" @click="savePayMethods">
             <span v-if="savingPay" class="spinner-border spinner-border-sm me-1"></span>
             <i v-else class="bi bi-save me-1"></i>儲存付款設定
+          </button>
+
+          <hr class="mt-4 mb-3" />
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="fw-semibold"><i class="bi bi-wallet2 me-1 text-success"></i>LINE Pay 全支付</div>
+              <small class="text-muted">啟用後付款方式自動加入 LINE Pay，收銀員掃描顧客條碼完成扣款</small>
+            </div>
+            <div class="form-check form-switch m-0">
+              <input v-model="linePayEnabled" class="form-check-input" type="checkbox"
+                     style="width:2.5em;height:1.3em;cursor:pointer" />
+            </div>
+          </div>
+          <div v-if="linePayEnabled" class="row g-2 mb-3">
+            <div class="col-12 col-md-4">
+              <label class="form-label form-label-sm fw-semibold">Channel ID <span class="text-danger">*</span></label>
+              <input v-model="linePayChId" type="text" class="form-control form-control-sm" placeholder="例：1234567890" />
+            </div>
+            <div class="col-12 col-md-5">
+              <label class="form-label form-label-sm fw-semibold">Channel Secret <span class="text-danger">*</span></label>
+              <input v-model="linePaySecret" type="password" class="form-control form-control-sm"
+                     placeholder="已設定則顯示 ******" autocomplete="new-password" />
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-end">
+              <div class="form-check form-switch m-0">
+                <input v-model="linePaySandbox" class="form-check-input" type="checkbox"
+                       id="lp-sandbox" style="width:2.2em;height:1.2em;cursor:pointer" />
+                <label class="form-check-label small" for="lp-sandbox">Sandbox 測試模式</label>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-success" :disabled="savingLinePay" @click="saveLinePaySettings">
+            <span v-if="savingLinePay" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-wallet2 me-1"></i>儲存 LINE Pay 設定
+          </button>
+
+          <hr class="mt-4 mb-3" />
+
+          <!-- 全支付 -->
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <div class="fw-semibold">
+                <i class="bi bi-phone me-1 text-primary"></i>全支付
+              </div>
+              <small class="text-muted">啟用後付款方式自動加入「全支付」，收銀員掃描顧客全支付 App 條碼完成扣款</small>
+            </div>
+            <div class="form-check form-switch m-0">
+              <input v-model="zPayEnabled" class="form-check-input" type="checkbox"
+                     style="width:2.5em;height:1.3em;cursor:pointer" />
+            </div>
+          </div>
+          <div v-if="zPayEnabled" class="row g-2 mb-3">
+            <div class="col-12 col-md-4">
+              <label class="form-label form-label-sm fw-semibold">Merchant ID <span class="text-danger">*</span></label>
+              <input v-model="zPayMchId" type="text" class="form-control form-control-sm"
+                     placeholder="全支付商家 ID" />
+            </div>
+            <div class="col-12 col-md-5">
+              <label class="form-label form-label-sm fw-semibold">Merchant Secret <span class="text-danger">*</span></label>
+              <input v-model="zPaySecret" type="password" class="form-control form-control-sm"
+                     placeholder="已設定則顯示 ******" autocomplete="new-password" />
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-end">
+              <div class="form-check form-switch m-0">
+                <input v-model="zPaySandbox" class="form-check-input" type="checkbox"
+                       id="zp-sandbox" style="width:2.2em;height:1.2em;cursor:pointer" />
+                <label class="form-check-label small" for="zp-sandbox">Sandbox 測試模式</label>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary" :disabled="savingZPay" @click="saveZPaySettings">
+            <span v-if="savingZPay" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-phone me-1"></i>儲存全支付設定
           </button>
         </div>
       </div>

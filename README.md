@@ -518,7 +518,7 @@ sudo systemctl enable --now mongod
 > nginx 以 `www-data` 執行，`/root/` 權限為 `700`，nginx 無法讀取靜態檔，會出現 `(13: Permission denied)` 錯誤。  
 > 若已部署在 `/root/`，請先搬移：
 > ```bash
-> sudo mv /root/<專案目錄名稱> /opt/wms
+> sudo mv /root/erp_wms /opt/wms
 > sudo chown -R www-data:www-data /opt/wms
 > ```
 

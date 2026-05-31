@@ -8,7 +8,15 @@ const toast   = useToastStore()
 const orders  = ref([])
 const stats   = ref({ pending: 0, processing: 0, completed: 0 })
 const loading = ref(false)
-let   timer   = null
+const nowStr  = ref('')
+let   es      = null
+let   clock   = null
+
+function tickClock() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  nowStr.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 const STATUS_LABEL = {
   pending:    '待處理',
@@ -17,7 +25,17 @@ const STATUS_LABEL = {
   cancelled:  '已取消',
 }
 
-// ── 資料載入 ─────────────────────────────────────────────────
+// ── stats 格式統一（後端回 {count,total} 物件，取 count 作顯示數字）──
+function parseStats(s) {
+  const pick = (v) => (v && typeof v === 'object' ? (v.count ?? 0) : (v ?? 0))
+  return {
+    pending:    pick(s.pending),
+    processing: pick(s.processing),
+    completed:  pick(s.completed),
+  }
+}
+
+// ── 初始資料載入（SSE 連上前先顯示資料）────────────────────────
 async function loadOrders() {
   loading.value = true
   try {
@@ -29,12 +47,33 @@ async function loadOrders() {
       orders.value = oRes.value.data?.data || oRes.value.data || []
     }
     if (sRes.status === 'fulfilled') {
-      stats.value = sRes.value.data?.data || sRes.value.data || stats.value
+      const s = sRes.value.data?.raw || sRes.value.data?.data || sRes.value.data || {}
+      stats.value = parseStats(s)
     }
-  } catch (e) {
+  } catch {
     toast.show('載入訂單失敗', 'danger')
   } finally {
     loading.value = false
+  }
+}
+
+// ── SSE 連線 ─────────────────────────────────────────────────
+function connectSSE() {
+  const token = localStorage.getItem('token')
+  if (!token) return
+
+  es = new EventSource(`/customer-order/stream?token=${encodeURIComponent(token)}`)
+
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data)
+      if (Array.isArray(d.orders)) orders.value = d.orders
+      if (d.stats) stats.value = parseStats(d.stats)
+    } catch { /* ignore parse errors */ }
+  }
+
+  es.onerror = () => {
+    // EventSource 斷線後會自動重連，不需手動處理
   }
 }
 
@@ -42,30 +81,45 @@ async function loadOrders() {
 async function updateStatus(id, status) {
   try {
     await custOrderApi.updateStatus(id, status)
-    await loadOrders()
+    // SSE 會在 ~2s 內自動推送最新資料，不需手動 reload
   } catch (e) {
     toast.show(e?.response?.data?.message || '更新失敗', 'danger')
   }
 }
 
 // ── 時間格式 ─────────────────────────────────────────────────
-function elapsedMin(createdAt) {
-  if (!createdAt) return 0
-  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+function elapsedStr(createdAt) {
+  if (!createdAt) return '--'
+  const sec = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000)
+  if (sec < 0) return '--'
+  const d = Math.floor(sec / 86400)
+  const h = Math.floor((sec % 86400) / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (d > 0) return `${d}天${h}時${m}分`
+  if (h > 0) return `${h}時${m}分`
+  if (m > 0) return `${m}分${s}秒`
+  return `${s}秒`
 }
 
 function fmtTime(createdAt) {
-  if (!createdAt) return '--:--'
+  if (!createdAt) return '--'
   const d = new Date(createdAt)
-  return d.toTimeString().slice(0, 5)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 // ── 生命週期 ─────────────────────────────────────────────────
 onMounted(() => {
+  tickClock()
+  clock = setInterval(tickClock, 1000)
   loadOrders()
-  timer = setInterval(loadOrders, 15000)
+  connectSSE()
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  es?.close()
+  clearInterval(clock)
+})
 </script>
 
 <template>
@@ -82,7 +136,9 @@ onUnmounted(() => clearInterval(timer))
         <span class="stat-chip chip-done">已完成 {{ stats.completed }}</span>
       </div>
 
-      <div class="ms-auto d-flex gap-2">
+      <span class="ms-auto now-clock">{{ nowStr }}</span>
+
+      <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-light" :class="{ disabled: loading }" @click="loadOrders">
           <i class="bi bi-arrow-clockwise" :class="{ 'spin': loading }"></i>
         </button>
@@ -110,20 +166,20 @@ onUnmounted(() => clearInterval(timer))
             <span v-if="o.table_no" class="table-badge ms-2">桌 {{ o.table_no }}</span>
           </div>
           <div class="d-flex align-items-center gap-2">
-            <span class="elapsed" :class="elapsedMin(o.created_at) >= 10 ? 'elapsed-warn' : ''">
-              {{ elapsedMin(o.created_at) }}分
-            </span>
+            <span class="elapsed">{{ elapsedStr(o.created_at) }}</span>
             <span class="time-small">{{ fmtTime(o.created_at) }}</span>
           </div>
         </div>
 
         <!-- Items -->
         <ul class="item-list mt-2 mb-0">
-          <li v-for="(item, i) in (o.items || [])" :key="i" class="item-row">
+          <li v-for="(item, i) in [...(o.items || [])].sort((a,b) => (a.name||a.item_name||'').localeCompare(b.name||b.item_name||'', 'zh-Hant'))" :key="i" class="item-row">
             <span class="item-qty">×{{ item.qty }}</span>
             <span class="item-name">{{ item.name || item.item_name }}</span>
             <div v-if="item.customizations?.length" class="cust-tags">
-              <span v-for="c in item.customizations" :key="c" class="cust-tag">{{ c }}</span>
+              <span v-for="(c, ci) in item.customizations" :key="ci" class="cust-tag">
+                {{ typeof c === 'object' ? c.choice_name : c }}
+              </span>
             </div>
           </li>
         </ul>
@@ -223,6 +279,11 @@ onUnmounted(() => clearInterval(timer))
 }
 
 .no-orders { width: 100%; }
+
+.now-clock {
+  font-size: .95rem; font-weight: 600; color: #ccc;
+  letter-spacing: .03em; font-variant-numeric: tabular-nums;
+}
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin .6s linear infinite; }

@@ -31,6 +31,9 @@ const router = createRouter({
         { path: 'users',              component: () => import('@/views/admin/UsersView.vue') },
         { path: 'logs',               component: () => import('@/views/admin/LogsView.vue') },
         { path: 'settings',           component: () => import('@/views/admin/SettingsView.vue') },
+        { path: 'qr-codes',           component: () => import('@/views/admin/QrCodesView.vue') },
+        { path: 'invoices',           component: () => import('@/views/admin/InvoicesView.vue') },
+        { path: 'invoice-settings',   component: () => import('@/views/admin/InvoiceSettingsView.vue') },
       ],
     },
 
@@ -43,6 +46,16 @@ const router = createRouter({
     // ── 404 ─────────────────────────────────────────────
     { path: '/:pathMatch(.*)*', redirect: '/admin/dashboard' },
   ],
+})
+
+// ── Bootstrap modal 殘留清理 ──────────────────────────────
+// Bootstrap JS 開 modal 時會在 <body> 插入 .modal-backdrop 並加 modal-open class。
+// Vue Router 導航只銷毀 Vue 元件，Bootstrap 的副作用不會自動清除，導致頁面卡住。
+router.afterEach(() => {
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove())
+  document.body.classList.remove('modal-open')
+  document.body.style.removeProperty('overflow')
+  document.body.style.removeProperty('padding-right')
 })
 
 // ── Navigation Guard ──────────────────────────────────────

@@ -8,6 +8,10 @@ POS 收銀 Blueprint  /pos
   POST /sales/<sid>/refund        退款
   GET  /payment-methods           取得付款方式
   PUT  /payment-methods           更新付款方式（admin）
+  GET  /linepay-settings          取得 LINE Pay 設定
+  PUT  /linepay-settings          更新 LINE Pay 設定（admin）
+  GET  /zpay-settings             取得全支付設定
+  PUT  /zpay-settings             更新全支付設定（admin）
   GET  /summary                   銷售報表（支援 day / week / month / year）
 """
 import csv
@@ -26,6 +30,32 @@ from src.permissions import require_role
 
 logger  = logging.getLogger(__name__)
 app_pos = Blueprint('app_pos', __name__)
+
+
+# ── 第三方支付實例（依系統設定）────────────────────────────────
+def _get_linepay():
+    from src.payment_providers.linepay import LinePayCPM
+    from src.models.settings import SystemSettings
+    s = SystemSettings.get('linepay_settings') or {}
+    channel_id     = s.get('channel_id', '').strip()
+    channel_secret = s.get('channel_secret', '').strip()
+    sandbox        = s.get('sandbox', True)
+    if not channel_id or not channel_secret:
+        raise ValueError('尚未設定 LINE Pay Channel ID / Secret，請先至付款設定填寫')
+    return LinePayCPM(channel_id=channel_id, channel_secret=channel_secret, sandbox=sandbox)
+
+
+def _get_zpay():
+    from src.payment_providers.zpay import ZPayCPM
+    from src.models.settings import SystemSettings
+    s = SystemSettings.get('zpay_settings') or {}
+    merchant_id     = s.get('merchant_id', '').strip()
+    merchant_secret = s.get('merchant_secret', '').strip()
+    sandbox         = s.get('sandbox', True)
+    if not merchant_id or not merchant_secret:
+        raise ValueError('尚未設定全支付 Merchant ID / Secret，請先至付款設定填寫')
+    return ZPayCPM(merchant_id=merchant_id, merchant_secret=merchant_secret, sandbox=sandbox)
+
 
 
 @app_pos.route('/')
@@ -94,6 +124,56 @@ def create_sale():
         return jsonify({'success': False, 'message': '購物車為空'}), 400
     if not payment.get('type'):
         return jsonify({'success': False, 'message': '請選擇付款方式'}), 400
+
+    # ── LINE Pay 全支付：先向 API 扣款，成功才記帳 ────────────────
+    if payment.get('type') == 'linepay':
+        linepay_key = str(payment.get('linepay_key', '')).strip()
+        if not linepay_key:
+            return jsonify({'success': False, 'message': '請掃描顧客 LINE Pay 付款條碼'}), 400
+        subtotal_for_lp = sum(
+            float(i.get('unit_price', 0)) * int(i.get('quantity', 1)) for i in items
+        )
+        charge_amount = max(0, int(round(subtotal_for_lp - discount, 0)))
+        # 用 cashier + timestamp 組成唯一 orderId 傳給 LINE Pay
+        lp_order_id = f"POS{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{get_jwt_identity()[:4].upper()}"
+        try:
+            lp = _get_linepay()
+            lp_resp = lp.charge(
+                one_time_key=linepay_key,
+                order_id=lp_order_id,
+                amount=charge_amount,
+            )
+        except ValueError as ve:
+            return jsonify({'success': False, 'message': str(ve)}), 400
+        except Exception as e:
+            logger.exception('LINE Pay charge failed')
+            return jsonify({'success': False, 'message': f'LINE Pay 連線失敗：{e}'}), 500
+        if lp_resp.get('returnCode') != '0000':
+            msg = lp_resp.get('returnMessage', 'LINE Pay 付款失敗')
+            return jsonify({'success': False, 'message': f'LINE Pay：{msg}', 'lp_code': lp_resp.get('returnCode')}), 400
+        # 將交易 ID 存入 payment dict，model 層會寫入訂單
+        payment['linepay_transaction_id'] = str(lp_resp.get('info', {}).get('transactionId', ''))
+
+    # ── 全支付：先向 API 扣款，成功才記帳 ──────────────────────────
+    if payment.get('type') == 'zpay':
+        zpay_code = str(payment.get('linepay_key', '')).strip()
+        if not zpay_code:
+            return jsonify({'success': False, 'message': '請掃描顧客全支付付款條碼'}), 400
+        subtotal_zp   = sum(float(i.get('unit_price', 0)) * int(i.get('quantity', 1)) for i in items)
+        charge_amount = max(0, int(round(subtotal_zp - discount, 0)))
+        zp_order_id   = f"POS{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{get_jwt_identity()[:4].upper()}"
+        try:
+            zp = _get_zpay()
+            zp_resp = zp.charge(qr_code=zpay_code, order_id=zp_order_id, amount=charge_amount)
+        except ValueError as ve:
+            return jsonify({'success': False, 'message': str(ve)}), 400
+        except Exception as e:
+            logger.exception('ZPay charge failed')
+            return jsonify({'success': False, 'message': f'全支付連線失敗：{e}'}), 500
+        if zp_resp.get('returnCode') != '0000':
+            msg = zp_resp.get('returnMessage', '全支付付款失敗')
+            return jsonify({'success': False, 'message': f'全支付：{msg}'}), 400
+        payment['linepay_transaction_id'] = str(zp_resp.get('transactionId', ''))
 
     result = PosOrder.create_sale(
         warehouse_id=warehouse_id, items=items, payment=payment,
@@ -329,6 +409,30 @@ def refund_sale(sid):
     """
     data   = request.get_json(silent=True) or {}
     reason = data.get('reason', '').strip()
+
+    # ── 第三方支付退款（在庫存回補之前先向 API 退款）────────────
+    order = PosOrder.find_by_id(sid)
+    if order and order.get('payment_type') in ('linepay', 'zpay'):
+        txn_id  = order.get('linepay_transaction_id', '')
+        pay_type = order.get('payment_type')
+        if txn_id:
+            try:
+                if pay_type == 'linepay':
+                    provider   = _get_linepay()
+                    name       = 'LINE Pay'
+                else:
+                    provider   = _get_zpay()
+                    name       = '全支付'
+                ref_resp = provider.refund(txn_id, int(order['total_amount']))
+                if ref_resp.get('returnCode') != '0000':
+                    msg = ref_resp.get('returnMessage', '退款失敗')
+                    return jsonify({'success': False, 'message': f'{name} 退款失敗：{msg}'}), 400
+            except ValueError as ve:
+                return jsonify({'success': False, 'message': str(ve)}), 400
+            except Exception as e:
+                logger.exception('%s refund failed', pay_type)
+                return jsonify({'success': False, 'message': f'{name} 退款連線失敗：{e}'}), 500
+
     result = PosOrder.refund(sid, reason, operator=get_jwt_identity())
     if not result['success']:
         return jsonify({'success': False, 'message': result['error']}), 400
@@ -343,6 +447,35 @@ def refund_sale(sid):
 _DEFAULT_PAY_METHODS = [
     {'id': 'cash', 'label': '現金', 'enabled': True, 'has_cash': True, 'sort_order': 0},
 ]
+
+
+def _sync_payment_method(pay_id: str, default_label: str, enabled: bool) -> None:
+    """
+    將第三方支付付款方式與 pos_payment_methods 清單同步。
+
+    規則：
+      - enabled=True：清單中已存在同 id → 只更新 enabled=True；
+                      不存在 → 新增一筆。
+      - enabled=False：清單中已存在同 id → 只更新 enabled=False；
+                       不存在 → 不新增（停用不需要加入清單）。
+    """
+    from src.models.settings import SystemSettings
+    methods = SystemSettings.get('pos_payment_methods', _DEFAULT_PAY_METHODS)
+    match   = next((m for m in methods if m.get('id') == pay_id), None)
+
+    if match:
+        if match.get('enabled') != enabled:
+            match['enabled'] = enabled
+            SystemSettings.set('pos_payment_methods', methods)
+    elif enabled:
+        methods.append({
+            'id':         pay_id,
+            'label':      default_label,
+            'enabled':    True,
+            'has_cash':   False,
+            'sort_order': len(methods),
+        })
+        SystemSettings.set('pos_payment_methods', methods)
 
 
 @app_pos.route('/payment-methods', methods=['GET'])
@@ -380,6 +513,127 @@ def update_payment_methods():
     SystemSettings.set('pos_payment_methods', validated)
     Log.create(get_jwt_identity(), '更新 POS 付款方式',
                ', '.join(f"{m['label']}({'啟用' if m['enabled'] else '停用'})" for m in validated))
+    return jsonify({'success': True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  LINE Pay 設定
+# ─────────────────────────────────────────────────────────────
+
+@app_pos.route('/linepay-settings', methods=['GET'])
+@jwt_required()
+@require_role('admin', 'operator')
+def get_linepay_settings():
+    """
+    取得 LINE Pay 設定（channel_secret 回傳遮蔽值）
+    ---
+    tags:
+      - POS
+    security:
+      - Bearer: []
+    responses:
+      200: {description: 成功}
+    """
+    from src.models.settings import SystemSettings
+    s = SystemSettings.get('linepay_settings') or {}
+    return jsonify({'success': True, 'data': {
+        'enabled':        s.get('enabled',        False),
+        'channel_id':     s.get('channel_id',     ''),
+        'channel_secret': '******' if s.get('channel_secret') else '',
+        'sandbox':        s.get('sandbox',        True),
+    }})
+
+
+@app_pos.route('/linepay-settings', methods=['PUT'])
+@jwt_required()
+@require_role('admin')
+def update_linepay_settings():
+    """
+    更新 LINE Pay 設定（僅限 admin）
+    ---
+    tags:
+      - POS
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            enabled:        {type: boolean}
+            channel_id:     {type: string}
+            channel_secret: {type: string}
+            sandbox:        {type: boolean}
+    responses:
+      200: {description: 成功}
+    """
+    from src.models.settings import SystemSettings
+    body     = request.get_json(silent=True) or {}
+    existing = SystemSettings.get('linepay_settings') or {}
+
+    secret_input = str(body.get('channel_secret', '')).strip()
+    channel_secret = existing.get('channel_secret', '') \
+        if secret_input in ('', '******') else secret_input
+
+    updated = {
+        'enabled':        bool(body.get('enabled',    existing.get('enabled', False))),
+        'channel_id':     str(body.get('channel_id',  existing.get('channel_id', ''))).strip(),
+        'channel_secret': channel_secret,
+        'sandbox':        bool(body.get('sandbox',    existing.get('sandbox', True))),
+    }
+    SystemSettings.set('linepay_settings', updated)
+
+    _sync_payment_method('linepay', 'LINE Pay', updated['enabled'])
+
+    Log.create(get_jwt_identity(), '更新 LINE Pay 設定',
+               f"enabled={updated['enabled']} sandbox={updated['sandbox']}")
+    return jsonify({'success': True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  全支付設定
+# ─────────────────────────────────────────────────────────────
+
+@app_pos.route('/zpay-settings', methods=['GET'])
+@jwt_required()
+def get_zpay_settings():
+    """取得全支付設定（merchant_secret 遮蔽）"""
+    from src.models.settings import SystemSettings
+    s = SystemSettings.get('zpay_settings') or {}
+    return jsonify({'success': True, 'data': {
+        'enabled':         s.get('enabled',         False),
+        'merchant_id':     s.get('merchant_id',     ''),
+        'merchant_secret': '******' if s.get('merchant_secret') else '',
+        'sandbox':         s.get('sandbox',         True),
+    }})
+
+
+@app_pos.route('/zpay-settings', methods=['PUT'])
+@jwt_required()
+@require_role('admin')
+def update_zpay_settings():
+    """更新全支付設定（僅限 admin）"""
+    from src.models.settings import SystemSettings
+    body     = request.get_json(silent=True) or {}
+    existing = SystemSettings.get('zpay_settings') or {}
+
+    secret_input    = str(body.get('merchant_secret', '')).strip()
+    merchant_secret = existing.get('merchant_secret', '') \
+        if secret_input in ('', '******') else secret_input
+
+    updated = {
+        'enabled':         bool(body.get('enabled',      existing.get('enabled', False))),
+        'merchant_id':     str(body.get('merchant_id',   existing.get('merchant_id', ''))).strip(),
+        'merchant_secret': merchant_secret,
+        'sandbox':         bool(body.get('sandbox',      existing.get('sandbox', True))),
+    }
+    SystemSettings.set('zpay_settings', updated)
+
+    _sync_payment_method('zpay', '全支付', updated['enabled'])
+
+    Log.create(get_jwt_identity(), '更新全支付設定',
+               f"enabled={updated['enabled']} sandbox={updated['sandbox']}")
     return jsonify({'success': True})
 
 

@@ -16,7 +16,7 @@
         <option v-for="w in warehouses" :key="w._id" :value="w._id">{{ w.name }}</option>
       </select>
       <select v-model="selectedMenu" class="form-select" style="width:160px" @change="onMenuChange">
-        <option value="">全部商品</option>
+        <option value="" disabled>-- 選擇菜單 --</option>
         <option v-for="m in menus" :key="m._id" :value="m._id">{{ m.name }}</option>
       </select>
       <div id="scan-bar">
@@ -45,11 +45,6 @@
             <i class="bi bi-search"></i>
             <input v-model="prodSearch" type="text" id="prod-search" placeholder="搜尋名稱…" />
           </div>
-          <!-- 分類下拉只在商品模式顯示 -->
-          <select v-if="!isMenuMode" v-model="prodCat" id="prod-cat">
-            <option value="">全部分類</option>
-            <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
-          </select>
         </div>
 
         <!-- Category tabs -->
@@ -61,15 +56,18 @@
 
         <!-- Item grid -->
         <div id="product-grid">
-          <div v-if="filteredItems.length === 0" class="text-center text-muted py-4" style="grid-column:1/-1">
-            <i class="bi bi-inbox fs-2"></i><p class="mt-2">無符合商品</p>
+          <div v-if="!selectedMenu" class="text-center text-muted py-4" style="grid-column:1/-1">
+            <i class="bi bi-menu-button-wide fs-2"></i><p class="mt-2">請先從上方選擇菜單</p>
+          </div>
+          <div v-else-if="filteredItems.length === 0" class="text-center text-muted py-4" style="grid-column:1/-1">
+            <i class="bi bi-inbox fs-2"></i><p class="mt-2">無符合品項</p>
           </div>
           <div v-for="item in filteredItems" :key="item._id"
                class="prod-card" @click="handleItemClick(item)">
             <div class="pc-name">{{ item.name }}</div>
-            <div class="pc-sub">{{ isMenuMode ? (item.category || '') : (item.sku || '') }}</div>
+            <div class="pc-sub">{{ item.category || '' }}</div>
             <div class="pc-price">NT$ {{ item.price }}</div>
-            <div v-if="isMenuMode && item.applied_groups?.length" class="pc-custom-badge">
+            <div v-if="item.applied_groups?.length" class="pc-custom-badge">
               <i class="bi bi-sliders2"></i>
             </div>
           </div>
@@ -124,6 +122,13 @@
               <input v-model.number="discount" type="number" min="0" step="1"
                      style="width:80px;border:1.5px solid #e2e8f0;border-radius:7px;padding:4px 8px;text-align:right;font-size:.85rem;font-weight:600" />
             </div>
+          </div>
+          <div v-if="discountPresets.length && cart.length" class="disc-presets">
+            <button v-for="p in discountPresets" :key="p.label"
+                    class="disc-btn"
+                    @click="applyPreset(p)">
+              {{ p.label }}
+            </button>
           </div>
           <div class="cf-row" id="cf-total-row">
             <span id="cf-total-lbl">合計</span>
@@ -198,6 +203,12 @@
         </div>
         <div class="modal-body">
           <div class="mb-3 text-center">
+            <div v-if="discount > 0" class="d-flex justify-content-between px-3 text-muted small mb-1">
+              <span>小計</span><span>NT$ {{ cartTotal.subtotal }}</span>
+            </div>
+            <div v-if="discount > 0" class="d-flex justify-content-between px-3 small mb-1 text-danger fw-semibold">
+              <span>折扣</span><span>- NT$ {{ discount }}</span>
+            </div>
             <div class="text-muted small">應付金額</div>
             <div class="fs-2 fw-bold text-primary">NT$ {{ cartTotal.total }}</div>
           </div>
@@ -206,7 +217,7 @@
             <div class="d-flex flex-wrap gap-1">
               <button v-for="pm in enabledPayMethods" :key="pm.id"
                       class="btn btn-sm" :class="selectedPayMethod === pm.id ? 'btn-primary' : 'btn-outline-secondary'"
-                      @click="selectedPayMethod = pm.id; calcChange()">{{ pm.label }}</button>
+                      @click="selectPayMethod(pm.id)">{{ pm.label }}</button>
             </div>
           </div>
           <div v-if="currentPayHasCash" class="mb-2">
@@ -217,9 +228,100 @@
             </div>
             <div class="mt-1 small text-muted" v-if="changeAmt >= 0">找零：NT$ {{ changeAmt }}</div>
           </div>
+          <!-- LINE Pay 掃描顧客條碼 -->
+          <div v-if="isLinePayMode" class="mb-2">
+            <label class="form-label small fw-semibold">
+              <i class="bi bi-upc-scan me-1 text-success"></i>
+              顧客{{ selectedPayMethod === 'zpay' ? '全支付' : 'LINE Pay' }}付款條碼
+            </label>
+            <div class="inv-scan-wrap" :class="{ 'inv-scan-ok': linePayKey }">
+              <i class="bi bi-qr-code inv-scan-icon text-success"></i>
+              <input ref="linePayScanRef" v-model="linePayKey" type="text"
+                     class="inv-scan-input"
+                     :placeholder="selectedPayMethod === 'zpay'
+                       ? '請掃描顧客全支付 App 出示的條碼…'
+                       : '請掃描顧客 LINE Pay 出示的付款條碼…'" />
+              <button v-if="linePayKey" class="inv-clear-btn" @click="linePayKey = ''">
+                <i class="bi bi-x-circle"></i>
+              </button>
+            </div>
+            <div v-if="linePayKey" class="inv-detected mt-1">
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle me-1"></i>已讀取付款碼
+              </span>
+              <span class="inv-detected-num">{{ linePayKey.slice(0, 6) }}•••</span>
+            </div>
+            <div v-else class="form-text text-muted">
+              <template v-if="selectedPayMethod === 'zpay'">
+                請顧客開啟全支付 App → 付款 → 出示條碼，再以掃描器讀取
+              </template>
+              <template v-else>
+                請顧客開啟 LINE Pay → 付款 → 出示條碼，再以掃描器讀取
+              </template>
+            </div>
+          </div>
           <div class="mb-2">
             <label class="form-label small fw-semibold">備註</label>
             <input v-model="payRemark" type="text" class="form-control form-control-sm" placeholder="選填" />
+          </div>
+          <!-- 電子發票 -->
+          <div v-if="invoiceEnabled" class="inv-section">
+            <div class="inv-header">
+              <span class="fw-semibold small">
+                <i class="bi bi-receipt-cutoff me-1 text-primary"></i>電子發票
+              </span>
+              <div class="d-flex gap-1">
+                <button class="inv-mode-btn" :class="{ active: invMode === 'none' }" @click="setInvMode('none')">不開立</button>
+                <button class="inv-mode-btn" :class="{ active: invMode === 'scan' }" @click="setInvMode('scan')">
+                  <i class="bi bi-upc-scan"></i> 載具
+                </button>
+                <button class="inv-mode-btn" :class="{ active: invMode === 'tax'  }" @click="setInvMode('tax')">統編</button>
+                <button class="inv-mode-btn" :class="{ active: invMode === 'love' }" @click="setInvMode('love')">捐贈</button>
+              </div>
+            </div>
+
+            <!-- 掃描載具條碼 -->
+            <div v-if="invMode === 'scan'" class="mt-2">
+              <div class="inv-scan-wrap" :class="{ 'inv-scan-ok': !!invCarrierType }">
+                <i class="bi bi-upc-scan inv-scan-icon"></i>
+                <input ref="invScanRef" v-model="invScanRaw" type="text"
+                       class="inv-scan-input" placeholder="掃描或輸入載具條碼，按 Enter 確認"
+                       @keydown.enter="onInvScan" @input="onInvInput" />
+                <button v-if="invScanRaw" class="inv-clear-btn" @click="clearInvScan">
+                  <i class="bi bi-x-circle"></i>
+                </button>
+              </div>
+              <div v-if="invCarrierType" class="inv-detected">
+                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>{{ invCarrierType }}</span>
+                <span class="inv-detected-num font-monospace">{{ invNum }}</span>
+              </div>
+              <div v-else class="form-text mt-1 text-muted">
+                手機條碼 /XXXXXXX（8碼）・自然人憑證（16碼英數）
+              </div>
+            </div>
+
+            <!-- 統一編號 -->
+            <div v-if="invMode === 'tax'" class="mt-2">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-building"></i></span>
+                <input v-model="invBuyerId" type="text" maxlength="8"
+                       class="form-control font-monospace" placeholder="統一編號（8碼數字）"
+                       @input="invBuyerId = invBuyerId.replace(/\D/g, '')" />
+                <span class="input-group-text" :class="invBuyerId.length === 8 ? 'text-success' : 'text-muted'">
+                  <i class="bi" :class="invBuyerId.length === 8 ? 'bi-check-lg' : 'bi-dash'"></i>
+                </span>
+              </div>
+              <div class="form-text">開立三聯式發票需填買方統一編號</div>
+            </div>
+
+            <!-- 愛心碼 -->
+            <div v-if="invMode === 'love'" class="mt-2">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text text-danger"><i class="bi bi-heart-fill"></i></span>
+                <input v-model="invLoveCode" type="text" class="form-control" placeholder="輸入愛心碼" />
+              </div>
+              <div class="form-text">發票金額將捐贈給指定公益團體</div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -235,7 +337,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
@@ -276,8 +378,9 @@ const activeCat         = ref('全部')
 const scanInput         = ref('')
 const scanRef           = ref<HTMLInputElement>()
 
-const cart     = ref<CartRow[]>([])
-const discount = ref(0)
+const cart              = ref<CartRow[]>([])
+const discount          = ref(0)
+const discountPresets   = ref<{label:string; type:'percent'|'fixed'; value:number}[]>([])
 
 const showPayment       = ref(false)
 const showHistory       = ref(false)
@@ -286,6 +389,70 @@ const cashReceived      = ref(0)
 const changeAmt         = ref(0)
 const payRemark         = ref('')
 const checkoutLoading   = ref(false)
+
+// 電子發票
+const invoiceEnabled = ref(false)
+const invAutoIssue   = ref(false)
+const invMode        = ref<'none'|'scan'|'tax'|'love'>('none')
+const invScanRaw     = ref('')    // 掃描框原始輸入
+const invNum         = ref('')    // 確認後的載具號碼
+const invCarrierType = ref('')    // 顯示用名稱：手機條碼 / 自然人憑證
+const invEcpayType   = ref('')    // ECPay 型別：'1' | '2'
+const invBuyerId     = ref('')    // 統一編號
+const invLoveCode    = ref('')    // 愛心碼
+const invScanRef     = ref<HTMLInputElement>()
+
+function setInvMode(mode: 'none'|'scan'|'tax'|'love') {
+  invMode.value = mode
+  invScanRaw.value = ''; invNum.value = ''; invCarrierType.value = ''; invEcpayType.value = ''
+  invBuyerId.value = ''; invLoveCode.value = ''
+  if (mode === 'scan') nextTick(() => invScanRef.value?.focus())
+}
+
+function detectCarrier(val: string): { ecpayType: string; label: string } | null {
+  const v = val.trim()
+  if (/^\/[0-9A-Z+\-.]{7}$/i.test(v)) return { ecpayType: '1', label: '手機條碼' }
+  if (/^[0-9A-Za-z]{16}$/.test(v))    return { ecpayType: '2', label: '自然人憑證' }
+  return null
+}
+
+function onInvInput() {
+  const det = detectCarrier(invScanRaw.value)
+  if (det) {
+    invEcpayType.value   = det.ecpayType
+    invCarrierType.value = det.label
+    invNum.value         = invScanRaw.value.trim()
+  } else {
+    invEcpayType.value = ''; invCarrierType.value = ''; invNum.value = ''
+  }
+}
+
+function onInvScan() {
+  const det = detectCarrier(invScanRaw.value)
+  if (!det) {
+    toast.show('無法識別條碼，手機條碼 /XXXXXXX（8碼）或自然人憑證（16碼）', 'warning')
+    return
+  }
+  invEcpayType.value   = det.ecpayType
+  invCarrierType.value = det.label
+  invNum.value         = invScanRaw.value.trim()
+}
+
+function clearInvScan() {
+  invScanRaw.value = ''; invNum.value = ''; invCarrierType.value = ''; invEcpayType.value = ''
+  nextTick(() => invScanRef.value?.focus())
+}
+
+// LINE Pay
+const linePayKey     = ref('')
+const linePayScanRef = ref<HTMLInputElement>()
+const LINE_PAY_IDS   = ['linepay', 'zpay']
+const isLinePayMode  = computed(() => LINE_PAY_IDS.includes(selectedPayMethod.value))
+
+watch(selectedPayMethod, (val) => {
+  if (LINE_PAY_IDS.includes(val)) nextTick(() => linePayScanRef.value?.focus())
+  else linePayKey.value = ''
+})
 
 // ── 客製化 Modal ──────────────────────────────────
 const showCustomModal  = ref(false)
@@ -304,37 +471,19 @@ const activeMenuItems = computed(() => {
   return ((menu?.items || []) as any[]).filter((i: any) => i.status === 1)
 })
 
-const displayedItems = computed<any[]>(() => {
-  if (isMenuMode.value) return activeMenuItems.value
-  return products.value
-})
-
 const catTabs = computed(() => {
-  if (isMenuMode.value) {
-    const cats = [...new Set(activeMenuItems.value.map((i: any) => (i.category || '其他') as string))]
-    return ['全部', ...cats]
-  }
-  const cats = [...new Set(displayedItems.value.map((p: any) => (p._category_name || '其他') as string))]
+  const cats = [...new Set(activeMenuItems.value.map((i: any) => (i.category || '其他') as string))]
   return ['全部', ...cats]
 })
 
 const filteredItems = computed(() => {
-  let list = displayedItems.value
+  let list = activeMenuItems.value
   if (activeCat.value && activeCat.value !== '全部') {
-    if (isMenuMode.value) {
-      list = list.filter((i: any) => (i.category || '其他') === activeCat.value)
-    } else {
-      list = list.filter((p: any) => (p._category_name || '其他') === activeCat.value)
-    }
-  }
-  if (!isMenuMode.value && prodCat.value) {
-    list = list.filter((p: any) => p.category_id === prodCat.value)
+    list = list.filter((i: any) => (i.category || '其他') === activeCat.value)
   }
   if (prodSearch.value) {
     const q = prodSearch.value.toLowerCase()
-    list = list.filter((p: any) =>
-      p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
-    )
+    list = list.filter((i: any) => i.name.toLowerCase().includes(q))
   }
   return list
 })
@@ -448,6 +597,15 @@ function changeQty(idx: number, delta: number) {
 function removeCart(idx: number) { cart.value.splice(idx, 1) }
 function clearCart() { cart.value = []; discount.value = 0 }
 
+function applyPreset(p: {type: 'percent'|'fixed'; value: number}) {
+  const sub = cartTotal.value.subtotal
+  if (p.type === 'percent') {
+    discount.value = Math.round(sub * (1 - p.value / 100))
+  } else {
+    discount.value = Math.min(p.value, sub)
+  }
+}
+
 function onScan() {
   const sku = scanInput.value.trim()
   if (!sku) return
@@ -465,11 +623,18 @@ function calcChange() {
   changeAmt.value = cashReceived.value - cartTotal.value.total
 }
 
+function selectPayMethod(id: string) {
+  selectedPayMethod.value = id
+  calcChange()
+}
+
 async function confirmCheckout() {
   if (!selectedWarehouse.value) return toast.show('請先選擇倉庫', 'danger')
   if (!selectedPayMethod.value) return toast.show('請選擇付款方式', 'danger')
   if (currentPayHasCash.value && cashReceived.value < cartTotal.value.total)
     return toast.show('收現金額不足', 'danger')
+  if (isLinePayMode.value && !linePayKey.value.trim())
+    return toast.show('請掃描顧客 LINE Pay 付款條碼', 'warning')
 
   checkoutLoading.value = true
   try {
@@ -491,13 +656,14 @@ async function confirmCheckout() {
       })),
     }))
 
-    const payment = {
+    const payment: Record<string, any> = {
       type:        selectedPayMethod.value,
       cash_amount: currentPayHasCash.value ? cashReceived.value : 0,
       card_amount: currentPayHasCash.value ? 0 : cartTotal.value.total,
     }
+    if (isLinePayMode.value) payment.linepay_key = linePayKey.value.trim()
 
-    await http.post('/pos/sale', {
+    const saleResp = await http.post('/pos/sale', {
       warehouse_id: selectedWarehouse.value,
       items,
       payment,
@@ -509,7 +675,31 @@ async function confirmCheckout() {
     showPayment.value       = false
     payRemark.value         = ''
     cashReceived.value      = 0
+    linePayKey.value        = ''
     selectedPayMethod.value = enabledPayMethods.value[0]?.id ?? 'cash'
+
+    // 電子發票自動開立
+    if (invoiceEnabled.value && invAutoIssue.value && invMode.value !== 'none') {
+      const orderId = saleResp.data?.order?._id
+      if (orderId) {
+        const payload: Record<string, string> = { order_id: orderId }
+        if (invMode.value === 'scan') {
+          payload.carrier_type = invEcpayType.value
+          payload.carrier_num  = invNum.value
+        } else if (invMode.value === 'tax') {
+          payload.buyer_id = invBuyerId.value
+        } else if (invMode.value === 'love') {
+          payload.love_code = invLoveCode.value
+        }
+        try {
+          await http.post('/invoice/issue', payload)
+          toast.show('電子發票已開立', 'success')
+        } catch (ie: any) {
+          toast.show(`發票開立失敗：${ie?.response?.data?.message ?? '請至發票管理補開'}`, 'warning')
+        }
+      }
+      setInvMode('none')
+    }
   } catch (e: any) {
     toast.show(e?.response?.data?.message ?? '結帳失敗', 'danger')
   } finally {
@@ -545,12 +735,21 @@ async function boot() {
     if (enabled.length) payMethods.value = enabled
     selectedPayMethod.value = payMethods.value[0]?.id ?? 'cash'
 
+    // ── 電子發票啟用狀態 ────────────────────────
+    try {
+      const ir = await http.get('/invoice/settings')
+      const is = ir.data?.data || {}
+      invoiceEnabled.value = !!is.enabled
+      invAutoIssue.value   = !!is.auto_issue
+    } catch { /* 忽略，發票功能可選 */ }
+
     // ── 套用系統設定預設值 ──────────────────────
     const s = sr.data?.data || {}
     if (s.default_warehouse_id) {
       const wh = (warehouses.value as any[]).find((w: any) => w._id === s.default_warehouse_id)
       if (wh) selectedWarehouse.value = s.default_warehouse_id
     }
+    discountPresets.value = s.pos_discount_presets || []
     if (s.pos_default_menu_id) {
       const m = (menus.value as any[]).find((m: any) => m._id === s.pos_default_menu_id)
       if (m) {
@@ -577,10 +776,8 @@ onUnmounted(() => clearInterval(clockTimer))
   --accent:      #4f6ef7;
   --accent-dark: #3a56d4;
   --topbar-h:    56px;
-  --cart-w:      360px;
+  --cart-ratio:  36%;
 }
-@media (min-width: 1100px) { :root { --cart-w: 400px; } }
-@media (max-width:  820px) { :root { --cart-w: 300px; } }
 
 #rotate-hint {
   display: none;
@@ -669,7 +866,7 @@ onUnmounted(() => clearInterval(clockTimer))
 }
 
 /* Cart panel */
-#panel-cart { flex: 0 0 var(--cart-w); display: flex; flex-direction: column; overflow: hidden; background: #fff; border-left: 1px solid #e8eaf0; }
+#panel-cart { flex: none; width: var(--cart-ratio); min-width: 260px; display: flex; flex-direction: column; overflow: hidden; background: #fff; border-left: 1px solid #e8eaf0; }
 #cart-header { flex-shrink: 0; padding: 12px 16px; border-bottom: 1px solid #edf0f7;
                display: flex; align-items: center; justify-content: space-between; }
 #cart-header h6 { font-size: .92rem; font-weight: 700; margin: 0; }
@@ -695,6 +892,13 @@ onUnmounted(() => clearInterval(clockTimer))
 .cf-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .cf-label { font-size: .83rem; color: #6b7280; }
 .cf-val   { font-size: .83rem; font-weight: 600; }
+.disc-presets { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.disc-btn {
+  padding: 3px 10px; font-size: .75rem; font-weight: 600;
+  border: 1.5px solid #6366f1; border-radius: 20px;
+  background: #fff; color: #6366f1; cursor: pointer; transition: all .15s;
+}
+.disc-btn:hover { background: #6366f1; color: #fff; }
 #cf-total-row { padding: 10px 0; border-top: 1.5px dashed #e2e8f0; margin-top: 4px; }
 #cf-total { font-size: 1.6rem; font-weight: 900; color: var(--accent); }
 #btn-checkout { width: 100%; padding: 14px; font-size: 1rem; font-weight: 800;
@@ -704,8 +908,81 @@ onUnmounted(() => clearInterval(clockTimer))
 #btn-checkout:disabled { background: #9ca3af; cursor: not-allowed; }
 
 /* Modal backdrop */
-.modal-backdrop-custom { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; }
-.modal-box-sm { background: #fff; border-radius: 12px; width: 360px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.modal-backdrop-custom { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
+.modal-box-sm { background: #fff; border-radius: 12px; width: 420px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.3); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.modal-box-sm .modal-body { overflow-y: auto; flex: 1 1 auto; }
+
+/* 電子發票區塊 */
+.inv-section {
+  border-top: 1px solid #e9ecef;
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.inv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inv-mode-btn {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: .72rem;
+  font-weight: 600;
+  border: 1.5px solid #e2e8f0;
+  background: #f8f9fb;
+  color: #6b7280;
+  cursor: pointer;
+  transition: .15s;
+  white-space: nowrap;
+}
+.inv-mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+.inv-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.inv-scan-wrap {
+  display: flex;
+  align-items: center;
+  background: #f8f9fb;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0 10px;
+  gap: 8px;
+  transition: border-color .15s;
+}
+.inv-scan-wrap:focus-within { border-color: var(--accent); background: #fff; }
+.inv-scan-wrap.inv-scan-ok  { border-color: #22c55e; background: #f0fdf4; }
+.inv-scan-icon { color: #9ca3af; font-size: 1rem; flex-shrink: 0; }
+.inv-scan-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 9px 4px;
+  font-size: .85rem;
+  font-family: monospace;
+  outline: none;
+}
+.inv-clear-btn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0;
+  font-size: .9rem;
+  line-height: 1;
+}
+.inv-clear-btn:hover { color: #ef4444; }
+.inv-detected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.inv-detected-num {
+  font-size: .78rem;
+  color: #6b7280;
+  letter-spacing: .5px;
+}
 
 /* 客製化 Modal */
 .modal-box-custom {

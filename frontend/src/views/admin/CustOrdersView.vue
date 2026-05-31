@@ -15,15 +15,22 @@ interface CustOrderItem {
   note?: string
 }
 
+interface StatusLogEntry {
+  status: string
+  by: string
+  at: string
+}
+
 interface CustOrder {
   _id: string
   order_no: string
   table_no: string
   items: CustOrderItem[]
-  total_amount: number
+  total: number
   status: string
   remark?: string
   created_at: string
+  status_log?: StatusLogEntry[]
 }
 
 interface Stats {
@@ -69,12 +76,25 @@ async function loadOrders() {
 
 async function updateStatus(id: string, status: string) {
   try {
-    await http.put(`/api/customer-order/${id}/status`, { status })
+    await http.patch(`/customer-order/${id}/status`, { status })
     toast.show('狀態已更新', 'success')
     await loadOrders()
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '更新失敗', 'danger')
   }
+}
+
+const STATUS_LOG_LABEL: Record<string, string> = {
+  processing: '處理',
+  completed:  '完成',
+  cancelled:  '取消',
+}
+
+function fmtLogTime(iso: string) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function getStatusColor(status: string): string {
@@ -160,30 +180,41 @@ onUnmounted(() => {
               <th>品項</th>
               <th class="text-end">金額</th>
               <th>狀態</th>
-              <th>時間</th>
+              <th>建立時間</th>
+              <th>操作紀錄</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="7" class="text-center py-3">
+              <td colspan="8" class="text-center py-3">
                 <div class="spinner-border spinner-border-sm me-2"></div>載入中…
               </td>
             </tr>
             <tr v-else-if="!orders.length">
-              <td colspan="7" class="text-center text-muted py-3">無訂單資料</td>
+              <td colspan="8" class="text-center text-muted py-3">無訂單資料</td>
             </tr>
             <tr v-for="o in orders" :key="o._id">
               <td class="fw-semibold small">{{ o.order_no || o._id.slice(-8) }}</td>
               <td>{{ o.table_no || '—' }}</td>
               <td class="small text-muted">{{ formatItems(o.items) }}</td>
-              <td class="text-end fw-semibold">${{ Number(o.total_amount || 0).toLocaleString() }}</td>
+              <td class="text-end fw-semibold">${{ Number(o.total || 0).toLocaleString() }}</td>
               <td>
                 <span :class="`badge bg-${getStatusColor(o.status)}`">
                   {{ getStatusLabel(o.status) }}
                 </span>
               </td>
               <td class="small text-muted">{{ fmtDate(o.created_at) }}</td>
+              <td class="small">
+                <div v-if="o.status_log?.length" class="log-list">
+                  <div v-for="(lg, i) in o.status_log" :key="i" class="log-entry">
+                    <span class="log-label">{{ STATUS_LOG_LABEL[lg.status] || lg.status }}</span>
+                    <span class="log-by">{{ lg.by }}</span>
+                    <span class="log-time text-muted">{{ fmtLogTime(lg.at) }}</span>
+                  </div>
+                </div>
+                <span v-else class="text-muted">—</span>
+              </td>
               <td>
                 <div class="d-flex gap-1 flex-wrap">
                   <button
@@ -222,4 +253,9 @@ onUnmounted(() => {
   padding: .15rem .4rem;
   font-size: .75rem;
 }
+.log-list  { display: flex; flex-direction: column; gap: 2px; }
+.log-entry { display: flex; align-items: center; gap: 4px; font-size: .72rem; }
+.log-label { background: #e9ecef; border-radius: 3px; padding: 0 4px; color: #495057; font-weight: 600; }
+.log-by    { color: #0d6efd; }
+.log-time  { font-size: .68rem; }
 </style>

@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 
-const auth = useAuthStore()
+const auth  = useAuthStore()
+const route = useRoute()
+
+// QR 碼帶入的桌號（不需登入）
+const tableFromUrl = computed(() => ((route.query.table as string) || '').trim())
 
 // ── Types ─────────────────────────────────────────
 interface SelectionItem {
@@ -66,7 +71,7 @@ const filteredItems = computed(() =>
 )
 
 async function loadMenu() {
-  if (!auth.isLoggedIn) return
+  if (!auth.isLoggedIn && !tableFromUrl.value) return
   loading.value  = true
   errorMsg.value = ''
   const menuId   = new URLSearchParams(location.search).get('menu_id') || ''
@@ -130,7 +135,7 @@ async function submitOrder() {
       })),
     }))
     const res = await http.post('/customer-order/', {
-      table_no: auth.username,     // 已登入帳號作識別
+      table_no: tableFromUrl.value || auth.username,
       items,
       total:   cartSubtotal.value,
       note:    remark.value,
@@ -237,7 +242,7 @@ function applyBodyStyle() {
 
 onMounted(async () => {
   if (auth.isLoggedIn && !auth.username) await auth.fetchMe()
-  if (auth.isLoggedIn) await loadMenu()
+  if (auth.isLoggedIn || tableFromUrl.value) await loadMenu()
   applyBodyStyle()
   window.addEventListener('resize', applyBodyStyle)
 })
@@ -248,8 +253,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- ── 登入遮罩 ─────────────────────────────────── -->
-  <div v-if="!auth.isLoggedIn || !auth.username" class="overlay-login">
+  <!-- ── 登入遮罩（QR 掃碼帶桌號時跳過） ─────────── -->
+  <div v-if="!tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
     <div class="login-card">
       <i class="bi bi-cup-hot text-primary" style="font-size:2.2rem"></i>
       <h5 class="mt-2 mb-1 fw-bold">點餐系統</h5>
@@ -282,8 +287,10 @@ onUnmounted(() => {
         <i class="bi bi-cup-hot me-1 text-primary"></i>{{ menuTitle }}
       </h6>
       <div class="topbar-right">
-        <span class="text-muted small me-2 d-none d-sm-inline">👤 {{ auth.username }}</span>
-        <button class="btn btn-sm btn-outline-secondary me-1" @click="handleLogout">登出</button>
+        <span class="text-muted small me-2 d-none d-sm-inline">
+          <i class="bi bi-geo-alt me-1"></i>{{ tableFromUrl || auth.username }}
+        </span>
+        <button v-if="auth.isLoggedIn" class="btn btn-sm btn-outline-secondary me-1" @click="handleLogout">登出</button>
         <!-- 手機版購物車按鈕 -->
         <button v-if="cartCount > 0" class="btn btn-sm btn-primary d-md-none"
                 @click="showCartDrawer = true">

@@ -17,6 +17,7 @@ from app.quick_io.view import app_quick_io
 from app.settings.view import app_settings
 from app.docs.view import app_docs
 from app.customer_order.view import app_customer_order
+from app.invoice.view import app_invoice
 from src import FLASK_JSON_PATH
 import json
 
@@ -71,6 +72,7 @@ def create_app(confgi_object=None):
     app.register_blueprint(blueprint=app_quick_io,       url_prefix='/quick-io')
     app.register_blueprint(blueprint=app_settings,       url_prefix='/settings')
     app.register_blueprint(blueprint=app_customer_order, url_prefix='/customer-order')
+    app.register_blueprint(blueprint=app_invoice,        url_prefix='/invoice')
     app.register_blueprint(blueprint=app_docs,           url_prefix='/docs')
     if confgi_object:
         app.config.from_object(confgi_object)
