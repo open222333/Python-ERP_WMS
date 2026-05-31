@@ -53,3 +53,19 @@ REDIS_HOST=localhost
 
 ; Redis DB 編號 預設 0
 ; REDIS_DB=0
+
+[GUNICORN]
+; Worker 進程數，建議 2 × CPU + 1；記憶體不足時降為 2
+; WORKERS=2
+
+; 每個 Worker 的執行緒數（worker_class=gthread）
+; THREADS=2
+
+; Worker 類型，gthread 省記憶體（多執行緒）；gevent 高並發
+; WORKER_CLASS=gthread
+
+; 請求逾時秒數（SSE 長連線需要較大值）
+; TIMEOUT=120
+
+; 綁定位址（Docker 內用 0.0.0.0，純主機部署用 127.0.0.1）
+; BIND=0.0.0.0:5000

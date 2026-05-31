@@ -51,8 +51,8 @@
 ```
 Python-ERP_WMS/
 ├── run.py                              # 啟動入口（自動產生 SECRET_KEY、建立預設 admin）
+├── gunicorn.py                         # Gunicorn 設定檔（讀取 conf/config.ini [GUNICORN]）
 ├── requirements.txt
-├── Dockerfile
 ├── docker-compose.yml.default
 ├── .env.default
 │
@@ -259,6 +259,8 @@ docker compose up -d --build
 > ```
 >
 > 只有異動 `requirements.txt` 或 `Dockerfile` 時，才需要再加 `--build`。
+
+> **Gunicorn 參數調整**（Worker 數、Timeout 等）：編輯 `conf/config.ini` 的 `[GUNICORN]` 區塊後，`docker compose restart app` 即生效，不需 rebuild。
 
 ### 服務一覽
 
@@ -598,6 +600,18 @@ MONGO_DB=wms
 
 ### Step 4：建立 systemd 服務（gunicorn）
 
+Gunicorn 參數統一在 `conf/config.ini` 的 `[GUNICORN]` 區塊設定，`gunicorn.py` 自動讀取，不需在 systemd 服務檔重複撰寫。
+
+先調整 `conf/config.ini`（依實際環境修改）：
+
+```ini
+[GUNICORN]
+WORKERS=3               # 2 × CPU + 1，記憶體不足時降為 2
+THREADS=2
+BIND=127.0.0.1:5000     # 純主機部署綁 127.0.0.1
+TIMEOUT=120
+```
+
 建立服務檔 `/etc/systemd/system/wms.service`：
 
 ```ini
@@ -610,13 +624,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/wms
 Environment="PATH=/opt/wms/venv/bin"
-ExecStart=/opt/wms/venv/bin/gunicorn \
-    --workers 4 \
-    --bind 127.0.0.1:5000 \
-    --timeout 120 \
-    --access-logfile /var/log/wms/access.log \
-    --error-logfile  /var/log/wms/error.log \
-    "run:app"
+ExecStart=/opt/wms/venv/bin/gunicorn -c gunicorn.py run:app
 Restart=on-failure
 RestartSec=5
 
@@ -625,10 +633,6 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-# 建立 log 目錄並設定權限
-sudo mkdir -p /var/log/wms
-sudo chown www-data:www-data /var/log/wms
-
 # 也需要讓 www-data 能讀取專案（包含 conf/）
 sudo chown -R www-data:www-data /opt/wms
 
@@ -639,8 +643,6 @@ sudo systemctl enable --now wms
 # 確認狀態
 sudo systemctl status wms
 ```
-
-> **workers 數量建議**：`2 × CPU 核心數 + 1`，例如 2 核心建議設 `--workers 5`。
 
 ---
 
@@ -1468,6 +1470,11 @@ from src.permissions import require_role
 | `[SETTING]` | `ADMIN_TITLE` | 後台頁面標題 | `WMS 倉儲管理系統` |
 | `[MONGO]` | `MONGO_URI` | MongoDB 連線 URI | `mongodb://localhost:27017` |
 | | `MONGO_DB` | 資料庫名稱 | `wms` |
+| `[GUNICORN]` | `WORKERS` | Worker 進程數（建議 2×CPU+1；記憶體不足時設 2） | `2` |
+| | `THREADS` | 每個 Worker 的執行緒數（`worker_class=gthread`） | `2` |
+| | `WORKER_CLASS` | Worker 類型：`gthread`（省記憶體）/ `gevent`（高並發） | `gthread` |
+| | `TIMEOUT` | 請求逾時秒數（SSE 長連線建議 120 以上） | `120` |
+| | `BIND` | 綁定位址（Docker 用 `0.0.0.0:5000`；主機部署用 `127.0.0.1:5000`） | `0.0.0.0:5000` |
 | `[UBEREATS]` | `CLIENT_ID` | UberEats OAuth2 Client ID | _(空)_ |
 | | `CLIENT_SECRET` | UberEats OAuth2 Client Secret | _(空)_ |
 | | `STORE_ID` | UberEats 餐廳 Store ID | _(空)_ |
@@ -1549,7 +1556,7 @@ from src.permissions import require_role
 | 庫存更新時機 | 庫存變更僅在「完成入/出庫」及「POS 結帳/退款」時觸發 |
 | Webhook 安全 | 建議設定 `WEBHOOK_SECRET`，系統會驗證 HMAC-SHA256 簽名；留空則略過驗簽（僅開發用） |
 | debug 模式 | 預設開啟，正式部署請改用 `ProductionConfig` 並設定 `debug=False` |
-| 正式部署 | 建議使用 gunicorn + nginx，不直接暴露 Flask 開發伺服器 |
+| 正式部署 | Docker 部署預設使用 gunicorn（`CMD gunicorn -c gunicorn.py run:app`）；純主機部署亦同；參數統一在 `conf/config.ini [GUNICORN]` 設定 |
 | POS PWA | `/pos/` 支援「加入主畫面」（PWA），加入後可從手機桌面直接啟動並自動鎖定橫向 |
 | Redis | 用於登入速率限制；僅內網時無需設密碼；`swallow_errors=True` 確保 Redis 斷線時靜默放行，不影響正常登入 |
 | `__guest__` 帳號 | 啟動時自動建立，`locked=True` 防止誤刪；為系統保留帳號，不提供正常登入能力 |
