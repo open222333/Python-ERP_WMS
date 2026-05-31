@@ -786,11 +786,19 @@ git pull                           # 拉取最新版本
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 若有前端變更（在開發機 build 後 rsync 上傳 frontend-dist）
-rsync -av --delete frontend-dist/ server:/opt/wms/frontend-dist/
+# ── 若有前端變更 ──────────────────────────────────────────────
+# 方式一：直接在伺服器上 build（需已安裝 Node.js 18+）
+cd /opt/wms/frontend
+npm ci && npm run build            # 產物輸出至 ../frontend-dist/
+cd /opt/wms
 
-sudo systemctl restart wms         # 重啟 gunicorn
+# 方式二：在開發機 build 後 rsync 上傳（不需伺服器安裝 Node.js）
+# rsync -av --delete frontend-dist/ user@server:/opt/wms/frontend-dist/
+
+sudo systemctl restart wms         # 重啟 gunicorn（後端程式碼變更後必做）
 ```
+
+> **注意**：前端（Vue）程式碼修改後，**必須重新 build** 才會生效。`git pull` 只更新原始碼，不會自動套用到使用者看到的頁面。
 
 ---
 

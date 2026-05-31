@@ -124,6 +124,10 @@
           <RouterLink v-if="auth.isAdmin || auth.pageVisible('settings')" to="/admin/settings" class="nav-link" @click="closeMobile">
             <i class="bi bi-sliders"></i><span>系統設定</span>
           </RouterLink>
+          <a v-if="auth.isAdmin" href="/docs/" target="_blank" class="nav-link external">
+            <i class="bi bi-book"></i><span>使用說明</span>
+            <i class="bi bi-box-arrow-up-right ext-icon"></i>
+          </a>
         </template>
       </div>
 

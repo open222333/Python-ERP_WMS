@@ -146,11 +146,15 @@
   <div class="nav-section">POS 收銀</div>
   <a class="nav-link" href="#menus">菜單管理</a>
   <a class="nav-link" href="#pos">收銀台操作</a>
+
+  <div class="nav-section">財務</div>
   <a class="nav-link" href="#pos-sales">銷售記錄</a>
-  <a class="nav-link" href="#pos-report">日結報表</a>
+  <a class="nav-link" href="#pos-report">銷售報表</a>
+  <a class="nav-link" href="#invoices">電子發票</a>
 
   <div class="nav-section">顧客點單</div>
   <a class="nav-link" href="#cust-order-page">顧客點單頁面</a>
+  <a class="nav-link" href="#qr-codes">QR 碼管理</a>
   <a class="nav-link" href="#cust-order-mgmt">訂單管理</a>
   <a class="nav-link" href="#kitchen">廚房顯示</a>
 
@@ -448,8 +452,15 @@
   <h2 class="section-title" id="pos-sales">
     <i class="bi bi-receipt me-2 text-primary"></i>銷售記錄
   </h2>
-  <p>後台側欄 → <strong>銷售記錄</strong>。查詢所有 POS 訂單，可依日期、狀態篩選。</p>
+  <p>後台側欄 → <strong>財務 → 銷售記錄</strong>。查詢所有銷售紀錄，可依日期、狀態、來源篩選。</p>
   <table class="table doc-table table-bordered">
+    <thead><tr><th>來源</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><code>pos</code></td><td>收銀台直接結帳建立</td></tr>
+      <tr><td><code>cust_order</code></td><td>顧客點單訂單完成時自動建立</td></tr>
+    </tbody>
+  </table>
+  <table class="table doc-table table-bordered mt-2">
     <thead><tr><th>狀態</th><th>說明</th></tr></thead>
     <tbody>
       <tr><td><span class="badge bg-success">已付款</span></td><td>正常完成的訂單</td></tr>
@@ -457,16 +468,30 @@
     </tbody>
   </table>
 
-  <!-- ────────────────── 日結報表 ────────────────── -->
+  <!-- ────────────────── 銷售報表 ────────────────── -->
   <h2 class="section-title" id="pos-report">
-    <i class="bi bi-bar-chart-line me-2 text-primary"></i>日結報表
+    <i class="bi bi-bar-chart-line me-2 text-primary"></i>銷售報表
   </h2>
-  <p>後台側欄 → <strong>日結報表</strong>。查詢指定日期的收銀彙總。</p>
-  <ul>
-    <li>顯示當日總銷售金額、訂單筆數、退款金額。</li>
-    <li>依付款方式分類統計金額。</li>
-    <li>熱銷品項排行（依銷售數量排序）。</li>
-  </ul>
+  <p>後台側欄 → <strong>財務 → 銷售報表</strong>。支援日 / 週 / 月 / 年四種統計粒度。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>模式</th><th>顯示內容</th></tr></thead>
+    <tbody>
+      <tr><td>日</td><td>當日摘要 + 個別訂單列表 + 付款方式分析</td></tr>
+      <tr><td>週</td><td>本週摘要 + 每日銷售明細</td></tr>
+      <tr><td>月</td><td>本月摘要 + 每日銷售明細</td></tr>
+      <tr><td>年</td><td>全年摘要 + 每月銷售明細</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ────────────────── 電子發票 ────────────────── -->
+  <h2 class="section-title" id="invoices">
+    <i class="bi bi-receipt-cutoff me-2 text-primary"></i>電子發票
+  </h2>
+  <p>後台側欄 → <strong>財務 → 電子發票</strong>。管理已開立的電子發票紀錄。</p>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    電子發票功能需先至<strong>發票設定</strong>完成串接設定（ECPay 等發票服務商）。
+  </div>
 
   <!-- ════════════════ 顧客點單 ════════════════ -->
 
@@ -539,11 +564,28 @@
     </tbody>
   </table>
 
+  <h3 class="sub-title">操作紀錄</h3>
+  <p>每次狀態變更自動記錄操作者與時間，顯示於訂單列表的「操作紀錄」欄，方便追蹤各階段責任歸屬。</p>
+
+  <h3 class="sub-title">完成訂單自動建立銷售記錄</h3>
+  <p>訂單狀態更新為「已完成」時，系統自動在<strong>銷售記錄</strong>中新增一筆對應記錄（來源標記為 <code>cust_order</code>），無需手動輸入，確保財務數據完整。</p>
+
   <h3 class="sub-title">篩選與統計</h3>
   <ul>
     <li>可依狀態（全部 / 待處理 / 處理中 / 已完成 / 已取消）篩選。</li>
     <li>可依日期篩選，統計列顯示當日各狀態筆數與總金額。</li>
   </ul>
+
+  <!-- ────────────────── QR 碼管理 ────────────────── -->
+  <h2 class="section-title" id="qr-codes">
+    <i class="bi bi-qr-code-scan me-2 text-primary"></i>QR 碼管理
+  </h2>
+  <p>後台側欄 → <strong>QR 碼管理</strong>。為各桌桌號產生對應的點單 QR Code，顧客掃描後直接進入已帶入桌號的點單頁面。</p>
+  <ol class="step-list">
+    <li>輸入桌號（例如 A1、B2），點擊「產生 QR Code」。</li>
+    <li>點擊「下載」或「列印」輸出桌卡貼紙。</li>
+    <li>QR Code 連結至 <span class="url-pill">/order/?table=桌號</span>，顧客掃碼後桌號自動帶入，不需手動輸入。</li>
+  </ol>
 
   <!-- ────────────────── 廚房顯示 ────────────────── -->
   <h2 class="section-title" id="kitchen">
@@ -558,9 +600,10 @@
   <h3 class="sub-title">介面說明</h3>
   <ul>
     <li>顯示所有「待處理」與「處理中」的訂單卡片，依下單時間由早到晚排列（FIFO）。</li>
-    <li>每張卡片顯示：訂單編號、桌號、品項（含客製化選項）、等待時間。</li>
-    <li>等待超過 <strong>10 分鐘</strong>的訂單顯示紅色警示標籤。</li>
-    <li>頁面每 <strong>15 秒</strong>自動重整，無需手動操作。</li>
+    <li>每張卡片顯示：訂單編號、桌號、品項（依名稱字母排序）、等待時間、建立時間。</li>
+    <li>等待時間格式：<code>X天X時X分X秒</code>，超過 <strong>10 分鐘</strong>顯示紅色警示。</li>
+    <li>畫面頂部顯示即時時鐘，以及各狀態訂單數量統計。</li>
+    <li>透過 <strong>SSE（Server-Sent Events）</strong>即時推送，每秒自動更新，無需手動重整。</li>
   </ul>
 
   <h3 class="sub-title">員工操作</h3>
@@ -668,10 +711,11 @@
     <tbody>
       <tr><td>商品管理</td><td>產品分類、產品資料</td></tr>
       <tr><td>倉儲管理</td><td>倉庫管理、庫存查詢、入庫管理、出庫管理、庫存移動</td></tr>
-      <tr><td>POS 收銀</td><td>菜單管理、收銀台、銷售記錄、日結報表</td></tr>
-      <tr><td>顧客點單</td><td>訂單管理、廚房顯示連結、顧客點單頁連結</td></tr>
+      <tr><td>POS 收銀</td><td>菜單管理、開啟收銀台</td></tr>
+      <tr><td>財務</td><td>銷售記錄、銷售報表、電子發票、發票設定</td></tr>
+      <tr><td>顧客點單</td><td>訂單管理、廚房顯示連結、顧客點單頁連結、QR 碼管理</td></tr>
       <tr><td>外送平台</td><td>外送訂單、平台設定</td></tr>
-      <tr><td>系統</td><td>使用者管理、操作紀錄</td></tr>
+      <tr><td>系統</td><td>使用者管理、操作紀錄、使用說明</td></tr>
     </tbody>
   </table>
 
