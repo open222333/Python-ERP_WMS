@@ -47,6 +47,7 @@ class TableSession:
         pipe = r.pipeline()
         pipe.setex(key, ttl_sec, json.dumps(data))
         pipe.setex(cls._TOK_PFX + token, ttl_sec, table_no)
+        pipe.delete(cls._CLOSE_PFX + table_no)  # 新 session 建立，清除舊的關閉旗標
         pipe.execute()
         return token
 
