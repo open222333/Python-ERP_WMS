@@ -102,6 +102,20 @@ server {
         return 301 https://$host/apidocs/;
     }
 
+    # ── index.html：永不快取
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires 0;
+    }
+
+    # ── /assets/：content-hash 檔名，可長快取
+    location ^~ /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
     # ── SPA 路由 fallback ────────────────────────────────────
     location / {
         try_files $uri $uri/ /index.html;
