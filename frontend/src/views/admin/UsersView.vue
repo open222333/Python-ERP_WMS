@@ -291,6 +291,9 @@ onMounted(load)
             <td>
               <i class="bi bi-person-circle me-1 text-muted"></i>
               <strong>{{ u.username }}</strong>
+              <span v-if="u.locked" class="badge bg-warning text-dark ms-1" style="font-size:.65rem">
+                <i class="bi bi-lock-fill me-1"></i>系統
+              </span>
             </td>
             <td>
               <span class="badge" :class="`bg-${ROLE_COLOR[u.role] || 'secondary'}`">{{ u.role }}</span>
@@ -303,14 +306,16 @@ onMounted(load)
             </td>
             <td class="text-muted small">{{ fmtDate(u.created_at) }}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary me-1" @click="openUserModal(u)">
+              <button class="btn btn-sm btn-outline-primary me-1"
+                      :disabled="u.locked"
+                      @click="openUserModal(u)">
                 <i class="bi bi-pencil"></i>
               </button>
               <button
-                v-if="u.username === 'admin'"
+                v-if="u.locked"
                 class="btn btn-sm btn-outline-secondary"
                 disabled
-                title="系統管理員帳號不可刪除"
+                :title="`系統帳號「${u.username}」不可刪除`"
               >
                 <i class="bi bi-lock-fill"></i>
               </button>

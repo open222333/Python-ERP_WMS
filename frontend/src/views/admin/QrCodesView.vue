@@ -10,13 +10,14 @@ const toast = useToastStore()
 interface TableEntry {
   table_no:   string
   label:      string
+  code:       string
   enabled:    boolean
   token:      string
   expires_at: string
 }
 
 // ── State ────────────────────────────────────────────────
-const baseUrl     = ref(window.location.origin)
+const baseUrl     = ref('')
 const entries     = ref<TableEntry[]>([])
 const qrUrls      = ref<Record<string, string>>({})
 const loading     = ref(false)
@@ -80,12 +81,15 @@ async function loadTokens() {
   try {
     const res = await http.get('/customer-order/tokens')
     const d = res.data.data
+    // 優先使用資料庫存的網址，若無才用當前網址
+    baseUrl.value     = d.base_url || window.location.origin
     ttlHours.value    = d.ttl_hours || 24
     lastRefresh.value = d.last_refresh || ''
     const tokens: Record<string, any> = d.tokens || {}
     entries.value = Object.entries(tokens).map(([table_no, info]) => ({
       table_no,
       label:      info.label || table_no,
+      code:       info.code  || '',
       enabled:    info.enabled !== false,
       token:      info.token || '',
       expires_at: info.expires_at || '',
@@ -102,10 +106,13 @@ async function loadTokens() {
 async function saveTables() {
   saving.value = true
   try {
+    // 將 baseUrl 傳給後端儲存
     const res = await http.put('/customer-order/tokens/tables', {
+      base_url: baseUrl.value,
       tables: entries.value.map(e => ({
         table_no: e.table_no,
         label:    e.label,
+        code:     e.code,
         enabled:  e.enabled,
       })),
     })
@@ -115,7 +122,7 @@ async function saveTables() {
       const updated = newData[e.table_no]
       if (updated && updated.token !== e.token) {
         genQR(updated.token)
-        return { ...e, token: updated.token, expires_at: updated.expires_at }
+        return { ...e, code: updated.code || e.code, token: updated.token, expires_at: updated.expires_at }
       }
       return e
     })
@@ -161,7 +168,7 @@ async function addSingle() {
   }
   entries.value.push({
     table_no, label: newLabel.value.trim() || table_no,
-    enabled: true, token: '', expires_at: '',
+    code: '', enabled: true, token: '', expires_at: '',
   })
   newTableNo.value = ''
   newLabel.value   = ''
@@ -178,7 +185,7 @@ async function batchGenerate() {
     const table_no = `${prefix}${n}`
     if (entries.value.some(e => e.table_no === table_no)) continue
     const label = batchLabelTpl.value.replace('{n}', table_no)
-    entries.value.push({ table_no, label, enabled: true, token: '', expires_at: '' })
+    entries.value.push({ table_no, label, code: '', enabled: true, token: '', expires_at: '' })
     added = true
   }
   if (added) await saveTables()
@@ -404,10 +411,18 @@ onMounted(loadTokens)
                 <div v-else class="text-muted small">生成中...</div>
               </td>
 
-              <!-- 桌號 / 標籤 -->
+              <!-- 桌號 / 標籤 / 識別碼 -->
               <td>
                 <div class="fw-semibold">{{ e.label }}</div>
                 <small class="text-muted font-monospace">{{ e.table_no }}</small>
+                <div class="d-flex align-items-center gap-1 mt-1">
+                  <span class="badge bg-secondary bg-opacity-75 font-monospace" style="font-size:.7rem">
+                    識別碼
+                  </span>
+                  <input v-model="e.code" type="text" class="form-control form-control-sm py-0"
+                         style="width:90px;font-size:.75rem;font-family:monospace"
+                         placeholder="自動生成" @change="saveTables" />
+                </div>
               </td>
 
               <!-- Token 狀態 -->

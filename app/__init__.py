@@ -1,6 +1,7 @@
-from flask import Flask, redirect
+from flask import Flask, redirect, jsonify
 from flasgger import Swagger
 from flask_jwt_extended import JWTManager
+from app.extensions import limiter
 from app.auth.view import app_auth
 from app.user.view import app_user
 from app.log.view import app_log
@@ -18,10 +19,24 @@ from app.settings.view import app_settings
 from app.docs.view import app_docs
 from app.customer_order.view import app_customer_order
 from app.invoice.view import app_invoice
-from src import FLASK_JSON_PATH
+from src import FLASK_JSON_PATH, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
 import json
 
 app = Flask(__name__)
+
+# ── 登入速率限制（Redis backend，跨 worker 共享計數）────
+_redis_uri = (
+    f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    if REDIS_PASSWORD
+    else f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+)
+app.config['RATELIMIT_STORAGE_URI'] = _redis_uri
+limiter.init_app(app)
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({'success': False, 'message': '嘗試次數過多，請稍後再試'}), 429
+
 template = {
     "swagger": "2.0",
     "info": {
@@ -56,6 +71,9 @@ def status():
 
 
 def create_app(confgi_object=None):
+    from src.models.user import User
+    User.ensure_guest_user()
+
     # ── API Blueprints（原始路徑，與 nginx proxy 規則一致）──────
     app.register_blueprint(blueprint=app_auth,           url_prefix='/auth')
     app.register_blueprint(blueprint=app_user,           url_prefix='/user')

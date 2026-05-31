@@ -2,27 +2,33 @@
 # Let's Encrypt SSL 範本（HTTPS + 免費憑證）
 # 使用情境：伺服器直接暴露於網際網路（不經 Cloudflare Proxy）
 #
-# 啟用方式 (.env)：
-#   NGINX_MODE=https-letsencrypt
-#   DOMAIN=your.domain.com
+# 使用方式：
+#   搜尋取代後部署：
+#     admin.example.com → 後台管理域名
+#     order.example.com → 顧客點餐域名
+#     5000              → Flask port（通常不需修改）
 #
 # 前置作業：
-#   1. 確認 DNS A 記錄已指向本伺服器
+#   1. 確認兩個域名的 DNS A 記錄已指向本伺服器
 #   2. docker-compose.yml 中新增憑證 volume：
 #        - /etc/letsencrypt:/etc/letsencrypt:ro
 #        - /var/www/certbot:/var/www/certbot
-#   3. 申請憑證：
-#        certbot certonly --webroot -w /var/www/certbot -d your.domain.com
-#   4. 將下方 ssl_certificate 路徑中的 your.domain.com 替換為實際域名
+#   3. 分別申請兩個域名的憑證：
+#        certbot certonly --webroot -w /var/www/certbot -d admin.example.com
+#        certbot certonly --webroot -w /var/www/certbot -d order.example.com
 # ============================================================
 upstream flask_app {
-    server app:${FLASK_PORT};
+    server app:5000;
 }
+
+# ════════════════════════════════════════════════════════════
+# 後台管理域名
+# ════════════════════════════════════════════════════════════
 
 # HTTP → HTTPS 強制導向（同時提供 certbot webroot 驗證）
 server {
     listen      80;
-    server_name ${DOMAIN};
+    server_name admin.example.com;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -35,11 +41,10 @@ server {
 # HTTPS
 server {
     listen      443 ssl;
-    server_name ${DOMAIN};
+    server_name admin.example.com;
 
-    # ← 申請憑證後，將路徑中的 your.domain.com 替換為實際域名
-    ssl_certificate     /etc/letsencrypt/live/your.domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your.domain.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/$server_name/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$server_name/privkey.pem;
 
     ssl_protocols             TLSv1.2 TLSv1.3;
     ssl_ciphers               HIGH:!aNULL:!MD5;
@@ -47,53 +52,129 @@ server {
     ssl_session_cache         shared:SSL:10m;
     ssl_session_timeout       1d;
 
-    # HSTS（可選）
     # add_header Strict-Transport-Security "max-age=63072000" always;
 
     client_max_body_size 50M;
 
-    access_log  /var/log/nginx/access.log;
+    access_log  /var/log/nginx/$server_name-access.log;
     error_log   /var/log/nginx/error.log;
 
-    # Vue SPA 靜態檔
     root  /usr/share/nginx/html;
     index index.html;
 
-    # ── Flask API 路徑（全部反向代理到 Flask）───────────────
-    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|settings|customer-order|apidocs)/ {
+    # ── Flask API ─────────────────────────────────────────────
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|settings|customer-order|invoice|docs|apidocs)/ {
         proxy_pass         http://flask_app;
         proxy_http_version 1.1;
-
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
-
         proxy_connect_timeout  60s;
         proxy_send_timeout     60s;
         proxy_read_timeout    120s;
     }
 
-    # Swagger UI
     location = /apidocs {
         return 301 https://$host/apidocs/;
     }
 
-    # ── index.html：永不快取
     location = /index.html {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
         add_header Pragma "no-cache";
         add_header Expires 0;
     }
 
-    # ── /assets/：content-hash 檔名，可長快取
     location ^~ /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         access_log off;
     }
 
-    # ── SPA 路由 fallback ────────────────────────────────────
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /nginx-health {
+        access_log  off;
+        return      200 "ok\n";
+        add_header  Content-Type text/plain;
+    }
+}
+
+# ════════════════════════════════════════════════════════════
+# 顧客點餐域名
+# 僅開放 /customer-order/，後台路由一律 403
+# ════════════════════════════════════════════════════════════
+
+# HTTP → HTTPS 強制導向（同時提供 certbot webroot 驗證）
+server {
+    listen      80;
+    server_name order.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS
+server {
+    listen      443 ssl;
+    server_name order.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/order.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/order.example.com/privkey.pem;
+
+    ssl_protocols             TLSv1.2 TLSv1.3;
+    ssl_ciphers               HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache         shared:SSL:10m;
+    ssl_session_timeout       1d;
+
+    client_max_body_size 5M;
+
+    access_log  /var/log/nginx/$server_name-order-access.log;
+    error_log   /var/log/nginx/order-error.log;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # ── 封鎖所有後台 API ────────────────────────────────────
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|settings|invoice|docs|apidocs)/ {
+        return 403;
+    }
+    location = /apidocs {
+        return 403;
+    }
+
+    # ── 顧客點餐 API（唯一開放的後端路由）──────────────────
+    location ~* ^/customer-order/ {
+        proxy_pass         http://flask_app;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_connect_timeout  60s;
+        proxy_send_timeout     60s;
+        proxy_read_timeout    120s;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires 0;
+    }
+
+    location ^~ /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

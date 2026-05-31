@@ -12,7 +12,9 @@ const qrToken      = computed(() => ((route.query.t     as string) || '').trim()
 const tableFromUrl = computed(() => ((route.query.table as string) || '').trim())
 
 // 後端解析後的桌號（token 模式由 /menu 回傳）
-const resolvedTable = ref('')
+const resolvedTable  = ref('')
+// 掃碼後換取的 guest session token（4h，僅存記憶體）
+const sessionToken   = ref('')
 
 // ── Types ─────────────────────────────────────────
 interface SelectionItem {
@@ -87,9 +89,10 @@ async function loadMenu() {
     const qs  = new URLSearchParams(params).toString()
     const res = await http.get(`/customer-order/menu${qs ? '?' + qs : ''}`)
     if (!res.data.success) { errorMsg.value = res.data.message || '無法載入菜單'; return }
-    menuData.value    = res.data.data
-    menuTitle.value   = menuData.value?.name || '點餐'
+    menuData.value      = res.data.data
+    menuTitle.value     = menuData.value?.name || '點餐'
     resolvedTable.value = res.data.table_no || tableFromUrl.value || ''
+    if (res.data.session_token) sessionToken.value = res.data.session_token
   } catch (e: any) {
     errorMsg.value = e?.response?.data?.message || '網路錯誤，請重新整理'
   } finally {
@@ -144,14 +147,15 @@ async function submitOrder() {
         extra_price: s.extra_price,
       })),
     }))
+    const headers: Record<string, string> = {}
+    if (sessionToken.value) headers['Authorization'] = `Bearer ${sessionToken.value}`
     const res = await http.post('/customer-order/', {
-      qr_token: qrToken.value || undefined,
       table_no: resolvedTable.value || auth.username,
       items,
       total:   cartSubtotal.value,
       note:    remark.value,
       menu_id: menuData.value?._id,
-    })
+    }, { headers })
     orderNo.value      = res.data.order_no || '—'
     showSuccess.value  = true
     showCartDrawer.value = false
@@ -253,7 +257,7 @@ function applyBodyStyle() {
 
 onMounted(async () => {
   if (auth.isLoggedIn && !auth.username) await auth.fetchMe()
-  if (auth.isLoggedIn || tableFromUrl.value) await loadMenu()
+  if (auth.isLoggedIn || tableFromUrl.value || qrToken.value) await loadMenu()
   applyBodyStyle()
   window.addEventListener('resize', applyBodyStyle)
 })
@@ -264,8 +268,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- ── 登入遮罩（QR 掃碼帶桌號時跳過） ─────────── -->
-  <div v-if="!tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
+  <!-- 無參數且未登入 → 空白（防止直接瀏覽） -->
+  <template v-if="!qrToken && !tableFromUrl && !auth.isLoggedIn"></template>
+
+  <!-- 有 tableFromUrl 但未登入 → 顯示登入遮罩（內部人員用） -->
+  <div v-else-if="tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
     <div class="login-card">
       <i class="bi bi-cup-hot text-primary" style="font-size:2.2rem"></i>
       <h5 class="mt-2 mb-1 fw-bold">點餐系統</h5>

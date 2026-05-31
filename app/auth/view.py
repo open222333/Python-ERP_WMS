@@ -5,11 +5,13 @@ from flask_jwt_extended import (
 )
 from src.models.user import User
 from src.models.user_template import UserTemplate
+from app.extensions import limiter
 
 app_auth = Blueprint('auth', __name__)
 
 
 @app_auth.route('/login', methods=['POST'])
+@limiter.limit("10 per minute; 50 per hour")
 def login():
     """
     帳號密碼登入

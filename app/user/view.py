@@ -58,6 +58,11 @@ def update_user(user_id):
     if not data:
         return jsonify({'success': False, 'message': '缺少請求參數'}), 400
 
+    # 系統鎖定帳號不可修改
+    target = User._col().find_one({'_id': ObjectId(user_id)}, {'username': 1, 'locked': 1})
+    if target and target.get('locked'):
+        return jsonify({'success': False, 'message': f'系統帳號「{target["username"]}」不可修改'}), 403
+
     password = data.get('password') or None
     role     = None  # 角色由模板決定，不接受直接設定
 
@@ -93,10 +98,10 @@ def delete_user(user_id):
     if user and str(user['_id']) == user_id:
         return jsonify({'success': False, 'message': '無法刪除自己的帳號'}), 400
 
-    # 系統初始管理員帳號不可刪除，只能修改密碼
-    target = User._col().find_one({'_id': ObjectId(user_id)}, {'username': 1})
-    if target and target.get('username') == 'admin':
-        return jsonify({'success': False, 'message': '系統管理員帳號不可刪除，僅可修改密碼'}), 403
+    # 系統鎖定帳號不可刪除
+    target = User._col().find_one({'_id': ObjectId(user_id)}, {'username': 1, 'locked': 1})
+    if target and target.get('locked'):
+        return jsonify({'success': False, 'message': f'系統帳號「{target["username"]}」不可刪除'}), 403
 
     if not User.delete(user_id):
         return jsonify({'success': False, 'message': '使用者不存在'}), 404

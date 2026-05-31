@@ -84,7 +84,24 @@ class User:
         return result.matched_count > 0
 
     @classmethod
+    def ensure_guest_user(cls) -> None:
+        """啟動時確保 __guest__ 系統帳號存在（鎖定，不可刪除）。"""
+        if cls._col().find_one({'username': '__guest__'}):
+            return
+        hashed = bcrypt.hashpw(b'__guest__', bcrypt.gensalt())
+        cls._col().insert_one({
+            'username':   '__guest__',
+            'password':   hashed.decode(),
+            'role':       'viewer',
+            'locked':     True,
+            'created_at': datetime.utcnow(),
+        })
+
+    @classmethod
     def delete(cls, user_id: str) -> bool:
+        doc = cls._col().find_one({'_id': ObjectId(user_id)}, {'locked': 1})
+        if doc and doc.get('locked'):
+            return False
         result = cls._col().delete_one({'_id': ObjectId(user_id)})
         return result.deleted_count > 0
 

@@ -16,9 +16,12 @@ import time
 import json
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify, Response, stream_with_context
-from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, decode_token
+from flask_jwt_extended import (
+    jwt_required, get_jwt_identity, verify_jwt_in_request,
+    decode_token, create_access_token, get_jwt,
+)
 from src.models.customer_order import CustomerOrder, ORDER_STATUS_LABEL
 from src.models.menu import Menu
 from src.models.settings import SystemSettings
@@ -100,6 +103,15 @@ def get_order_menu():
         if SystemSettings.get('table_tokens', {}):
             return jsonify({'success': False, 'message': '請使用 QR Code 掃描進入'}), 401
 
+    # 產生 guest session token（掃碼後 4 小時內有效）
+    session_token = None
+    if resolved_table:
+        session_token = create_access_token(
+            identity='__guest__',
+            additional_claims={'table_no': resolved_table, 'table_label': resolved_label or resolved_table},
+            expires_delta=timedelta(hours=4),
+        )
+
     menu_id = request.args.get('menu_id') or SystemSettings.get('order_menu_id', '')
     if menu_id:
         m = Menu.find_by_id(menu_id)
@@ -107,6 +119,7 @@ def get_order_menu():
             return jsonify({
                 'success': True, 'data': m,
                 'table_no': resolved_table, 'table_label': resolved_label,
+                'session_token': session_token,
             })
 
     # fallback：第一個啟用菜單
@@ -117,6 +130,7 @@ def get_order_menu():
     return jsonify({
         'success': True, 'data': m,
         'table_no': resolved_table, 'table_label': resolved_label,
+        'session_token': session_token,
     })
 
 
@@ -131,9 +145,12 @@ def create_order():
     """
     # 嘗試取得 JWT identity（選用）
     customer_id = None
+    jwt_claims  = {}
     try:
         verify_jwt_in_request(optional=True)
         customer_id = get_jwt_identity()
+        if customer_id:
+            jwt_claims = get_jwt()
     except Exception:
         pass
 
@@ -145,8 +162,11 @@ def create_order():
     remark    = data.get('remark', '')
     menu_id   = data.get('menu_id', '')
 
-    # QR Token 驗證（優先）
-    if qr_token:
+    # Guest session JWT（掃碼後換取的 4h token）
+    if customer_id == '__guest__':
+        table_no = jwt_claims.get('table_no', '') or table_no
+    elif qr_token:
+        # 舊模式相容：body 帶 qr_token
         try:
             resolved, _ = _validate_qr_token(qr_token)
             if resolved:
@@ -154,12 +174,12 @@ def create_order():
         except ValueError as e:
             return jsonify({'success': False, 'message': str(e)}), 401
     elif SystemSettings.get('table_tokens', {}):
-        # Token 模式已啟用但未提供 token
+        # Token 模式已啟用但未提供任何憑據
         if not customer_id:
             return jsonify({'success': False, 'message': '請使用 QR Code 掃描進入'}), 401
 
-    # 已登入：帳號作識別碼（table_no 可省略，或以帳號覆蓋）
-    if customer_id:
+    # 一般已登入帳號（非 guest）
+    if customer_id and customer_id != '__guest__':
         table_no = table_no or customer_id
 
     if not table_no:
@@ -388,15 +408,30 @@ def update_qr_tables():
     ttl_hours = _get_ttl_hours()
     expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
 
+    # 計算已有的最大序號（用於自動生成 code）
+    existing_codes = {info.get('code', '') for info in current.values() if info.get('code')}
+
     new_tokens = {}
+    seq = 1
     for t in tables:
         table_no = (t.get('table_no') or '').strip()
         if not table_no:
             continue
         existing = current.get(table_no, {})
+
+        # code：前端有傳就用前端的，否則沿用舊值，再否則自動生成
+        code = (t.get('code') or '').strip() or existing.get('code', '')
+        if not code:
+            while f'T-{seq:03d}' in existing_codes:
+                seq += 1
+            code = f'T-{seq:03d}'
+            existing_codes.add(code)
+            seq += 1
+
         new_tokens[table_no] = {
             'label':      t.get('label', table_no),
             'enabled':    t.get('enabled', True),
+            'code':       code,
             'token':      existing.get('token') or secrets.token_urlsafe(24),
             'expires_at': existing.get('expires_at') or expires_at,
         }
