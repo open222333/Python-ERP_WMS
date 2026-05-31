@@ -9,14 +9,15 @@
 - **入庫單**：建立 → 確認 → 完成（自動入帳庫存）+ 條碼掃描新增品項
 - **出庫單**：建立 → 確認（自動驗證庫存）→ 完成（自動扣減）+ 條碼掃描
 - **庫存移動紀錄**：完整異動歷史
-- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、找零、印收據、退款管理、預設菜單設定
+- **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、計算機數字鍵盤（1000/500/100/50 面額快鍵、+/− 模式、符合金額）、找零、印收據、退款管理、預設菜單設定
 - **銷售報表**：日 / 週 / 月 / 年多期間銷售統計、每日/每月明細、付款方式分析
 - **銷售記錄**：查詢、篩選、CSV 匯出 / 歷史資料匯入
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
 - **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）
-- **顧客點餐頁**：帳號登入識別、同頁購物車（桌機分欄 / 手機抽屜）、客製化選項、無圖片大字排版
+- **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號；向下相容舊式 `?table=` URL；客製化選項、購物車結帳
+- **QR 碼管理**：後台設定各桌 Token TTL（小時）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新
 - **廚房看板**：即時顯示待處理 / 處理中訂單（先進先出），無需後台登入
 - **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除
 - **Swagger UI**：自動產生 API 文件
@@ -1074,6 +1075,9 @@ curl -X POST http://127.0.0.1/pos/sales/import \
 | `log_retention_days` | 操作紀錄保留天數（0 = 不自動清除） | `0` |
 | `log_last_cleanup_at` | 上次清除操作紀錄的 UTC 時間（ISO 格式） | _(空)_ |
 | `pos_payment_methods` | POS 付款方式清單（JSON） | 見 POS 端點說明 |
+| `table_tokens` | 各桌號 Token 資料（`{table_no: {token, label, enabled, expires_at}}`），由 QR 碼管理頁維護 | _(空)_ |
+| `qr_token_ttl_hours` | QR Token 有效時數（最小 1） | `24` |
+| `qr_token_last_refresh` | 上次刷新 Token 的 UTC 時間（ISO 格式），用於懶觸發自動刷新判斷 | _(空)_ |
 
 ---
 
@@ -1199,13 +1203,16 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 
 | 方法 | 路徑 | 登入 | 說明 |
 |---|---|---|---|
-| GET | `/customer-order/menu` | 不需要 | 取得點餐用菜單（優先 `settings.order_menu_id`，fallback 第一個啟用菜單） |
-| POST | `/customer-order/` | 不需要（帶 JWT 則以帳號識別） | 顧客建立訂單；未登入時必須帶 `table_no` |
+| GET | `/customer-order/menu` | 不需要 | 取得點餐用菜單；帶 `?t=TOKEN` 時驗證 Token 並自動帶入桌號，同時觸發 Token 懶觸發刷新 |
+| POST | `/customer-order/` | 不需要（帶 JWT 則以帳號識別） | 建立訂單；Token 模式時必須帶 `qr_token`，非 Token 模式帶 `table_no` |
 | GET | `/customer-order/` | 需要 | 查詢訂單列表（可篩選 `status`、`date`） |
 | GET | `/customer-order/active` | 需要 | 廚房用：取得待處理 + 處理中訂單（先進先出） |
 | GET | `/customer-order/stats` | 需要 | 今日各狀態訂單數量與金額 |
 | GET | `/customer-order/<oid>` | 需要 | 取得單筆訂單 |
 | PUT | `/customer-order/<oid>/status` | operator+ | 更新訂單狀態（`pending→processing→completed\|cancelled`） |
+| GET | `/customer-order/tokens` | admin | 取得桌號 Token 清單、TTL 設定、上次刷新時間 |
+| POST | `/customer-order/tokens/refresh` | admin | 立即刷新所有桌號 Token（可同時更新 TTL） |
+| PUT | `/customer-order/tokens/tables` | admin | 新增 / 更新桌號清單，保留現有 Token；`enabled` 欄位可啟停個別桌號 |
 
 **POST `/customer-order/` — 建立訂單**：
 

@@ -438,6 +438,21 @@
     </tbody>
   </table>
 
+  <h3 class="sub-title">收現計算機鍵盤</h3>
+  <p>現金付款時，結帳視窗提供計算機格式的收現輸入介面：</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>按鈕 / 區塊</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td>符合金額</td><td>一鍵填入應付合計，快速結清整數金額</td></tr>
+      <tr><td>+/− 切換</td><td>面額按鈕模式：+ 為累加，− 為扣減（誤加可切換 − 後點擊面額扣回）</td></tr>
+      <tr><td>1000 / 500 / 100 / 50</td><td>快速累加或扣減常見面額到收現金額（依目前 +/− 模式）</td></tr>
+      <tr><td>0–9 / 00</td><td>手動逐位輸入收現金額</td></tr>
+      <tr><td>⌫</td><td>刪除最後一位數字</td></tr>
+      <tr><td>C</td><td>清除收現金額歸零</td></tr>
+    </tbody>
+  </table>
+  <p>找零金額即時顯示於鍵盤下方（紅字＝金額不足，綠字＝可找零）。確認結帳時若金額不足系統會提示。</p>
+
   <h3 class="sub-title">退款</h3>
   <ol class="step-list">
     <li>後台側欄 → <strong>銷售記錄</strong>，找到該筆訂單。</li>
@@ -580,12 +595,42 @@
   <h2 class="section-title" id="qr-codes">
     <i class="bi bi-qr-code-scan me-2 text-primary"></i>QR 碼管理
   </h2>
-  <p>後台側欄 → <strong>QR 碼管理</strong>。為各桌桌號產生對應的點單 QR Code，顧客掃描後直接進入已帶入桌號的點單頁面。</p>
+  <p>
+    後台側欄 → <strong>QR 碼管理</strong>。為各桌號產生含時效 Token 的 QR Code，顧客掃描後進入已自動識別桌號的點單頁面。
+    Token 有時效性，到期後系統自動刷新，確保舊 QR 碼無法繼續使用。
+  </p>
+
+  <h3 class="sub-title">Token 時效設定</h3>
   <ol class="step-list">
-    <li>輸入桌號（例如 A1、B2），點擊「產生 QR Code」。</li>
-    <li>點擊「下載」或「列印」輸出桌卡貼紙。</li>
-    <li>QR Code 連結至 <span class="url-pill">/order/?table=桌號</span>，顧客掃碼後桌號自動帶入，不需手動輸入。</li>
+    <li>在「Token 設定」卡片輸入有效時數（預設 24 小時，最小 1 小時）後儲存。</li>
+    <li>點擊「立即刷新所有 Token」強制更新全部桌號的 Token，舊 QR Code 即刻失效。</li>
+    <li>頁面顯示上次刷新時間與預計下次自動刷新時間，方便排程重新列印桌卡。</li>
   </ol>
+  <div class="warn-box">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    刷新後所有舊 QR Code 立即失效，需重新列印或下載新 QR Code 貼於桌面。
+  </div>
+
+  <h3 class="sub-title">管理桌號</h3>
+  <ol class="step-list">
+    <li>輸入桌號後點擊「＋ 新增」，系統自動產生唯一隨機 Token。</li>
+    <li>每個桌號可啟用 / 停用（停用後對應 QR Code 無法點餐，顯示錯誤）。</li>
+    <li>點擊「複製連結」取得含 Token 的完整 URL，或「下載 QR」取得圖片。</li>
+    <li>不再使用的桌號點擊「刪除」移除。</li>
+  </ol>
+
+  <h3 class="sub-title">Token 機制說明</h3>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>機制</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>Token URL 格式</td><td><span class="url-pill">/order/?t=TOKEN</span>，TOKEN 為隨機安全字串（24 字元）</td></tr>
+      <tr><td>自動刷新（懶觸發）</td><td>顧客載入菜單時，若距上次刷新超過設定時效，系統自動更新全部 Token</td></tr>
+      <tr><td>手動刷新</td><td>管理員可在 QR 碼管理頁點擊按鈕立即刷新並可同時修改時效</td></tr>
+      <tr><td>停用桌號</td><td>停用後對應 Token 驗證失敗，顧客看到「此桌位目前停用」提示</td></tr>
+      <tr><td>過期提示</td><td>Token 到期後顯示「QR 碼已過期，請洽服務人員重新掃描」</td></tr>
+      <tr><td>向下相容</td><td>若尚未設定任何桌號 Token，舊式 <span class="url-pill">/order/?table=桌號</span> 仍可使用</td></tr>
+    </tbody>
+  </table>
 
   <!-- ────────────────── 廚房顯示 ────────────────── -->
   <h2 class="section-title" id="kitchen">
