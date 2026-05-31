@@ -406,6 +406,29 @@
     <li>品項套用選項群組後，POS 點餐或顧客點單時自動彈出客製化選項供顧客選擇。</li>
   </ol>
 
+  <h3 class="sub-title">預設菜單（進入頁面自動展開）</h3>
+  <p>每次進入菜單管理頁面，可設定自動展開哪一張菜單，免去手動點選的步驟。</p>
+  <ol class="step-list">
+    <li>菜單列表每行最右側有一個 <strong>☆ 星號按鈕</strong>。</li>
+    <li>點擊後變為 <strong>★ 金色</strong>，菜單名稱旁出現「預設」橙色標籤，表示已設為預設。</li>
+    <li>再次點擊可取消預設。</li>
+    <li>設定儲存於瀏覽器（localStorage），僅影響當前瀏覽器，不影響其他使用者。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    若預設菜單已被刪除，頁面會自動清空選擇，不會顯示錯誤。
+  </div>
+
+  <h3 class="sub-title">品項批次客製化</h3>
+  <ol class="step-list">
+    <li>勾選品項列表左側的核取方塊（可全選）。</li>
+    <li>點擊「批次客製化」按鈕，開啟批次設定視窗。</li>
+    <li>點擊每個選項組的狀態標籤循環切換：
+      <strong>不改</strong>（保持各品項現有設定）→ <strong>套用</strong>（加入全部選中品項）→ <strong>移除</strong>（從全部選中品項移除）。
+    </li>
+    <li>點擊「儲存變更」，系統平行更新所有選中品項。</li>
+  </ol>
+
   <h3 class="sub-title">菜單匯入 / 匯出</h3>
   <ul>
     <li><strong>匯出所有菜單</strong>：點擊「匯出全部」，下載包含所有菜單的 JSON。</li>
@@ -736,6 +759,44 @@
       <tr><td>顧客點單菜單</td><td>指定 <span class="url-pill">/order/</span> 頁面使用的菜單；未指定時自動使用第一個啟用中的菜單</td></tr>
     </tbody>
   </table>
+
+  <h3 class="sub-title">後台外觀配色</h3>
+  <p>可自由調整後台管理介面的配色，設定即時生效並跨裝置同步（儲存後寫入系統設定）。</p>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>設定項</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>色調模式</strong></td>
+        <td>
+          <strong>☀ 淺色</strong>：預設白底介面。<br>
+          <strong>🌙 深色</strong>：深底護眼介面，適合光線昏暗環境；Bootstrap 元件（表格、表單、Modal）自動切換深色。
+        </td>
+      </tr>
+      <tr>
+        <td><strong>側欄主題</strong></td>
+        <td>提供 8 組預設配色（午夜藍、深林綠、暗紫、石板灰、深紅、琥珀橙、青藍、玫瑰粉），點擊即時預覽。</td>
+      </tr>
+      <tr>
+        <td><strong>自訂主題</strong></td>
+        <td>
+          點擊最後一張「自訂 ✏」卡片後，出現三個顏色選擇器：<br>
+          • <strong>側欄底色</strong>：側邊欄背景色<br>
+          • <strong>側欄 Hover</strong>：滑鼠移過連結時的背景色<br>
+          • <strong>強調色</strong>：目前選中連結、Brand Icon 等強調元素的顏色<br>
+          支援 Color Picker 即時拾色或直接輸入 Hex 色碼，更改後立即預覽側欄。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <ol class="step-list">
+    <li>選擇色調模式（深 / 淺色）。</li>
+    <li>點擊任意側欄主題卡片，或點擊「自訂」後使用顏色選擇器。</li>
+    <li>確認預覽後點擊「儲存外觀設定」，設定寫入系統並同步至其他裝置。</li>
+  </ol>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    色調模式與側欄主題相互獨立，可任意組合，例如淺色模式 + 深林綠側欄。
+  </div>
 
   <!-- ────────────────── 頁面顯示管理 ────────────────── -->
   <h2 class="section-title" id="page-visibility">

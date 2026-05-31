@@ -55,17 +55,34 @@ const savingZPay   = ref(false)
 // ── 外觀主題 ─────────────────────────────────────────────
 const adminTheme  = ref(themeStore.themeId)
 const savingTheme = ref(false)
+const customEdit  = ref({ ...themeStore.customColors.value })
 
 function selectTheme(id: string) {
   adminTheme.value = id
-  themeStore.applyTheme(id)          // 即時預覽
+  themeStore.applyTheme(id)
+}
+
+function onCustomColorChange() {
+  themeStore.setCustomColors(customEdit.value)
+  adminTheme.value = 'custom'
+}
+
+function setDark(v: boolean) {
+  themeStore.applyDarkMode(v)
 }
 
 async function saveTheme() {
   savingTheme.value = true
   try {
-    await http.put('/settings/', { admin_theme: adminTheme.value })
-    toast.show('配色設定已儲存', 'success')
+    const payload: Record<string, string> = {
+      admin_theme: adminTheme.value,
+      admin_dark:  themeStore.darkMode ? '1' : '0',
+    }
+    if (adminTheme.value === 'custom') {
+      payload.admin_custom_theme = JSON.stringify(themeStore.customColors.value)
+    }
+    await http.put('/settings/', payload)
+    toast.show('外觀設定已儲存', 'success')
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
   } finally {
@@ -97,6 +114,16 @@ async function load() {
     if (s.admin_theme) {
       adminTheme.value = s.admin_theme
       themeStore.applyTheme(s.admin_theme)
+    }
+    if (s.admin_dark !== undefined) {
+      themeStore.applyDarkMode(s.admin_dark === '1')
+    }
+    if (s.admin_custom_theme) {
+      try {
+        const colors = JSON.parse(s.admin_custom_theme)
+        themeStore.setCustomColors(colors)
+        customEdit.value = { ...colors }
+      } catch {}
     }
 
     // payment methods — fallback to cash if empty
@@ -714,8 +741,33 @@ onMounted(async () => {
           <h6><i class="bi bi-palette me-1 text-primary"></i>後台外觀配色</h6>
         </div>
         <div class="p-4">
-          <p class="text-muted small mb-3">選擇側欄配色主題，點擊即時預覽，儲存後下次開啟自動套用。</p>
-          <div class="theme-grid mb-4">
+
+          <!-- 深淺色模式 -->
+          <div class="mb-4">
+            <div class="fw-semibold small mb-2">色調模式</div>
+            <div class="d-flex gap-2">
+              <button
+                class="btn btn-sm d-flex align-items-center gap-1"
+                :class="!themeStore.darkMode ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="setDark(false)"
+              >
+                <i class="bi bi-sun-fill"></i>淺色
+              </button>
+              <button
+                class="btn btn-sm d-flex align-items-center gap-1"
+                :class="themeStore.darkMode ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="setDark(true)"
+              >
+                <i class="bi bi-moon-stars-fill"></i>深色
+              </button>
+            </div>
+          </div>
+
+          <!-- 側欄主題 -->
+          <div class="fw-semibold small mb-2">側欄主題</div>
+          <p class="text-muted small mb-3">點擊即時預覽，儲存後下次開啟自動套用。</p>
+          <div class="theme-grid mb-3">
+            <!-- 預設主題 -->
             <div
               v-for="t in THEMES" :key="t.id"
               class="theme-card"
@@ -742,10 +794,103 @@ onMounted(async () => {
               </div>
               <div class="theme-label">{{ t.name }}</div>
             </div>
+
+            <!-- 自訂主題 -->
+            <div
+              class="theme-card"
+              :class="{ active: adminTheme === 'custom' }"
+              @click="selectTheme('custom')"
+            >
+              <div class="theme-preview" :style="{ background: customEdit.sidebarBg }">
+                <div class="tp-row">
+                  <div class="tp-dot" :style="{ background: customEdit.accent }"></div>
+                  <div class="tp-line" :style="{ background: customEdit.accent, opacity: .9 }"></div>
+                </div>
+                <div class="tp-row" style="opacity:.3">
+                  <div class="tp-dot"></div>
+                  <div class="tp-line"></div>
+                </div>
+                <div class="tp-row" style="opacity:.2">
+                  <div class="tp-dot"></div>
+                  <div class="tp-line"></div>
+                </div>
+                <div class="tp-accent-bar" :style="{ background: customEdit.accent }"></div>
+                <div v-if="adminTheme === 'custom'" class="tp-check">
+                  <i class="bi bi-check-lg"></i>
+                </div>
+                <div v-else class="tp-edit-icon"><i class="bi bi-pencil-fill"></i></div>
+              </div>
+              <div class="theme-label">自訂</div>
+            </div>
           </div>
+
+          <!-- 自訂主題顏色選擇器 -->
+          <div v-if="adminTheme === 'custom'" class="custom-color-editor mb-4">
+            <div class="fw-semibold small mb-2">自訂側欄顏色</div>
+            <div class="d-flex flex-wrap gap-3">
+              <div class="color-pick-item">
+                <label class="form-label form-label-sm mb-1">側欄底色</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input
+                    v-model="customEdit.sidebarBg"
+                    type="color"
+                    class="form-control form-control-color"
+                    @input="onCustomColorChange"
+                  />
+                  <input
+                    v-model="customEdit.sidebarBg"
+                    type="text"
+                    class="form-control form-control-sm color-hex"
+                    maxlength="7"
+                    placeholder="#1a1d2e"
+                    @change="onCustomColorChange"
+                  />
+                </div>
+              </div>
+              <div class="color-pick-item">
+                <label class="form-label form-label-sm mb-1">側欄 Hover</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input
+                    v-model="customEdit.sidebarHover"
+                    type="color"
+                    class="form-control form-control-color"
+                    @input="onCustomColorChange"
+                  />
+                  <input
+                    v-model="customEdit.sidebarHover"
+                    type="text"
+                    class="form-control form-control-sm color-hex"
+                    maxlength="7"
+                    placeholder="#2d3250"
+                    @change="onCustomColorChange"
+                  />
+                </div>
+              </div>
+              <div class="color-pick-item">
+                <label class="form-label form-label-sm mb-1">強調色</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input
+                    v-model="customEdit.accent"
+                    type="color"
+                    class="form-control form-control-color"
+                    @input="onCustomColorChange"
+                  />
+                  <input
+                    v-model="customEdit.accent"
+                    type="text"
+                    class="form-control form-control-sm color-hex"
+                    maxlength="7"
+                    placeholder="#5c7cfa"
+                    @change="onCustomColorChange"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button class="btn btn-primary" :disabled="savingTheme" @click="saveTheme">
             <span v-if="savingTheme" class="spinner-border spinner-border-sm me-1"></span>
-            <i v-else class="bi bi-palette me-1"></i>儲存配色設定
+            <i v-else class="bi bi-palette me-1"></i>儲存外觀設定
           </button>
         </div>
       </div>
@@ -809,7 +954,29 @@ onMounted(async () => {
   font-size: .77rem;
   font-weight: 600;
   text-align: center;
-  background: #fff;
-  color: #374151;
+  background: var(--card-bg, #fff);
+  color: var(--text-main, #374151);
 }
+
+.tp-edit-icon {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  width: 26px; height: 26px;
+  background: rgba(255,255,255,.2);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: .8rem;
+}
+
+/* Custom color editor */
+.custom-color-editor {
+  background: var(--table-th-bg, #f8f9fa);
+  border: 1px solid var(--card-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 16px;
+}
+.color-pick-item { min-width: 180px; }
+.color-hex { width: 90px; font-family: monospace; font-size: .8rem; }
+.form-control-color { width: 40px; height: 34px; padding: 2px; cursor: pointer; }
 </style>

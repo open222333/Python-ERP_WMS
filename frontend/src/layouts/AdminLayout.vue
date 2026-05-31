@@ -1,5 +1,7 @@
 <template>
-  <div class="d-flex" style="min-height:100vh">
+  <div class="d-flex" style="min-height:100vh"
+       :class="{ 'admin-dark': theme.darkMode }"
+       :data-bs-theme="theme.darkMode ? 'dark' : 'light'">
     <!-- ─── Sidebar ─────────────────────────────────────── -->
     <nav id="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="brand">
@@ -343,8 +345,8 @@ function handleLogout() {
   flex-direction: column;
 }
 #topbar {
-  background: #fff;
-  border-bottom: 1px solid #e9ecef;
+  background: var(--topbar-bg, #fff);
+  border-bottom: 1px solid var(--topbar-border, #e9ecef);
   padding: 0 20px;
   height: 54px;
   display: flex;
@@ -354,9 +356,9 @@ function handleLogout() {
   top: 0;
   z-index: 100;
 }
-.page-title { font-weight: 600; font-size: .95rem; color: #333; }
+.page-title { font-weight: 600; font-size: .95rem; color: var(--text-main, #333); }
 
-#content { padding: 20px; flex: 1; background: #f4f6fb; }
+#content { padding: 20px; flex: 1; background: var(--content-bg, #f4f6fb); }
 
 .sidebar-overlay {
   position: fixed;

@@ -1,9 +1,33 @@
 /* ── CSS variables ── */
 :root {
-  --sidebar-w: 230px;
-  --sidebar-bg: #1a1d2e;
-  --sidebar-hover: #2d3250;
-  --accent: #5c7cfa;
+  --sidebar-w:      230px;
+  --sidebar-bg:     #1a1d2e;
+  --sidebar-hover:  #2d3250;
+  --accent:         #5c7cfa;
+
+  /* Layout — light mode defaults */
+  --content-bg:     #f4f6fb;
+  --topbar-bg:      #ffffff;
+  --topbar-border:  #e9ecef;
+  --text-main:      #333333;
+  --card-bg:        #ffffff;
+  --card-border:    #f0f0f0;
+  --table-th-bg:    #fafafa;
+  --table-th-color: #666666;
+  --table-border:   #eeeeee;
+}
+
+/* ── Dark Mode — set by .admin-dark class on AdminLayout root ── */
+.admin-dark {
+  --content-bg:     #12141e;
+  --topbar-bg:      #1e2130;
+  --topbar-border:  rgba(255,255,255,.08);
+  --text-main:      #e5e7eb;
+  --card-bg:        #1e2130;
+  --card-border:    rgba(255,255,255,.08);
+  --table-th-bg:    #12141e;
+  --table-th-color: #9ca3af;
+  --table-border:   rgba(255,255,255,.06);
 }
 
 body {
@@ -14,14 +38,14 @@ body {
 
 /* ── Tables ── */
 .table-card {
-  background: #fff;
+  background: var(--card-bg, #fff);
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
   overflow: hidden;
 }
 .table-card .table-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--card-border, #f0f0f0);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -30,14 +54,17 @@ body {
 }
 .table-card .table-header h6 { margin: 0; font-weight: 600; }
 .table th {
-  font-size: .8rem; font-weight: 600; color: #666;
-  background: #fafafa; border-bottom: 1px solid #eee; white-space: nowrap;
+  font-size: .8rem; font-weight: 600; color: var(--table-th-color, #666);
+  background: var(--table-th-bg, #fafafa);
+  border-bottom: 1px solid var(--table-border, #eee);
+  white-space: nowrap;
 }
 .table td { vertical-align: middle; font-size: .87rem; }
 
 /* ── Stat cards ── */
 .stat-card {
-  background: #fff; border-radius: 12px; padding: 20px;
+  background: var(--card-bg, #fff);
+  border-radius: 12px; padding: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
   display: flex; align-items: center; gap: 16px;
 }

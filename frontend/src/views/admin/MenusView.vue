@@ -83,6 +83,21 @@ const loading  = ref(false)
 const saving   = ref(false)
 const activeTab = ref<'items' | 'categories' | 'options'>('items')
 
+// 預設菜單（localStorage 記憶，進頁面自動展開）
+const defaultMenuId = ref(localStorage.getItem('admin_default_menu_id') || '')
+
+function setDefaultMenu(id: string) {
+  if (defaultMenuId.value === id) {
+    defaultMenuId.value = ''
+    localStorage.removeItem('admin_default_menu_id')
+    toast.show('已取消預設菜單')
+  } else {
+    defaultMenuId.value = id
+    localStorage.setItem('admin_default_menu_id', id)
+    toast.show('已設為預設菜單', 'success')
+  }
+}
+
 // ── 批次編輯 ────────────────────────────────────────────
 const selectedItemIds  = ref<string[]>([])
 const showBatchModal   = ref(false)
@@ -153,7 +168,13 @@ async function loadMenus() {
     const res = await http.get('/menu/')
     menus.value = res.data.data || []
     if (selectedMenuId.value) {
-      await loadMenuDetail(selectedMenuId.value)
+      // 確認菜單仍存在（避免被刪後報錯）
+      if (menus.value.find(m => m._id === selectedMenuId.value)) {
+        await loadMenuDetail(selectedMenuId.value)
+      } else {
+        selectedMenuId.value   = ''
+        selectedMenuData.value = null
+      }
     }
   } catch {
     toast.show('載入失敗', 'danger')
@@ -479,7 +500,12 @@ async function saveBatch() {
   }
 }
 
-onMounted(() => { loadMenus(); loadProductsAndWarehouses() })
+onMounted(() => {
+  // 預設菜單：進頁面前先設定 selectedMenuId，讓 loadMenus 自動展開
+  if (defaultMenuId.value) selectedMenuId.value = defaultMenuId.value
+  loadMenus()
+  loadProductsAndWarehouses()
+})
 </script>
 
 <template>
@@ -518,7 +544,10 @@ onMounted(() => { loadMenus(); loadProductsAndWarehouses() })
                 style="cursor: pointer"
                 @click="selectMenu(m._id)"
               >
-                <td class="fw-semibold">{{ m.name }}</td>
+                <td class="fw-semibold">
+                  {{ m.name }}
+                  <span v-if="defaultMenuId === m._id" class="badge bg-warning text-dark ms-1" style="font-size:.65rem">預設</span>
+                </td>
                 <td class="text-muted small">{{ m.items?.length ?? 0 }}</td>
                 <td>
                   <span :class="m.status === 1 ? 'badge bg-success' : 'badge bg-secondary'">
@@ -532,6 +561,14 @@ onMounted(() => { loadMenus(); loadProductsAndWarehouses() })
                     </button>
                     <button class="btn btn-xs btn-outline-danger" @click.stop="delMenu(m._id)">
                       <i class="bi bi-trash"></i>
+                    </button>
+                    <button
+                      class="btn btn-xs"
+                      :class="defaultMenuId === m._id ? 'btn-warning' : 'btn-outline-secondary'"
+                      :title="defaultMenuId === m._id ? '取消預設菜單' : '設為預設菜單（進入頁面自動展開）'"
+                      @click.stop="setDefaultMenu(m._id)"
+                    >
+                      <i class="bi" :class="defaultMenuId === m._id ? 'bi-star-fill' : 'bi-star'"></i>
                     </button>
                   </div>
                 </td>

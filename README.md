@@ -15,11 +15,11 @@
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
-- **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）
+- **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、品項批次設定客製化選項（多選 + 3 狀態套用/移除/不改）、菜單列表預設展開（☆ 標記，localStorage 記憶）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）
 - **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號；向下相容舊式 `?table=` URL；客製化選項、購物車結帳
 - **QR 碼管理**：後台設定各桌 Token TTL（小時）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新
 - **廚房看板**：即時顯示待處理 / 處理中訂單（先進先出），無需後台登入
-- **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除
+- **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除、後台外觀配色（☀ 淺色 / 🌙 深色模式 + 8 組側欄主題預設 + 自訂 Hex 色碼）
 - **Swagger UI**：自動產生 API 文件
 - **Docker 部署**：一鍵啟動；純主機部署（gunicorn + nginx）
 
@@ -1078,6 +1078,9 @@ curl -X POST http://127.0.0.1/pos/sales/import \
 | `table_tokens` | 各桌號 Token 資料（`{table_no: {token, label, enabled, expires_at}}`），由 QR 碼管理頁維護 | _(空)_ |
 | `qr_token_ttl_hours` | QR Token 有效時數（最小 1） | `24` |
 | `qr_token_last_refresh` | 上次刷新 Token 的 UTC 時間（ISO 格式），用於懶觸發自動刷新判斷 | _(空)_ |
+| `admin_theme` | 後台側欄主題 ID（`midnight` / `forest` / `purple` / `slate` / `crimson` / `amber` / `teal` / `rose` / `custom`） | `midnight` |
+| `admin_dark` | 後台深色模式（`'1'` = 深色，`'0'` = 淺色） | `'0'` |
+| `admin_custom_theme` | 自訂主題顏色 JSON（`{"sidebarBg":"#...","sidebarHover":"#...","accent":"#..."}`），僅 `admin_theme=custom` 時生效 | _(空)_ |
 
 ---
 

@@ -2,11 +2,11 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 export interface Theme {
-  id:          string
-  name:        string
-  sidebarBg:   string
+  id:           string
+  name:         string
+  sidebarBg:    string
   sidebarHover: string
-  accent:      string
+  accent:       string
 }
 
 export const THEMES: Theme[] = [
@@ -20,18 +20,50 @@ export const THEMES: Theme[] = [
   { id: 'rose',     name: '玫瑰粉',  sidebarBg: '#1f0d1a', sidebarHover: '#33152a', accent: '#f43f5e' },
 ]
 
+function _parseCustom() {
+  try {
+    const s = localStorage.getItem('admin_custom_theme')
+    return s ? JSON.parse(s) : null
+  } catch { return null }
+}
+
 export const useThemeStore = defineStore('theme', () => {
-  const themeId = ref(localStorage.getItem('admin_theme') || 'midnight')
+  const themeId    = ref(localStorage.getItem('admin_theme') || 'midnight')
+  const darkMode   = ref(localStorage.getItem('admin_dark') === '1')
+  const customColors = ref<{ sidebarBg: string; sidebarHover: string; accent: string }>(
+    _parseCustom() ?? { sidebarBg: '#1a1d2e', sidebarHover: '#2d3250', accent: '#5c7cfa' }
+  )
 
   function applyTheme(id: string) {
-    const t = THEMES.find(t => t.id === id) ?? THEMES[0]
     const root = document.documentElement
-    root.style.setProperty('--sidebar-bg',    t.sidebarBg)
-    root.style.setProperty('--sidebar-hover', t.sidebarHover)
-    root.style.setProperty('--accent',        t.accent)
+    let bg: string, hover: string, accent: string
+    if (id === 'custom') {
+      bg     = customColors.value.sidebarBg
+      hover  = customColors.value.sidebarHover
+      accent = customColors.value.accent
+    } else {
+      const t = THEMES.find(t => t.id === id) ?? THEMES[0]
+      bg     = t.sidebarBg
+      hover  = t.sidebarHover
+      accent = t.accent
+    }
+    root.style.setProperty('--sidebar-bg',    bg)
+    root.style.setProperty('--sidebar-hover', hover)
+    root.style.setProperty('--accent',        accent)
     themeId.value = id
     localStorage.setItem('admin_theme', id)
   }
 
-  return { themeId, applyTheme }
+  function applyDarkMode(dark: boolean) {
+    darkMode.value = dark
+    localStorage.setItem('admin_dark', dark ? '1' : '0')
+  }
+
+  function setCustomColors(colors: { sidebarBg: string; sidebarHover: string; accent: string }) {
+    customColors.value = { ...colors }
+    localStorage.setItem('admin_custom_theme', JSON.stringify(colors))
+    if (themeId.value === 'custom') applyTheme('custom')
+  }
+
+  return { themeId, darkMode, customColors, applyTheme, applyDarkMode, setCustomColors }
 })
