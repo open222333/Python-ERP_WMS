@@ -449,14 +449,29 @@ def close_table_session(table_no):
 @jwt_required()
 @require_role('admin')
 def get_qr_tokens():
-    """取得所有桌位 token、TTL 設定與上次刷新時間"""
+    """取得所有桌位 token、TTL 設定與上次刷新時間，附帶各桌目前 session 狀態"""
     tokens      = SystemSettings.get('table_tokens', {})
     ttl_hours   = _get_ttl_hours()
     last_refresh = SystemSettings.get('qr_token_last_refresh', '')
+
+    sessions = {}
+    for table_no in tokens:
+        sess = TableSession.get_by_table(table_no)
+        if sess:
+            sessions[table_no] = {
+                'active':      True,
+                'created_at':  sess.get('created_at'),
+                'expires_at':  sess.get('expires_at'),
+                'table_label': sess.get('table_label'),
+            }
+        else:
+            sessions[table_no] = {'active': False}
+
     return jsonify({'success': True, 'data': {
         'tokens':       tokens,
         'ttl_hours':    ttl_hours,
         'last_refresh': last_refresh,
+        'sessions':     sessions,
     }})
 
 

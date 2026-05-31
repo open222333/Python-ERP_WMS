@@ -23,6 +23,8 @@ const qrUrls      = ref<Record<string, string>>({})
 const loading     = ref(false)
 const saving      = ref(false)
 const refreshing  = ref(false)
+const sessionMap  = ref<Record<string, { active: boolean; created_at?: string; expires_at?: string }>>({})
+const closingSession = ref<string | null>(null)
 
 // Token 設定
 const ttlHours     = ref(24)
@@ -94,6 +96,7 @@ async function loadTokens() {
       token:      info.token || '',
       expires_at: info.expires_at || '',
     }))
+    sessionMap.value = d.sessions || {}
     await genAll()
   } catch {
     toast.show('載入失敗', 'danger')
@@ -191,6 +194,21 @@ async function batchGenerate() {
   if (added) await saveTables()
 }
 
+// ── 桌況 Session ─────────────────────────────────────────
+async function closeSession(table_no: string, label: string) {
+  if (!confirm(`確定要結束「${label}」的桌況 session 嗎？\n顧客點餐頁面將立即顯示結束提示。`)) return
+  closingSession.value = table_no
+  try {
+    await http.delete(`/customer-order/session/${table_no}`)
+    sessionMap.value[table_no] = { active: false }
+    toast.show('桌況已結束', 'success')
+  } catch {
+    toast.show('結束失敗', 'danger')
+  } finally {
+    closingSession.value = null
+  }
+}
+
 // ── 刪除 ─────────────────────────────────────────────────
 async function remove(table_no: string) {
   entries.value = entries.value.filter(e => e.table_no !== table_no)
@@ -224,6 +242,9 @@ function printAll() { window.print() }
 // ── 統計 ────────────────────────────────────────────────
 const enabledCount  = computed(() => entries.value.filter(e => e.enabled).length)
 const expiredCount  = computed(() => entries.value.filter(e => isExpired(e)).length)
+const activeSessionCount = computed(() =>
+  Object.values(sessionMap.value).filter(s => s.active).length
+)
 
 onMounted(loadTokens)
 </script>
@@ -239,6 +260,9 @@ onMounted(loadTokens)
         </h5>
         <small v-if="entries.length" class="text-muted">
           共 {{ entries.length }} 桌・啟用 {{ enabledCount }}
+          <span v-if="activeSessionCount" class="text-success ms-2">
+            <i class="bi bi-person-fill me-1"></i>{{ activeSessionCount }} 桌活躍中
+          </span>
           <span v-if="expiredCount" class="text-danger ms-2">
             <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ expiredCount }} 個已過期
           </span>
@@ -393,6 +417,7 @@ onMounted(loadTokens)
               <th style="width:110px">QR 圖片</th>
               <th>桌號 / 標籤</th>
               <th class="d-none d-md-table-cell">Token 狀態</th>
+              <th class="d-none d-lg-table-cell no-print" style="width:150px">桌況 Session</th>
               <th class="text-center no-print" style="width:70px">啟用</th>
               <th class="text-center no-print" style="width:130px">操作</th>
             </tr>
@@ -447,6 +472,29 @@ onMounted(loadTokens)
                 </div>
                 <!-- 列印時顯示文字 -->
                 <span class="print-only small">{{ orderUrl(e.token) }}</span>
+              </td>
+
+              <!-- 桌況 Session -->
+              <td class="d-none d-lg-table-cell no-print">
+                <template v-if="sessionMap[e.table_no]?.active">
+                  <span class="badge bg-success mb-1">
+                    <i class="bi bi-person-fill me-1"></i>活躍中
+                  </span>
+                  <div class="text-muted" style="font-size:.72rem">
+                    到 {{ fmtExpiry(sessionMap[e.table_no]?.expires_at || '') }}
+                  </div>
+                  <button class="btn btn-outline-danger btn-sm mt-1 px-2 py-0"
+                          style="font-size:.75rem"
+                          @click="closeSession(e.table_no, e.label)"
+                          :disabled="closingSession === e.table_no">
+                    <span v-if="closingSession === e.table_no"
+                          class="spinner-border spinner-border-sm"></span>
+                    <i v-else class="bi bi-x-circle me-1"></i>結束 session
+                  </button>
+                </template>
+                <span v-else class="text-muted small">
+                  <i class="bi bi-dash-circle me-1"></i>無
+                </span>
               </td>
 
               <!-- 開關 -->

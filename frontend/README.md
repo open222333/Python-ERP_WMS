@@ -95,3 +95,15 @@ docker compose up -d
 ## 後台表單草稿保留
 
 新增模式下（ProductsView、MenusView 的品項 / 分類 / 選項組），關閉 Modal 不儲存會自動保留已填寫的內容；再次點開「新增」時恢復草稿。儲存成功後自動清空，下次從空白開始。編輯模式（傳入既有資料）不受影響，永遠從現有資料載入。
+
+## QR 碼管理（QrCodesView）
+
+後台「QR 碼管理」頁除桌位 Token 管理外，亦整合桌況 Session 狀態：
+
+| 欄位 | 說明 |
+|------|------|
+| **桌況 Session** 欄 | 顯示各桌目前是否有活躍 Session（顧客正在使用點餐頁），以及 Session 到期時間 |
+| **結束 session** 按鈕 | 管理員可手動強制關閉指定桌的 Session，顧客端 SSE 即時收到 `session_closed` 事件並顯示「感謝光臨」提示（用於顧客離席但未結帳時） |
+| 標題列統計 | 顯示「N 桌活躍中」綠色計數，一目了然全場使用狀況 |
+
+**資料來源**：頁面載入時呼叫 `GET /customer-order/tokens`，後端同時回傳 `sessions` 欄位（各桌從 Redis 查詢的即時 TableSession 狀態）。關閉 Session 呼叫 `DELETE /customer-order/session/<table_no>`（需 operator+ 權限）。

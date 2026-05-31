@@ -17,7 +17,7 @@
 - **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
 - **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、品項批次設定客製化選項（多選 + 3 狀態套用/移除/不改）、菜單列表預設展開（☆ 標記，localStorage 記憶）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）；新增表單（產品 / 品項 / 分類 / 選項組）關閉不儲存自動保留草稿，儲存成功後清空
 - **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號，無需登入；桌號共享 Session Token（Redis 儲存），同桌多支裝置共用同一 Session；結帳或取消訂單時自動關閉 Session；SSE 即時推播訂單狀態更新與 Session 關閉事件（「感謝光臨」全螢幕提示）；Session Token 存入 `localStorage` 支援重整恢復連線；向下相容舊式 `?table=` URL；客製化選項、購物車結帳；不帶參數時顯示空白頁
-- **QR 碼管理**：桌號識別碼（SKU 式 `T-001`，自動生成可手動修改）+ 輪替安全 Token 雙層設計；後台設定各桌 Token TTL（小時）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新
+- **QR 碼管理**：桌號識別碼（SKU 式 `T-001`，自動生成可手動修改）+ 輪替安全 Token 雙層設計；後台設定各桌 Token TTL（小時）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新；列表即時顯示各桌目前 Session 活躍狀態（有無顧客在線）與到期時間，支援手動強制結束指定桌況 Session（即時觸發顧客端「感謝光臨」提示）；標題列顯示「N 桌活躍中」統計
 - **後台安全**：登入 API 速率限制（10 次/分鐘；50 次/小時），Redis 跨 Worker 共享計數；`__guest__` 系統帳號自動建立，`locked` 鎖定不可刪改
 - **廚房看板**：即時顯示待處理 / 處理中訂單（先進先出），無需後台登入
 - **系統設定**：POS 預設菜單、操作紀錄保留天數、手動清除、後台外觀配色（☀ 淺色 / 🌙 深色模式 + 8 組側欄主題預設 + 自訂 Hex 色碼）
@@ -1232,7 +1232,7 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 | GET | `/customer-order/stats` | 需要 | 今日各狀態訂單數量與金額 |
 | GET | `/customer-order/<oid>` | 需要 | 取得單筆訂單 |
 | PUT | `/customer-order/<oid>/status` | operator+ | 更新訂單狀態（`pending→processing→completed\|cancelled`）；狀態變為 `completed` 或 `cancelled` 時自動關閉該桌 Session |
-| GET | `/customer-order/tokens` | admin | 取得桌號 Token 清單、TTL 設定、上次刷新時間 |
+| GET | `/customer-order/tokens` | admin | 取得桌號 Token 清單、TTL 設定、上次刷新時間，以及各桌目前 Session 活躍狀態（`sessions` 欄位） |
 | POST | `/customer-order/tokens/refresh` | admin | 立即刷新所有桌號 Token（可同時更新 TTL） |
 | PUT | `/customer-order/tokens/tables` | admin | 新增 / 更新桌號清單，保留現有 Token；`enabled` 欄位可啟停個別桌號 |
 
