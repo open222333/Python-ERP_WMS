@@ -1,17 +1,22 @@
 """
 顧客訂單 Blueprint  /customer-order
-- GET  /menu           公開：取得點單用菜單
-- POST /               公開：顧客建立訂單
-- GET  /               登入：查詢訂單列表
-- GET  /active         登入：取得待處理 + 處理中訂單（廚房用）
-- GET  /stats          登入：今日統計
-- GET  /stream         登入（token=query）：SSE 即時訂單推送
-- GET  /<oid>          登入：取得單筆訂單
-- PUT  /<oid>/status   登入：更新訂單狀態（operator+）
+- GET  /menu              公開：取得點單用菜單（支援 ?t=QR_TOKEN）
+- POST /                  公開：顧客建立訂單（支援 body.qr_token）
+- GET  /                  登入：查詢訂單列表
+- GET  /active            登入：取得待處理 + 處理中訂單（廚房用）
+- GET  /stats             登入：今日統計
+- GET  /stream            登入（token=query）：SSE 即時訂單推送
+- GET  /<oid>             登入：取得單筆訂單
+- PUT  /<oid>/status      登入：更新訂單狀態（operator+）
+- GET  /tokens            admin：取得 QR Token 清單與設定
+- POST /tokens/refresh    admin：手動刷新所有 QR Token
+- PUT  /tokens/tables     admin：更新桌位清單（新增/刪除/開關）
 """
 import time
 import json
+import secrets
 import hashlib
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, decode_token
 from src.models.customer_order import CustomerOrder, ORDER_STATUS_LABEL
@@ -23,26 +28,96 @@ from src.permissions import require_role
 app_customer_order = Blueprint('app_customer_order', __name__)
 
 
+# ── QR Token 工具函式 ─────────────────────────────
+
+def _get_ttl_hours() -> int:
+    return max(1, int(SystemSettings.get('qr_token_ttl_hours', 24) or 24))
+
+
+def _validate_qr_token(token: str):
+    """
+    驗證 QR token，回傳 (table_no, label)。
+    - 系統未啟用 token 模式（table_tokens 為空）→ 回傳 (None, None)
+    - token 無效或停用 → 拋出 ValueError
+    - token 已過期    → 拋出 ValueError
+    """
+    table_tokens = SystemSettings.get('table_tokens', {})
+    if not table_tokens:
+        return None, None  # token 模式未啟用，允許舊 ?table= 行為
+
+    for table_no, info in table_tokens.items():
+        if info.get('token') == token:
+            if not info.get('enabled', True):
+                raise ValueError('此桌位目前停用')
+            expires_at = datetime.fromisoformat(info['expires_at'].replace('Z', ''))
+            if datetime.utcnow() > expires_at:
+                raise ValueError('QR 碼已過期，請洽服務人員重新掃描')
+            return table_no, info.get('label', table_no)
+    raise ValueError('無效的 QR 碼')
+
+
+def _maybe_auto_refresh_tokens():
+    """懶觸發：若距上次刷新已超過 TTL，自動重產全部 token。"""
+    ttl_hours = _get_ttl_hours()
+    last_refresh = SystemSettings.get('qr_token_last_refresh', '')
+    if last_refresh:
+        last_dt = datetime.fromisoformat(last_refresh.replace('Z', ''))
+        if datetime.utcnow() < last_dt + timedelta(hours=ttl_hours):
+            return  # 尚未到期
+
+    table_tokens = SystemSettings.get('table_tokens', {})
+    if not table_tokens:
+        return
+
+    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+    new_tokens = {
+        tn: {**info, 'token': secrets.token_urlsafe(24), 'expires_at': expires_at}
+        for tn, info in table_tokens.items()
+    }
+    SystemSettings.set('table_tokens', new_tokens)
+    SystemSettings.set('qr_token_last_refresh', datetime.utcnow().isoformat())
+
+
 # ── 公開：取得點單菜單 ─────────────────────────────
 @app_customer_order.route('/menu', methods=['GET'])
 def get_order_menu():
     """
     公開 API：取得顧客點單用菜單（不需登入）
-    優先使用 settings.order_menu_id；未設定則取第一個啟用的菜單
+    若系統已啟用 QR Token 模式，必須帶 ?t=TOKEN；驗證通過後回傳 table_no。
     """
-    menu_id = request.args.get('menu_id') or \
-              SystemSettings.get('order_menu_id', '')
+    qr_token = request.args.get('t', '').strip()
+    resolved_table = None
+    resolved_label = None
+
+    if qr_token:
+        _maybe_auto_refresh_tokens()
+        try:
+            resolved_table, resolved_label = _validate_qr_token(qr_token)
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)}), 401
+    else:
+        # 無 token：若 token 模式已啟用則拒絕
+        if SystemSettings.get('table_tokens', {}):
+            return jsonify({'success': False, 'message': '請使用 QR Code 掃描進入'}), 401
+
+    menu_id = request.args.get('menu_id') or SystemSettings.get('order_menu_id', '')
     if menu_id:
         m = Menu.find_by_id(menu_id)
         if m and m.get('status', 1) == 1:
-            return jsonify({'success': True, 'data': m})
+            return jsonify({
+                'success': True, 'data': m,
+                'table_no': resolved_table, 'table_label': resolved_label,
+            })
 
     # fallback：第一個啟用菜單
     menus = Menu.find_all(status=1)
     if not menus:
         return jsonify({'success': False, 'message': '目前無可用菜單'}), 404
     m = Menu.find_by_id(menus[0]['_id'])
-    return jsonify({'success': True, 'data': m})
+    return jsonify({
+        'success': True, 'data': m,
+        'table_no': resolved_table, 'table_label': resolved_label,
+    })
 
 
 # ── 公開：顧客建立訂單 ────────────────────────────
@@ -50,8 +125,8 @@ def get_order_menu():
 def create_order():
     """
     公開 API：顧客建立點餐訂單
-    若攜帶有效 JWT，以帳號 identity 作識別；否則必須帶 table_no。
-    body: { table_no, items, total, remark, menu_id }
+    若攜帶有效 JWT，以帳號 identity 作識別；否則必須帶 table_no 或 qr_token。
+    body: { qr_token, table_no, items, total, remark, menu_id }
     items: [{item_id, item_name, qty, price, customizations, note}]
     """
     # 嘗試取得 JWT identity（選用）
@@ -62,12 +137,26 @@ def create_order():
     except Exception:
         pass
 
-    data = request.get_json(silent=True) or {}
-    table_no = (data.get('table_no') or '').strip()
-    items    = data.get('items', [])
-    total    = data.get('total', 0)
-    remark   = data.get('remark', '')
-    menu_id  = data.get('menu_id', '')
+    data      = request.get_json(silent=True) or {}
+    qr_token  = (data.get('qr_token') or '').strip()
+    table_no  = (data.get('table_no') or '').strip()
+    items     = data.get('items', [])
+    total     = data.get('total', 0)
+    remark    = data.get('remark', '')
+    menu_id   = data.get('menu_id', '')
+
+    # QR Token 驗證（優先）
+    if qr_token:
+        try:
+            resolved, _ = _validate_qr_token(qr_token)
+            if resolved:
+                table_no = resolved
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)}), 401
+    elif SystemSettings.get('table_tokens', {}):
+        # Token 模式已啟用但未提供 token
+        if not customer_id:
+            return jsonify({'success': False, 'message': '請使用 QR Code 掃描進入'}), 401
 
     # 已登入：帳號作識別碼（table_no 可省略，或以帳號覆蓋）
     if customer_id:
@@ -229,3 +318,90 @@ def update_order_status(oid):
             pass   # 連動失敗不影響主流程
 
     return jsonify({'success': True})
+
+
+# ── Admin：取得 QR Token 清單與設定 ──────────────
+@app_customer_order.route('/tokens', methods=['GET'])
+@jwt_required()
+@require_role('admin')
+def get_qr_tokens():
+    """取得所有桌位 token、TTL 設定與上次刷新時間"""
+    tokens      = SystemSettings.get('table_tokens', {})
+    ttl_hours   = _get_ttl_hours()
+    last_refresh = SystemSettings.get('qr_token_last_refresh', '')
+    return jsonify({'success': True, 'data': {
+        'tokens':       tokens,
+        'ttl_hours':    ttl_hours,
+        'last_refresh': last_refresh,
+    }})
+
+
+# ── Admin：手動刷新所有 QR Token ─────────────────
+@app_customer_order.route('/tokens/refresh', methods=['POST'])
+@jwt_required()
+@require_role('admin')
+def refresh_qr_tokens():
+    """
+    重產所有桌位 token，可同時更新 TTL。
+    body（選填）: { ttl_hours: int }
+    """
+    data = request.get_json(silent=True) or {}
+    if 'ttl_hours' in data:
+        SystemSettings.set('qr_token_ttl_hours', max(1, int(data['ttl_hours'])))
+
+    ttl_hours    = _get_ttl_hours()
+    table_tokens = SystemSettings.get('table_tokens', {})
+    expires_at   = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+
+    new_tokens = {
+        tn: {**info, 'token': secrets.token_urlsafe(24), 'expires_at': expires_at}
+        for tn, info in table_tokens.items()
+    }
+    now = datetime.utcnow().isoformat()
+    SystemSettings.set('table_tokens', new_tokens)
+    SystemSettings.set('qr_token_last_refresh', now)
+
+    operator = get_jwt_identity()
+    Log.create(operator, '刷新 QR Token',
+               f'共 {len(new_tokens)} 桌位，TTL={ttl_hours}h')
+    return jsonify({'success': True, 'data': {
+        'tokens':        new_tokens,
+        'ttl_hours':     ttl_hours,
+        'last_refresh':  now,
+    }})
+
+
+# ── Admin：更新桌位清單 ───────────────────────────
+@app_customer_order.route('/tokens/tables', methods=['PUT'])
+@jwt_required()
+@require_role('admin')
+def update_qr_tables():
+    """
+    新增/修改/刪除/開關桌位。
+    現有桌位保留 token，新桌位自動產生 token。
+    body: { tables: [{table_no, label, enabled}] }
+    """
+    data   = request.get_json(silent=True) or {}
+    tables = data.get('tables', [])
+
+    current   = SystemSettings.get('table_tokens', {})
+    ttl_hours = _get_ttl_hours()
+    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+
+    new_tokens = {}
+    for t in tables:
+        table_no = (t.get('table_no') or '').strip()
+        if not table_no:
+            continue
+        existing = current.get(table_no, {})
+        new_tokens[table_no] = {
+            'label':      t.get('label', table_no),
+            'enabled':    t.get('enabled', True),
+            'token':      existing.get('token') or secrets.token_urlsafe(24),
+            'expires_at': existing.get('expires_at') or expires_at,
+        }
+
+    SystemSettings.set('table_tokens', new_tokens)
+    operator = get_jwt_identity()
+    Log.create(operator, '更新 QR 桌位清單', f'共 {len(new_tokens)} 桌位')
+    return jsonify({'success': True, 'data': new_tokens})

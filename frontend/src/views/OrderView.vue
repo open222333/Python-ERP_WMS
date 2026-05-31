@@ -7,8 +7,12 @@ import http from '@/api'
 const auth  = useAuthStore()
 const route = useRoute()
 
-// QR 碼帶入的桌號（不需登入）
+// QR Token（新模式）或桌號（舊模式，相容）
+const qrToken      = computed(() => ((route.query.t     as string) || '').trim())
 const tableFromUrl = computed(() => ((route.query.table as string) || '').trim())
+
+// 後端解析後的桌號（token 模式由 /menu 回傳）
+const resolvedTable = ref('')
 
 // ── Types ─────────────────────────────────────────
 interface SelectionItem {
@@ -71,17 +75,23 @@ const filteredItems = computed(() =>
 )
 
 async function loadMenu() {
-  if (!auth.isLoggedIn && !tableFromUrl.value) return
+  const hasAccess = auth.isLoggedIn || qrToken.value || tableFromUrl.value
+  if (!hasAccess) return
   loading.value  = true
   errorMsg.value = ''
-  const menuId   = new URLSearchParams(location.search).get('menu_id') || ''
+  const menuId = new URLSearchParams(location.search).get('menu_id') || ''
   try {
-    const res = await http.get(`/customer-order/menu${menuId ? `?menu_id=${menuId}` : ''}`)
+    const params: Record<string, string> = {}
+    if (qrToken.value) params.t = qrToken.value
+    if (menuId)        params.menu_id = menuId
+    const qs  = new URLSearchParams(params).toString()
+    const res = await http.get(`/customer-order/menu${qs ? '?' + qs : ''}`)
     if (!res.data.success) { errorMsg.value = res.data.message || '無法載入菜單'; return }
-    menuData.value  = res.data.data
-    menuTitle.value = menuData.value?.name || '點餐'
-  } catch {
-    errorMsg.value = '網路錯誤，請重新整理'
+    menuData.value    = res.data.data
+    menuTitle.value   = menuData.value?.name || '點餐'
+    resolvedTable.value = res.data.table_no || tableFromUrl.value || ''
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.message || '網路錯誤，請重新整理'
   } finally {
     loading.value = false
   }
@@ -135,7 +145,8 @@ async function submitOrder() {
       })),
     }))
     const res = await http.post('/customer-order/', {
-      table_no: tableFromUrl.value || auth.username,
+      qr_token: qrToken.value || undefined,
+      table_no: resolvedTable.value || auth.username,
       items,
       total:   cartSubtotal.value,
       note:    remark.value,

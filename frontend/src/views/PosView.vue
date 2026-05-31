@@ -220,13 +220,51 @@
                       @click="selectPayMethod(pm.id)">{{ pm.label }}</button>
             </div>
           </div>
-          <div v-if="currentPayHasCash" class="mb-2">
-            <label class="form-label small fw-semibold">收現</label>
-            <div class="input-group">
-              <span class="input-group-text">$</span>
-              <input v-model.number="cashReceived" type="number" class="form-control" min="0" step="1" @input="calcChange" />
+          <!-- Cash numpad -->
+          <div v-if="currentPayHasCash" class="numpad-section">
+            <!-- Display row -->
+            <div class="numpad-display">
+              <div>
+                <div class="numpad-label">收現</div>
+                <div class="numpad-amount">NT$&nbsp;{{ cashReceived }}</div>
+              </div>
+              <button class="numpad-exact-btn" @click="fillExact">符合金額</button>
             </div>
-            <div class="mt-1 small text-muted" v-if="changeAmt >= 0">找零：NT$ {{ changeAmt }}</div>
+
+            <!-- +/- toggle + denomination row -->
+            <div class="denom-row">
+              <button class="mode-toggle-btn" :class="denomMode === '+' ? 'plus-mode' : 'minus-mode'"
+                      @click="denomMode = denomMode === '+' ? '-' : '+'">{{ denomMode }}</button>
+              <button v-for="d in [1000, 500, 100, 50]" :key="d" class="denom-btn" @click="addDenom(d)">
+                {{ d }}
+              </button>
+            </div>
+
+            <!-- Numpad grid -->
+            <div class="numpad-grid">
+              <button class="np-btn" @click="numpadPress('7')">7</button>
+              <button class="np-btn" @click="numpadPress('8')">8</button>
+              <button class="np-btn" @click="numpadPress('9')">9</button>
+              <button class="np-btn np-util" @click="numpadBack">⌫</button>
+
+              <button class="np-btn" @click="numpadPress('4')">4</button>
+              <button class="np-btn" @click="numpadPress('5')">5</button>
+              <button class="np-btn" @click="numpadPress('6')">6</button>
+              <button class="np-btn np-clear" @click="numpadClear">C</button>
+
+              <button class="np-btn" @click="numpadPress('1')">1</button>
+              <button class="np-btn" @click="numpadPress('2')">2</button>
+              <button class="np-btn" @click="numpadPress('3')">3</button>
+              <button class="np-btn np-util" @click="numpadPress('00')">00</button>
+
+              <button class="np-btn np-zero" @click="numpadPress('0')">0</button>
+            </div>
+
+            <!-- Change row -->
+            <div class="numpad-change-row">
+              <span class="change-label">找零</span>
+              <span class="change-amount" :class="{ insufficient: changeAmt < 0 }">NT$ {{ changeAmt }}</span>
+            </div>
           </div>
           <!-- LINE Pay 掃描顧客條碼 -->
           <div v-if="isLinePayMode" class="mb-2">
@@ -390,6 +428,47 @@ const changeAmt         = ref(0)
 const payRemark         = ref('')
 const checkoutLoading   = ref(false)
 
+// Numpad state
+const numpadStr  = ref('0')
+const denomMode  = ref<'+'|'-'>('+')
+
+function numpadPress(digit: string) {
+  if (numpadStr.value === '0') {
+    numpadStr.value = digit === '00' ? '0' : digit
+  } else {
+    numpadStr.value += digit
+    if (numpadStr.value.length > 8) numpadStr.value = numpadStr.value.slice(0, 8)
+  }
+  cashReceived.value = parseInt(numpadStr.value) || 0
+  calcChange()
+}
+
+function numpadBack() {
+  numpadStr.value = numpadStr.value.slice(0, -1) || '0'
+  cashReceived.value = parseInt(numpadStr.value) || 0
+  calcChange()
+}
+
+function numpadClear() {
+  numpadStr.value = '0'
+  cashReceived.value = 0
+  calcChange()
+}
+
+function addDenom(d: number) {
+  cashReceived.value = denomMode.value === '+'
+    ? cashReceived.value + d
+    : Math.max(0, cashReceived.value - d)
+  numpadStr.value = String(cashReceived.value)
+  calcChange()
+}
+
+function fillExact() {
+  cashReceived.value = cartTotal.value.total
+  numpadStr.value    = String(cashReceived.value)
+  calcChange()
+}
+
 // 電子發票
 const invoiceEnabled = ref(false)
 const invAutoIssue   = ref(false)
@@ -452,6 +531,15 @@ const isLinePayMode  = computed(() => LINE_PAY_IDS.includes(selectedPayMethod.va
 watch(selectedPayMethod, (val) => {
   if (LINE_PAY_IDS.includes(val)) nextTick(() => linePayScanRef.value?.focus())
   else linePayKey.value = ''
+})
+
+watch(showPayment, (val) => {
+  if (val) {
+    numpadStr.value    = '0'
+    cashReceived.value = 0
+    denomMode.value    = '+'
+    changeAmt.value    = 0
+  }
 })
 
 // ── 客製化 Modal ──────────────────────────────────
@@ -1015,4 +1103,62 @@ onUnmounted(() => clearInterval(clockTimer))
 .modal-title  { font-size: 1rem; font-weight: 600; margin: 0; }
 .modal-body   { padding: 18px; }
 .modal-footer { padding: 12px 18px; border-top: 1px solid #e9ecef; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── Cash Numpad ───────────────────────────────────── */
+.numpad-section { margin-bottom: 8px; }
+
+.numpad-display {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #f0f4ff; border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 10px;
+}
+.numpad-label  { font-size: .7rem; color: #6b7280; }
+.numpad-amount { font-size: 1.7rem; font-weight: 900; color: #1e2235; }
+.numpad-exact-btn {
+  padding: 9px 14px; background: var(--accent); color: #fff;
+  border: none; border-radius: 8px; font-size: .82rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: background .15s;
+}
+.numpad-exact-btn:hover { background: var(--accent-dark); }
+
+.denom-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+.mode-toggle-btn {
+  width: 38px; height: 38px; border-radius: 8px; font-size: 1.1rem; font-weight: 800;
+  border: 2px solid; cursor: pointer; transition: .15s; flex-shrink: 0; line-height: 1;
+}
+.mode-toggle-btn.plus-mode  { background: #dcfce7; border-color: #22c55e; color: #16a34a; }
+.mode-toggle-btn.minus-mode { background: #fee2e2; border-color: #ef4444; color: #dc2626; }
+
+.denom-btn {
+  flex: 1; padding: 7px 0; border-radius: 8px;
+  font-size: .88rem; font-weight: 700;
+  border: 2px solid #e2e8f0; background: #f8f9fb; color: #374151;
+  cursor: pointer; transition: .15s;
+}
+.denom-btn:hover  { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+.denom-btn:active { transform: scale(.93); }
+
+.numpad-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; margin-bottom: 8px;
+}
+.np-btn {
+  padding: 13px 0; border-radius: 9px; font-size: 1.1rem; font-weight: 600;
+  border: 1.5px solid #e2e8f0; background: #fff; color: #1e2235;
+  cursor: pointer; transition: .1s; text-align: center; line-height: 1;
+}
+.np-btn:hover  { background: #f0f4ff; border-color: var(--accent); }
+.np-btn:active { transform: scale(.92); }
+.np-btn.np-util  { background: #f3f4f6; font-size: .95rem; color: #374151; }
+.np-btn.np-clear { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.np-btn.np-clear:hover { background: #fecaca; }
+.np-btn.np-zero { grid-column: span 3; }
+
+.numpad-change-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 4px;
+}
+.change-label  { font-size: .83rem; color: #6b7280; font-weight: 500; }
+.change-amount { font-size: 1rem; font-weight: 800; color: #16a34a; }
+.change-amount.insufficient { color: #dc2626; }
 </style>
