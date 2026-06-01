@@ -29,6 +29,7 @@ const refreshingSessions  = ref(false)
 let   sessionPollTimer    = 0
 
 // Token 設定
+const ttlEnabled   = ref(false)
 const ttlHours     = ref(24)
 const lastRefresh  = ref('')
 
@@ -77,6 +78,7 @@ function fmtExpiry(isoStr: string) {
 }
 
 function nextRefreshStr() {
+  if (!ttlEnabled.value) return '不自動刷新'
   if (!lastRefresh.value) return '--'
   const next = new Date(toUtcDate(lastRefresh.value).getTime() + ttlHours.value * 3600 * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -89,8 +91,8 @@ async function loadTokens() {
   try {
     const res = await http.get('/customer-order/tokens')
     const d = res.data.data
-    // 優先使用資料庫存的網址，若無才用當前網址
     baseUrl.value     = d.base_url || window.location.origin
+    ttlEnabled.value  = (d.ttl_hours || 0) > 0
     ttlHours.value    = d.ttl_hours || 24
     lastRefresh.value = d.last_refresh || ''
     const tokens: Record<string, any> = d.tokens || {}
@@ -149,7 +151,7 @@ async function refreshAllTokens() {
   refreshing.value = true
   try {
     const res = await http.post('/customer-order/tokens/refresh', {
-      ttl_hours: ttlHours.value,
+      ttl_hours: ttlEnabled.value ? ttlHours.value : 0,
     })
     const d = res.data.data
     lastRefresh.value = d.last_refresh || ''
@@ -316,10 +318,18 @@ onUnmounted(() => clearInterval(sessionPollTimer))
         <div class="row g-2 align-items-end">
           <div class="col-auto">
             <label class="form-label form-label-sm mb-1">有效時數（TTL）</label>
-            <div class="input-group input-group-sm" style="width:180px">
-              <input v-model.number="ttlHours" type="number" min="1" max="8760"
-                     class="form-control" />
-              <span class="input-group-text">小時</span>
+            <div class="d-flex align-items-center gap-2">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" v-model="ttlEnabled" id="ttlSwitch" />
+                <label class="form-check-label small" for="ttlSwitch">
+                  {{ ttlEnabled ? '啟用' : '關閉' }}
+                </label>
+              </div>
+              <div v-if="ttlEnabled" class="input-group input-group-sm" style="width:160px">
+                <input v-model.number="ttlHours" type="number" min="1" max="8760"
+                       class="form-control" />
+                <span class="input-group-text">小時</span>
+              </div>
             </div>
           </div>
           <div class="col-auto">
@@ -350,10 +360,14 @@ onUnmounted(() => clearInterval(sessionPollTimer))
         <i class="bi bi-link-45deg me-1"></i>點餐頁網址設定
       </div>
       <div class="card-body py-2">
-        <div class="input-group input-group-sm" style="max-width:480px">
+        <div class="input-group input-group-sm" style="max-width:560px">
           <span class="input-group-text">前綴</span>
-          <input v-model="baseUrl" type="url" class="form-control" @change="genAll"
+          <input v-model="baseUrl" type="url" class="form-control" @input="genAll"
                  placeholder="https://your-domain.com" />
+          <button class="btn btn-outline-primary" @click="saveTables" :disabled="saving">
+            <span v-if="saving" class="spinner-border spinner-border-sm"></span>
+            <i v-else class="bi bi-floppy me-1"></i>儲存
+          </button>
         </div>
         <div class="form-text mt-1">
           QR 碼連結格式：<code>{{ baseUrl }}/order/?t=TOKEN</code>（Token 由系統產生，顧客無法猜測）

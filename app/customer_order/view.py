@@ -43,7 +43,8 @@ app_customer_order = Blueprint('app_customer_order', __name__)
 # ── QR Token 工具函式 ─────────────────────────────
 
 def _get_ttl_hours() -> int:
-    return max(1, int(SystemSettings.get('qr_token_ttl_hours', 24) or 24))
+    """回傳 TTL 小時數，0 表示停用（不自動刷新 / 不檢查到期）。"""
+    return max(0, int(SystemSettings.get('qr_token_ttl_hours', 0) or 0))
 
 
 def _validate_qr_token(token: str):
@@ -51,7 +52,7 @@ def _validate_qr_token(token: str):
     驗證 QR token，回傳 (table_no, label)。
     - 系統未啟用 token 模式（table_tokens 為空）→ 回傳 (None, None)
     - token 無效或停用 → 拋出 ValueError
-    - token 已過期    → 拋出 ValueError
+    - token 已過期    → 拋出 ValueError（僅 TTL 啟用時才檢查）
     """
     table_tokens = SystemSettings.get('table_tokens', {})
     if not table_tokens:
@@ -61,16 +62,21 @@ def _validate_qr_token(token: str):
         if info.get('token') == token:
             if not info.get('enabled', True):
                 raise ValueError('此桌位目前停用')
-            expires_at = datetime.fromisoformat(info['expires_at'].replace('Z', ''))
-            if datetime.utcnow() > expires_at:
-                raise ValueError('QR 碼已過期，請洽服務人員重新掃描')
+            expires_at_str = info.get('expires_at', '')
+            if expires_at_str:
+                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', ''))
+                if datetime.utcnow() > expires_at:
+                    raise ValueError('QR 碼已過期，請洽服務人員重新掃描')
             return table_no, info.get('label', table_no)
     raise ValueError('無效的 QR 碼')
 
 
 def _maybe_auto_refresh_tokens():
-    """懶觸發：若距上次刷新已超過 TTL，自動重產全部 token。"""
+    """懶觸發：若距上次刷新已超過 TTL，自動重產全部 token。TTL=0 時停用。"""
     ttl_hours = _get_ttl_hours()
+    if not ttl_hours:
+        return  # TTL 已停用，不自動刷新
+
     last_refresh = SystemSettings.get('qr_token_last_refresh', '')
     if last_refresh:
         last_dt = datetime.fromisoformat(last_refresh.replace('Z', ''))
@@ -471,11 +477,13 @@ def get_qr_tokens():
         else:
             sessions[table_no] = {'active': False}
 
+    base_url = SystemSettings.get('qr_order_base_url', '')
     return jsonify({'success': True, 'data': {
         'tokens':       tokens,
         'ttl_hours':    ttl_hours,
         'last_refresh': last_refresh,
         'sessions':     sessions,
+        'base_url':     base_url,
     }})
 
 
@@ -490,11 +498,11 @@ def refresh_qr_tokens():
     """
     data = request.get_json(silent=True) or {}
     if 'ttl_hours' in data:
-        SystemSettings.set('qr_token_ttl_hours', max(1, int(data['ttl_hours'])))
+        SystemSettings.set('qr_token_ttl_hours', max(0, int(data['ttl_hours'])))  # 0 = 停用
 
     ttl_hours    = _get_ttl_hours()
     table_tokens = SystemSettings.get('table_tokens', {})
-    expires_at   = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+    expires_at   = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat() if ttl_hours else ''
 
     new_tokens = {
         tn: {**info, 'token': secrets.token_urlsafe(24), 'expires_at': expires_at}
@@ -527,9 +535,13 @@ def update_qr_tables():
     data   = request.get_json(silent=True) or {}
     tables = data.get('tables', [])
 
+    base_url = (data.get('base_url') or '').strip()
+    if base_url:
+        SystemSettings.set('qr_order_base_url', base_url)
+
     current   = SystemSettings.get('table_tokens', {})
     ttl_hours = _get_ttl_hours()
-    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat() if ttl_hours else ''
 
     # 計算已有的最大序號（用於自動生成 code）
     existing_codes = {info.get('code', '') for info in current.values() if info.get('code')}
@@ -556,7 +568,7 @@ def update_qr_tables():
             'enabled':    t.get('enabled', True),
             'code':       code,
             'token':      existing.get('token') or secrets.token_urlsafe(24),
-            'expires_at': existing.get('expires_at') or expires_at,
+            'expires_at': '' if not ttl_hours else (existing.get('expires_at') or expires_at),
         }
 
     SystemSettings.set('table_tokens', new_tokens)
