@@ -213,7 +213,7 @@
           <div class="qty-numpad-grid">
             <button v-for="d in ['7','8','9','4','5','6','1','2','3']" :key="d"
                     class="np-btn" @click="qtyNumpadPress(d)">{{ d }}</button>
-            <button class="np-btn np-clear" @click="qtyNumpadStr = '0'">C</button>
+            <button class="np-btn np-clear" @click="qtyNumpadStr = ''">C</button>
             <button class="np-btn" @click="qtyNumpadPress('0')">0</button>
             <button class="np-btn np-back" @click="qtyNumpadBack">⌫</button>
           </div>
@@ -566,7 +566,6 @@ const payMethods = ref<any[]>([{ id: 'cash', label: '現金', enabled: true, has
 const selectedWarehouse = ref('')
 const selectedMenu      = ref('')
 const prodSearch        = ref('')
-const prodCat           = ref('')
 const activeCat         = ref('全部')
 const scanInput         = ref('')
 const scanRef           = ref<HTMLInputElement>()
@@ -862,23 +861,23 @@ function confirmCustom() {
 }
 
 function openQtyNumpad(idx: number) {
-  qtyNumpadIdx.value = idx
-  qtyNumpadStr.value = String(cart.value[idx].quantity)
+  qtyNumpadIdx.value  = idx
+  qtyNumpadStr.value  = ''   // 預設空白，未輸入就維持原數量
   showQtyNumpad.value = true
 }
 
 function qtyNumpadPress(d: string) {
-  qtyNumpadStr.value = qtyNumpadStr.value === '0' ? d : qtyNumpadStr.value + d
-  if (qtyNumpadStr.value.length > 4) qtyNumpadStr.value = qtyNumpadStr.value.slice(0, 4)
+  const next = qtyNumpadStr.value + d
+  if (next.length <= 4) qtyNumpadStr.value = next
 }
 
 function qtyNumpadBack() {
-  qtyNumpadStr.value = qtyNumpadStr.value.slice(0, -1) || '0'
+  qtyNumpadStr.value = qtyNumpadStr.value.slice(0, -1)  // 退到空字串即停
 }
 
 function qtyNumpadConfirm() {
-  const qty = parseInt(qtyNumpadStr.value) || 0
-  if (qtyNumpadIdx.value !== null) {
+  if (qtyNumpadStr.value !== '' && qtyNumpadIdx.value !== null) {
+    const qty = parseInt(qtyNumpadStr.value) || 0
     if (qty <= 0) cart.value.splice(qtyNumpadIdx.value, 1)
     else          cart.value[qtyNumpadIdx.value].quantity = qty
   }
