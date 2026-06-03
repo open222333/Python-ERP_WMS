@@ -93,16 +93,22 @@
 
         <div id="cart-items">
           <div v-for="(row, idx) in cart" :key="idx" class="cart-row">
-            <div class="cart-info">
-              <div class="cart-name">{{ row.item.name }}</div>
+            <div class="cart-info"
+                 :class="{ 'cart-info-editable': isMenuMode && row.item.applied_groups?.length }"
+                 @click="editCartItem(idx)">
+              <div class="cart-name">
+                {{ row.item.name }}
+                <i v-if="isMenuMode && row.item.applied_groups?.length"
+                   class="bi bi-pencil-square cart-edit-icon"></i>
+              </div>
               <div v-if="row.selections?.length" class="cart-options">
-                {{ row.selections.map(s => s.choice_name).join(' · ') }}
+                {{ row.selections.map((s: any) => s.choice_name).join(' · ') }}
               </div>
               <div v-else class="cart-sku">{{ row.item.sku || '' }}</div>
             </div>
             <div class="cart-qty-ctrl">
               <button class="qty-btn" @click="changeQty(idx, -1)">－</button>
-              <span class="qty-val">{{ row.quantity }}</span>
+              <span class="qty-val qty-val-click" @click.stop="openQtyNumpad(idx)">{{ row.quantity }}</span>
               <button class="qty-btn" @click="changeQty(idx, 1)">＋</button>
             </div>
             <div class="cart-price">NT$ {{ rowPrice(row) * row.quantity }}</div>
@@ -186,8 +192,35 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="showCustomModal = false">取消</button>
           <button class="btn btn-primary fw-bold px-4" @click="confirmCustom">
-            <i class="bi bi-cart-plus me-1"></i>加入購物車
+            <i :class="customCartIdx !== null ? 'bi bi-check-lg' : 'bi bi-cart-plus'" class="me-1"></i>
+            {{ customCartIdx !== null ? '確認修改' : '加入購物車' }}
           </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- ── 數量 Numpad Modal ──────────────────────────── -->
+  <Teleport to="body">
+    <div v-if="showQtyNumpad" class="modal-backdrop-custom" @click.self="showQtyNumpad = false">
+      <div class="modal-box-numpad">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-123 me-1"></i>輸入數量</h5>
+          <button class="btn-close" @click="showQtyNumpad = false"></button>
+        </div>
+        <div class="modal-body p-3">
+          <div class="qty-numpad-display">{{ qtyNumpadStr }}</div>
+          <div class="qty-numpad-grid">
+            <button v-for="d in ['7','8','9','4','5','6','1','2','3']" :key="d"
+                    class="np-btn" @click="qtyNumpadPress(d)">{{ d }}</button>
+            <button class="np-btn np-clear" @click="qtyNumpadStr = '0'">C</button>
+            <button class="np-btn" @click="qtyNumpadPress('0')">0</button>
+            <button class="np-btn np-back" @click="qtyNumpadBack">⌫</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="showQtyNumpad = false">取消</button>
+          <button class="btn btn-primary fw-bold px-4" @click="qtyNumpadConfirm">確認</button>
         </div>
       </div>
     </div>
@@ -675,6 +708,12 @@ watch(showPayment, (val) => {
 const showCustomModal  = ref(false)
 const customTarget     = ref<any>(null)
 const customSelections = ref<Record<string, string[]>>({})
+const customCartIdx    = ref<number | null>(null)  // null = 不使用（已改為點購物車品項才開）
+
+// ── 數量 Numpad ───────────────────────────────────
+const showQtyNumpad = ref(false)
+const qtyNumpadIdx  = ref<number | null>(null)
+const qtyNumpadStr  = ref('1')
 
 const clock = ref('')
 let clockTimer: ReturnType<typeof setInterval>
@@ -747,26 +786,37 @@ function commitToCart(item: any, selections: SelectionItem[]) {
 }
 
 function handleItemClick(item: any) {
+  // 直接加入購物車（套用預設選項），點購物車品項才開客製化 Modal
   const groups: any[] = item.applied_groups || []
+  const selections: SelectionItem[] = []
   if (isMenuMode.value && groups.length > 0) {
-    customTarget.value = item
-    // 預設選取每組的 is_default 選項
-    const sel: Record<string, string[]> = {}
     for (const grp of groups) {
-      if (grp.type === 'single') {
-        const def = (grp.choices || []).find((c: any) => c.is_default)
-        sel[grp._id] = def ? [def._id] : []
-      } else {
-        sel[grp._id] = (grp.choices || [])
-          .filter((c: any) => c.is_default)
-          .map((c: any) => c._id)
+      const defaults = (grp.choices || []).filter((c: any) => c.is_default)
+      for (const ch of defaults) {
+        selections.push({
+          group_id: grp._id, group_name: grp.name,
+          choice_id: ch._id, choice_name: ch.name, extra_price: ch.extra_price || 0,
+        })
       }
     }
-    customSelections.value = sel
-    showCustomModal.value = true
-  } else {
-    commitToCart(item, [])
   }
+  commitToCart(item, selections)
+}
+
+function editCartItem(idx: number) {
+  const row = cart.value[idx]
+  const groups: any[] = row.item.applied_groups || []
+  if (!isMenuMode.value || !groups.length) return
+  customTarget.value  = row.item
+  customCartIdx.value = idx
+  const sel: Record<string, string[]> = {}
+  for (const grp of groups) {
+    sel[grp._id] = row.selections
+      .filter((s: SelectionItem) => s.group_id === grp._id)
+      .map((s: SelectionItem) => s.choice_id)
+  }
+  customSelections.value = sel
+  showCustomModal.value  = true
 }
 
 function toggleMultiChoice(groupId: string, choiceId: string) {
@@ -802,8 +852,38 @@ function confirmCustom() {
       }
     }
   }
-  commitToCart(customTarget.value, selections)
+  if (customCartIdx.value !== null) {
+    cart.value[customCartIdx.value].selections = selections
+    customCartIdx.value = null
+  } else {
+    commitToCart(customTarget.value, selections)
+  }
   showCustomModal.value = false
+}
+
+function openQtyNumpad(idx: number) {
+  qtyNumpadIdx.value = idx
+  qtyNumpadStr.value = String(cart.value[idx].quantity)
+  showQtyNumpad.value = true
+}
+
+function qtyNumpadPress(d: string) {
+  qtyNumpadStr.value = qtyNumpadStr.value === '0' ? d : qtyNumpadStr.value + d
+  if (qtyNumpadStr.value.length > 4) qtyNumpadStr.value = qtyNumpadStr.value.slice(0, 4)
+}
+
+function qtyNumpadBack() {
+  qtyNumpadStr.value = qtyNumpadStr.value.slice(0, -1) || '0'
+}
+
+function qtyNumpadConfirm() {
+  const qty = parseInt(qtyNumpadStr.value) || 0
+  if (qtyNumpadIdx.value !== null) {
+    if (qty <= 0) cart.value.splice(qtyNumpadIdx.value, 1)
+    else          cart.value[qtyNumpadIdx.value].quantity = qty
+  }
+  showQtyNumpad.value = false
+  qtyNumpadIdx.value  = null
 }
 
 function changeQty(idx: number, delta: number) {
@@ -1518,4 +1598,51 @@ onUnmounted(() => clearInterval(clockTimer))
   border-top: 1px solid #e0e7ff;
   margin-top: 4px;
 }
+
+/* ── 購物車品項可編輯 ── */
+.cart-info-editable { cursor: pointer; }
+.cart-info-editable:hover .cart-name { color: #6366f1; }
+.cart-edit-icon { font-size: .65rem; color: #9ca3af; margin-left: 4px; vertical-align: middle; }
+.qty-val-click { cursor: pointer; text-decoration: underline dotted #9ca3af; min-width: 1.8rem; text-align: center; }
+.qty-val-click:hover { color: #6366f1; text-decoration-color: #6366f1; }
+
+/* ── 數量 Numpad Modal ── */
+.modal-box-numpad {
+  background: #fff;
+  border-radius: 14px;
+  width: min(280px, 90vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.qty-numpad-display {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: right;
+  padding: .5rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: .75rem;
+  background: #f8fafc;
+  min-height: 3.2rem;
+  letter-spacing: .05em;
+}
+.qty-numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .35rem;
+}
+.np-btn {
+  padding: .7rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: background .1s;
+  color: #1e2235;
+}
+.np-btn:active { background: #e0e7ff; }
+.np-clear { color: #ef4444; }
+.np-back  { color: #6366f1; font-size: 1.1rem; }
 </style>
