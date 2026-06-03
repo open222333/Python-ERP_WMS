@@ -88,7 +88,7 @@ docker compose up -d
 | `/order?table=桌號` | 舊式 URL 相容，直接顯示點餐頁 |
 | `/order`（無參數） | 顯示空白頁，不載入任何內容 |
 
-**Session 生命週期**：`session_token` 存於 `localStorage`，重整頁面後自動恢復 SSE 連線。訂單狀態變為 `completed` 或 `cancelled` 時，後端關閉 Session，SSE 推播 `session_closed` 事件，頁面顯示「感謝光臨」全螢幕提示。
+**Session 生命週期**：`session_token` 存於 `localStorage`，重整頁面後自動恢復 SSE 連線。訂單狀態變為 `completed` 或 `cancelled` 時，後端關閉 Session，SSE 推播 `session_closed` 事件，頁面顯示「感謝光臨」全螢幕提示。完成訂單後再次掃碼時，後端 `TableSession.get_or_create()` 建立新 Session 的同時自動清除舊的關閉旗標（`table_session_closed:{table_no}`），避免 5 分鐘旗標殘留導致新連線立即觸發 `session_closed`。
 
 **快取防護**：`loadMenu()` 每次呼叫 `GET /customer-order/menu` 時附加 `_ts=Date.now()` 時間戳，確保每次掃碼都產生不同 URL、不被瀏覽器快取。後端亦對此端點回應設定 `Cache-Control: no-store`，防止 iOS Safari 等瀏覽器快取舊 `session_token` 導致短時間重複掃碼時取得過期 Session。
 
@@ -111,6 +111,8 @@ docker compose up -d
 | 標題列統計 | 顯示「N 桌活躍中」綠色計數，一目了然全場使用狀況 |
 | **自動刷新** | Session 狀態每 30 秒自動從後端拉取（僅更新 sessionMap，不重產 QR Code） |
 | **手動刷新按鈕** | 標題列「Session 狀態」按鈕，可立即刷新各桌 Session 活躍狀態 |
+| **TTL 有效時數** | 預設關閉（0 = 不自動刷新、Token 永不過期）；啟用後可設定小時數，Token 到期前懶觸發自動刷新 |
+| **點餐頁網址** | 可設定並儲存自訂點餐域名基礎網址（`qr_order_base_url`），QR 碼與連結以此域名產生 |
 
 **資料來源**：頁面載入及輪詢時呼叫 `GET /customer-order/tokens`，後端同時回傳 `sessions` 欄位（各桌從 Redis 查詢的即時 TableSession 狀態）。關閉 Session 呼叫 `DELETE /customer-order/session/<table_no>`（需 operator+ 權限）。
 
