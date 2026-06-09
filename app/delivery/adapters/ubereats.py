@@ -31,16 +31,25 @@ class UberEatsClient:
     def _ensure_token(self):
         if self._token and time.time() < self._token_expiry - 60:
             return
-        resp = requests.post(TOKEN_URL, data={
-            'client_id':     self.client_id,
-            'client_secret': self.client_secret,
-            'grant_type':    'client_credentials',
-            'scope':         'eats.order eats.store.menu.write eats.store.menu.read',
-        }, timeout=10)
-        resp.raise_for_status()
-        body = resp.json()
-        self._token        = body['access_token']
-        self._token_expiry = time.time() + body.get('expires_in', 3600)
+        last_exc = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(TOKEN_URL, data={
+                    'client_id':     self.client_id,
+                    'client_secret': self.client_secret,
+                    'grant_type':    'client_credentials',
+                    'scope':         'eats.order eats.store.menu.write eats.store.menu.read',
+                }, timeout=10)
+                resp.raise_for_status()
+                body = resp.json()
+                self._token        = body['access_token']
+                self._token_expiry = time.time() + body.get('expires_in', 3600)
+                return
+            except Exception as e:
+                last_exc = e
+                logger.warning('UberEats token refresh attempt %d failed: %s', attempt + 1, e)
+                time.sleep(2 ** attempt)
+        raise RuntimeError(f'UberEats token refresh failed after 3 attempts: {last_exc}')
 
     def _headers(self) -> dict:
         self._ensure_token()
@@ -120,7 +129,8 @@ class UberEatsClient:
         signature = HMAC-SHA256(secret, payload)
         """
         if not self.webhook_secret:
-            return True  # 未設定 secret 時略過驗簽（僅開發用）
+            logger.error('UberEats webhook_secret 未設定，所有 webhook 請求將被拒絕（請在設定檔加入 [UBEREATS] WEBHOOK_SECRET）')
+            return False
         expected = hmac.new(
             self.webhook_secret.encode(), payload_bytes, hashlib.sha256
         ).hexdigest()
@@ -145,6 +155,10 @@ class UberEatsClient:
                                   for o in g.get('selected_items', [])],
             })
         payment = raw.get('payment', {})
+        _sub_amt = payment.get('charges', {}).get('sub_total', {}).get('amount')
+        subtotal = (_sub_amt / 100 if _sub_amt is not None else
+                    sum(i.get('price', {}).get('total_price', {}).get('amount', 0)
+                        for i in cart.get('items', [])) / 100)
         return {
             'platform':         'ubereats',
             'external_order_id': raw.get('id', ''),
@@ -152,7 +166,7 @@ class UberEatsClient:
             'status':           raw.get('current_state', '').lower(),
             'customer_name':    raw.get('eater', {}).get('first_name', ''),
             'items':            items,
-            'subtotal':         cart.get('special_instructions_extra_charge', {}).get('amount', 0) / 100,
+            'subtotal':         subtotal,
             'total_amount':     payment.get('charges', {}).get('total', {}).get('amount', 0) / 100,
             'payment_method':   payment.get('payment_method_info', [{}])[0].get('payment_method_family', 'online'),
             'note':             cart.get('special_instructions', ''),

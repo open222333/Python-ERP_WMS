@@ -29,10 +29,13 @@ def _gen_order_no() -> str:
     from src.mongo import get_db
     today = datetime.utcnow().strftime('%Y%m%d')
     db = get_db()
-    count = db['outbound_orders'].count_documents({
-        'order_no': {'$regex': f'^OUT{today}'}
-    })
-    return f'OUT{today}{count + 1:04d}'
+    counter = db['counters'].find_one_and_update(
+        {'_id': f'outbound_{today}'},
+        {'$inc': {'seq': 1}},
+        upsert=True,
+        return_document=True,
+    )
+    return f'OUT{today}{counter["seq"]:04d}'
 
 
 class OutboundOrder:

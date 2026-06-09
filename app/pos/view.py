@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, render_template, Response, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
+from bson import ObjectId
+from src.mongo import get_db
 from src.models.pos import PosOrder
 from src.models.log import Log
 from src.permissions import require_role
@@ -410,9 +412,17 @@ def refund_sale(sid):
     data   = request.get_json(silent=True) or {}
     reason = data.get('reason', '').strip()
 
-    # ── 第三方支付退款（在庫存回補之前先向 API 退款）────────────
-    order = PosOrder.find_by_id(sid)
-    if order and order.get('payment_type') in ('linepay', 'zpay'):
+    # ── 原子搶佔退款名額（completed → refunding），防止並發雙重退款 ──
+    _orders_col = get_db()['pos_orders']
+    order = _orders_col.find_one_and_update(
+        {'_id': ObjectId(sid), 'status': 'completed'},
+        {'$set': {'status': 'refunding'}},
+        return_document=True,
+    )
+    if not order:
+        return jsonify({'success': False, 'message': '銷售單不存在或已退款'}), 400
+
+    if order.get('payment_type') in ('linepay', 'zpay'):
         txn_id  = order.get('linepay_transaction_id', '')
         pay_type = order.get('payment_type')
         if txn_id:
@@ -423,18 +433,27 @@ def refund_sale(sid):
                 else:
                     provider   = _get_zpay()
                     name       = '全支付'
-                ref_resp = provider.refund(txn_id, int(order['total_amount']))
+                ref_resp = provider.refund(txn_id, round(order['total_amount']))
                 if ref_resp.get('returnCode') != '0000':
                     msg = ref_resp.get('returnMessage', '退款失敗')
+                    _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
                     return jsonify({'success': False, 'message': f'{name} 退款失敗：{msg}'}), 400
             except ValueError as ve:
+                _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
                 return jsonify({'success': False, 'message': str(ve)}), 400
             except Exception as e:
                 logger.exception('%s refund failed', pay_type)
+                _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
                 return jsonify({'success': False, 'message': f'{name} 退款連線失敗：{e}'}), 500
 
-    result = PosOrder.refund(sid, reason, operator=get_jwt_identity())
+    try:
+        result = PosOrder.refund(sid, reason, operator=get_jwt_identity())
+    except Exception as e:
+        logger.exception('PosOrder.refund failed for sid=%s', sid)
+        _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+        return jsonify({'success': False, 'message': f'退款處理失敗：{e}'}), 500
     if not result['success']:
+        _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
         return jsonify({'success': False, 'message': result['error']}), 400
     Log.create(get_jwt_identity(), 'POS 退款', f'sale_id={sid} reason={reason}')
     return jsonify({'success': True})

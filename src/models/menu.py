@@ -308,9 +308,8 @@ class Menu:
     @classmethod
     def update_category(cls, mid: str, cat_id: str, data: dict) -> bool:
         set_fields = {'updated_at': datetime.utcnow()}
+        old_name = None
         if 'name' in data:
-            old_name = None
-            # 取出舊名稱，同步更新所有品項的 category 字串
             doc = cls._col().find_one(
                 {'_id': ObjectId(mid), 'categories._id': cat_id},
                 {'categories.$': 1},
@@ -318,22 +317,22 @@ class Menu:
             if doc and doc.get('categories'):
                 old_name = doc['categories'][0].get('name', '')
             set_fields['categories.$[c].name'] = data['name']
-            # 同步品項 category 欄位
-            if old_name and old_name != data['name']:
-                cls._col().update_one(
-                    {'_id': ObjectId(mid)},
-                    {'$set': {'items.$[i].category': data['name']}},
-                    array_filters=[{'i.category': old_name}],
-                )
         if 'sort_order' in data:
             set_fields['categories.$[c].sort_order'] = int(data['sort_order'])
         if 'status' in data:
             set_fields['categories.$[c].status'] = int(data['status'])
+        # 先更新 categories，再同步品項 category 字串，確保兩者一致
         r = cls._col().update_one(
             {'_id': ObjectId(mid)},
             {'$set': set_fields},
             array_filters=[{'c._id': cat_id}],
         )
+        if r.matched_count > 0 and old_name is not None and old_name != data.get('name'):
+            cls._col().update_one(
+                {'_id': ObjectId(mid)},
+                {'$set': {'items.$[i].category': data['name']}},
+                array_filters=[{'i.category': old_name}],
+            )
         return r.matched_count > 0
 
     @classmethod

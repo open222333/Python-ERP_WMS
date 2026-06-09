@@ -21,6 +21,7 @@ class BasicConfig(object):
     JWT_SECRET_KEY = conf['SECRET_KEY']
     JWT_ACCESS_TOKEN_EXPIRES  = timedelta(hours=JWT_ACCESS_TOKEN_EXPIRES_HOURS)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+    JWT_QUERY_STRING_NAME     = 'token'
     JSON_AS_ASCII = False
     JSON_SORT_KEYS = True
 

@@ -54,6 +54,7 @@ class Inventory:
         """
         調整庫存，回傳 (before_qty, after_qty)
         delta 正數=增加，負數=減少
+        使用 find_one_and_update + $inc 確保原子性，避免並發覆寫。
         """
         q = {
             'product_id': ObjectId(product_id),
@@ -61,15 +62,15 @@ class Inventory:
             'location_id': ObjectId(location_id) if location_id else None,
         }
         now = datetime.utcnow()
-        existing = cls._col().find_one(q)
-        before_qty = existing['quantity'] if existing else 0
-        after_qty = before_qty + delta
-
-        if existing:
-            cls._col().update_one(q, {'$set': {'quantity': after_qty, 'updated_at': now}})
-        else:
-            cls._col().insert_one({**q, 'quantity': after_qty,
-                                   'created_at': now, 'updated_at': now})
+        before_doc = cls._col().find_one_and_update(
+            q,
+            {'$inc': {'quantity': delta}, '$set': {'updated_at': now},
+             '$setOnInsert': {'created_at': now}},
+            upsert=True,
+            return_document=False,  # 回傳更新前的文件
+        )
+        before_qty = before_doc.get('quantity', 0) if before_doc else 0
+        after_qty  = before_qty + delta
         return before_qty, after_qty
 
     @classmethod
@@ -82,13 +83,14 @@ class Inventory:
             'location_id': ObjectId(location_id) if location_id else None,
         }
         now = datetime.utcnow()
-        existing = cls._col().find_one(q)
-        before_qty = existing['quantity'] if existing else 0
-        if existing:
-            cls._col().update_one(q, {'$set': {'quantity': quantity, 'updated_at': now}})
-        else:
-            cls._col().insert_one({**q, 'quantity': quantity,
-                                   'created_at': now, 'updated_at': now})
+        before_doc = cls._col().find_one_and_update(
+            q,
+            {'$set': {'quantity': quantity, 'updated_at': now},
+             '$setOnInsert': {'created_at': now}},
+            upsert=True,
+            return_document=False,
+        )
+        before_qty = before_doc.get('quantity', 0) if before_doc else 0
         return before_qty, quantity
 
 

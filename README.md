@@ -1413,9 +1413,13 @@ D. 菜單同步（含客製化選項群組）
 
 ```
 completed（已完成）
-    ↓ refund（operator+）
+    ↓ refund（operator+）── 先原子 CAS 設為 refunding（防止並發重複退款）
+refunding（退款處理中）── 中間鎖定態；退款失敗自動回滾至 completed
+    ↓ 退款成功
 refunded（已退款）   ← 終態
 ```
+
+> **並發保護**：退款前以 `find_one_and_update` 原子操作將狀態從 `completed` 改為 `refunding`；若同時有第二筆退款請求，CAS 失敗即回傳 409，不會重複呼叫金流。退款過程發生例外時自動回滾狀態至 `completed`。
 
 ### 外送訂單狀態機
 
@@ -1521,6 +1525,7 @@ from src.permissions import require_role
 | `delivery_orders` | 外送平台訂單（UberEats / foodpanda） |
 | `delivery_mappings` | 系統商品 ID ↔ 平台商品 ID 映射表 |
 | `delivery_settings` | 各平台啟用狀態、自動接單設定 |
+| `counters` | 原子流水號計數器（`inbound_orders`、`outbound_orders`、`customer_orders` 使用；`find_one_and_update + $inc` 在多 Worker / 多進程下保證序號不重複） |
 
 ---
 
@@ -1557,10 +1562,11 @@ from src.permissions import require_role
 | 操作紀錄清除 | 自動清除為懶觸發（每次打開紀錄頁面時檢查），無需額外排程器；保留天數設為 0 則永不自動清除 |
 | 出庫確認 | 確認出庫單時自動驗證庫存，庫存不足拒絕確認 |
 | 庫存更新時機 | 庫存變更僅在「完成入/出庫」及「POS 結帳/退款」時觸發 |
-| Webhook 安全 | 建議設定 `WEBHOOK_SECRET`，系統會驗證 HMAC-SHA256 簽名；留空則略過驗簽（僅開發用） |
+| Webhook 安全 | **必須**設定 `WEBHOOK_SECRET`，系統驗證 HMAC-SHA256 簽名；留空時系統**拒絕**所有 Webhook 請求並記錄 error log（不再略過驗簽） |
 | debug 模式 | 預設開啟，正式部署請改用 `ProductionConfig` 並設定 `debug=False` |
 | 正式部署 | Docker 部署預設使用 gunicorn（`CMD gunicorn -c gunicorn.py run:app`）；純主機部署亦同；參數統一在 `conf/config.ini [GUNICORN]` 設定 |
 | POS PWA | `/pos/` 支援「加入主畫面」（PWA），加入後可從手機桌面直接啟動並自動鎖定橫向 |
+| MongoDB 索引 | `create_app()` 啟動時自動建立複合索引（`inventory` 先去重再建唯一索引）；索引建立失敗僅記錄 error log，不中斷啟動 |
 | Redis | 用於登入速率限制；僅內網時無需設密碼；`swallow_errors=True` 確保 Redis 斷線時靜默放行，不影響正常登入 |
 | `__guest__` 帳號 | 啟動時自動建立，`locked=True` 防止誤刪；為系統保留帳號，不提供正常登入能力 |
 | TableSession | 顧客點餐 Session 存於 Redis（非 MongoDB）；桌號共享，同桌多支裝置使用同一 Token；結帳 / 取消後自動刪除並設置 5 分鐘關閉旗標供 SSE 推播 |

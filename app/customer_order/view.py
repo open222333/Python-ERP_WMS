@@ -223,10 +223,16 @@ def create_order():
             return jsonify({'success': False,
                             'message': f'第 {i+1} 筆品項數量無效'}), 400
 
+    try:
+        computed_total = round(
+            sum(float(it.get('price', 0)) * float(it.get('qty', 0)) for it in items), 2
+        )
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'message': '品項金額格式錯誤'}), 400
     oid = CustomerOrder.create(
         table_no=table_no,
         items=items,
-        total=float(total),
+        total=computed_total,
         remark=remark,
         menu_id=menu_id,
     )
@@ -245,11 +251,10 @@ def stream_orders():
     SSE 推送廚房訂單（每 2 秒檢查，有變更才推送）
     JWT 以 ?token= query string 傳遞（EventSource 不支援自訂 header）
     """
-    raw_token = request.args.get('token', '')
-    if not raw_token:
+    if not request.args.get('token', ''):
         return jsonify({'success': False, 'message': '未授權'}), 401
     try:
-        decode_token(raw_token)
+        verify_jwt_in_request(locations=['query_string'])
     except Exception:
         return jsonify({'success': False, 'message': '未授權'}), 401
 
@@ -290,7 +295,10 @@ def list_orders():
     """查詢訂單（可依 status / date 篩選）"""
     status = request.args.get('status', '')
     date   = request.args.get('date', '')
-    limit  = int(request.args.get('limit', 100))
+    try:
+        limit = min(int(request.args.get('limit', 100)), 500)
+    except (ValueError, TypeError):
+        limit = 100
     data = CustomerOrder.find_all(
         status=status or None,
         date=date or None,

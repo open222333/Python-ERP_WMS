@@ -53,12 +53,14 @@ class CustomerOrder:
         items: [{item_id, item_name, qty, price, customizations, note}]
         """
         now = datetime.utcnow()
-        # 產生序號，同日內自增（格式 A001 ~ Z999）
         today_str = now.strftime('%Y%m%d')
-        count = cls._col().count_documents({
-            'order_date': today_str
-        })
-        order_no = f"{today_str}-{count + 1:04d}"
+        counter = get_db()['counters'].find_one_and_update(
+            {'_id': f'cust_order_{today_str}'},
+            {'$inc': {'seq': 1}},
+            upsert=True,
+            return_document=True,
+        )
+        order_no = f"{today_str}-{counter['seq']:04d}"
 
         doc = {
             'order_no':   order_no,

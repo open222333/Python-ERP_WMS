@@ -31,10 +31,13 @@ def _gen_order_no() -> str:
     from src.mongo import get_db
     today = datetime.utcnow().strftime('%Y%m%d')
     db = get_db()
-    count = db['inbound_orders'].count_documents({
-        'order_no': {'$regex': f'^IN{today}'}
-    })
-    return f'IN{today}{count + 1:04d}'
+    counter = db['counters'].find_one_and_update(
+        {'_id': f'inbound_{today}'},
+        {'$inc': {'seq': 1}},
+        upsert=True,
+        return_document=True,
+    )
+    return f'IN{today}{counter["seq"]:04d}'
 
 
 class InboundOrder:

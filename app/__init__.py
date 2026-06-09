@@ -70,9 +70,70 @@ def status():
     return redirect('/apidocs/')
 
 
-def create_app(confgi_object=None):
+def _ensure_indexes():
+    """在應用啟動時建立 MongoDB 複合索引。
+    - unique 索引建立前先去重，避免舊資料導致啟動失敗。
+    - 其餘索引用 try/except 隔離，單一失敗不影響其他索引或啟動。
+    """
+    import logging
+    from pymongo import ASCENDING, DESCENDING
+    from src.mongo import get_db
+    _log = logging.getLogger(__name__)
+    db = get_db()
+
+    # ── inventory 唯一索引：先去重再建立 ──────────────────
+    inv_col = db['inventory']
+    pipeline = [
+        {'$group': {
+            '_id': {'product_id': '$product_id', 'warehouse_id': '$warehouse_id',
+                    'location_id': '$location_id'},
+            'ids': {'$push': '$_id'}, 'count': {'$sum': 1},
+        }},
+        {'$match': {'count': {'$gt': 1}}},
+    ]
+    try:
+        for dup in inv_col.aggregate(pipeline):
+            for oid in dup['ids'][1:]:
+                inv_col.delete_one({'_id': oid})
+                _log.warning('_ensure_indexes: 刪除重複 inventory _id=%s', oid)
+    except Exception as e:
+        _log.error('inventory 去重失敗，跳過（唯一索引建立可能失敗）：%s', e)
+    try:
+        inv_col.create_index(
+            [('product_id', ASCENDING), ('warehouse_id', ASCENDING), ('location_id', ASCENDING)],
+            unique=True, name='inv_product_warehouse_location',
+        )
+    except Exception as e:
+        _log.error('inventory 唯一索引建立失敗：%s', e)
+
+    # ── 其他索引（冪等，失敗不中斷啟動）─────────────────
+    _indexes = [
+        ('stock_movements', [('warehouse_id', ASCENDING), ('product_id', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'mv_warehouse_product_time'}),
+        ('stock_movements', [('reference_type', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'mv_reftype_time'}),
+        ('pos_orders',      [('created_at', DESCENDING)],
+         {'name': 'pos_created_at'}),
+        ('pos_orders',      [('delivery_order_id', ASCENDING), ('source', ASCENDING)],
+         {'name': 'pos_delivery_order', 'unique': True, 'sparse': True}),
+        ('customer_orders', [('order_date', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'cust_order_date_time'}),
+        ('inbound_orders',  [('created_at', DESCENDING)],
+         {'name': 'inbound_created_at'}),
+        ('outbound_orders', [('created_at', DESCENDING)],
+         {'name': 'outbound_created_at'}),
+    ]
+    for col_name, keys, kwargs in _indexes:
+        try:
+            db[col_name].create_index(keys, **kwargs)
+        except Exception as e:
+            _log.error('索引建立失敗 %s %s：%s', col_name, kwargs.get('name'), e)
+
+
+def create_app(config_object=None):
     from src.models.user import User
     User.ensure_guest_user()
+    _ensure_indexes()
 
     # ── API Blueprints（原始路徑，與 nginx proxy 規則一致）──────
     app.register_blueprint(blueprint=app_auth,           url_prefix='/auth')
@@ -92,6 +153,6 @@ def create_app(confgi_object=None):
     app.register_blueprint(blueprint=app_customer_order, url_prefix='/customer-order')
     app.register_blueprint(blueprint=app_invoice,        url_prefix='/invoice')
     app.register_blueprint(blueprint=app_docs,           url_prefix='/docs')
-    if confgi_object:
-        app.config.from_object(confgi_object)
+    if config_object:
+        app.config.from_object(config_object)
     return app

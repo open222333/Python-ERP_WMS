@@ -143,6 +143,29 @@ def batch_move():
     results  = []
     errors   = []
 
+    # 批次查詢所有 product，避免 N+1；逐筆轉 ObjectId 讓格式錯誤可單獨回報
+    from bson import ObjectId, errors as bson_errors
+    from src.mongo import get_db
+    _oid_map: dict = {}
+    _invalid_ids: set = set()
+    _valid_oids = []
+    for item in items:
+        pid = item.get('product_id', '')
+        if not pid:
+            continue
+        try:
+            _valid_oids.append(ObjectId(pid))
+        except bson_errors.InvalidId:
+            _invalid_ids.add(pid)
+    if _valid_oids:
+        _oid_map = {
+            str(p['_id']): p
+            for p in get_db()['products'].find(
+                {'_id': {'$in': list(set(_valid_oids))}},
+                {'name': 1, 'sku': 1},
+            )
+        }
+
     for idx, item in enumerate(items):
         product_id = item.get('product_id', '')
         qty_raw    = item.get('qty', 0)
@@ -155,7 +178,13 @@ def batch_move():
             errors.append(f'第 {idx+1} 筆數量必須大於 0')
             continue
 
-        p = Product.find_by_id(product_id)
+        if not product_id:
+            errors.append(f'第 {idx+1} 筆產品 ID 不能為空')
+            continue
+        if product_id in _invalid_ids:
+            errors.append(f'第 {idx+1} 筆產品 ID 格式錯誤 (id={product_id})')
+            continue
+        p = _oid_map.get(product_id)
         if not p:
             errors.append(f'第 {idx+1} 筆產品不存在 (id={product_id})')
             continue

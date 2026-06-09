@@ -274,23 +274,33 @@ class PosOrder:
         w        = Warehouse.find_by_id(warehouse_id)
         now      = datetime.utcnow()
 
-        # ── 查詢商品映射 ────────────────────────────────
-        maps_col     = db['delivery_mappings']
-        raw_items    = delivery_order.get('items', [])
-        sale_items   = []
-        skipped      = []
+        # ── 批次查詢商品映射（避免 N+1）──────────────────
+        maps_col  = db['delivery_mappings']
+        raw_items = delivery_order.get('items', [])
+        sale_items = []
+        skipped    = []
+
+        ext_ids = [str(ri.get('external_id', '')) for ri in raw_items if ri.get('external_id')]
+        mapping_map = {
+            m['external_product_id']: m
+            for m in maps_col.find({'platform': platform, 'external_product_id': {'$in': ext_ids}})
+        } if ext_ids else {}
+
+        mapped_pids = [ObjectId(m['product_id']) for m in mapping_map.values() if m.get('product_id')]
+        product_map = {
+            str(p['_id']): p
+            for p in db['products'].find({'_id': {'$in': mapped_pids}})
+        } if mapped_pids else {}
 
         for ri in raw_items:
             ext_id  = str(ri.get('external_id', ''))
-            mapping = maps_col.find_one(
-                {'platform': platform, 'external_product_id': ext_id}
-            ) if ext_id else None
-            product = Product.find_by_id(str(mapping['product_id'])) \
-                      if mapping else None
+            mapping = mapping_map.get(ext_id) if ext_id else None
+            m_pid   = mapping.get('product_id') if mapping else None
+            product = product_map.get(str(m_pid)) if m_pid else None
 
             sale_items.append({
-                'product_id':   str(mapping['product_id']) if mapping else None,
-                'product_name': product['name'] if product
+                'product_id':   str(m_pid) if m_pid else None,
+                'product_name': product.get('name', '') if product
                                 else ri.get('product_name', ''),
                 'product_sku':  product.get('sku', '') if product else '',
                 'unit':         product.get('unit', '份') if product else '份',
@@ -305,6 +315,9 @@ class PosOrder:
         deducted = []
         for item in sale_items:
             if not item['has_mapping']:
+                continue
+            if not item['product_id']:
+                skipped.append(f"{item.get('product_name', '?')}（映射缺少 product_id）")
                 continue
             qty     = item['quantity']
             pid_obj = ObjectId(item['product_id'])
@@ -325,6 +338,7 @@ class PosOrder:
         subtotal     = sum(i['quantity'] * i['unit_price'] for i in sale_items)
         discount     = float(delivery_order.get('discount', 0))
         delivery_fee = float(delivery_order.get('delivery_fee', 0))
+        # total_amount 只計食品金額（不含外送費，平台通常自留），避免虛高營收
         total        = round(subtotal - discount, 2)
 
         # ── 建立銷售單 ──────────────────────────────────
@@ -504,7 +518,7 @@ class PosOrder:
         from src.models.inventory import Inventory, StockMovement
         from src.models.warehouse import Warehouse
 
-        order = cls._col().find_one({'_id': ObjectId(sid), 'status': 'completed'})
+        order = cls._col().find_one({'_id': ObjectId(sid), 'status': {'$in': ['completed', 'refunding']}})
         if not order:
             return {'success': False, 'error': '銷售單不存在或已退款'}
 
@@ -513,6 +527,8 @@ class PosOrder:
         w = Warehouse.find_by_id(warehouse_id)
 
         for item in order['items']:
+            if not item.get('product_id'):
+                continue
             before_qty, after_qty = Inventory.adjust(
                 product_id=str(item['product_id']),
                 warehouse_id=warehouse_id,

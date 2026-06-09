@@ -74,7 +74,9 @@ def webhook_ubereats():
     sig     = request.headers.get('X-Uber-Signature', '')
 
     client = _get_ubereats_client()
-    if client and not client.verify_webhook(payload, sig):
+    if not client:
+        return jsonify({'success': False, 'message': 'UberEats 未設定'}), 503
+    if not client.verify_webhook(payload, sig):
         return jsonify({'success': False, 'message': '簽名驗證失敗'}), 403
 
     try:
@@ -89,8 +91,10 @@ def webhook_ubereats():
             # 自動接單
             settings = DeliverySettings.get('ubereats')
             if is_new and event == 'eats.order.placed' and settings.get('auto_confirm'):
-                if client:
+                try:
                     client.accept_order(normalized.get('external_order_id', ''))
+                except Exception as _ae:
+                    logger.error('UberEats accept_order failed: %s', _ae)
                 DeliveryOrder.update_status(oid, 'confirmed', operator='system')
                 wid = settings.get('default_warehouse_id', '')
                 if wid:
@@ -123,7 +127,9 @@ def webhook_foodpanda():
     sig     = request.headers.get('X-FP-Signature', '')
 
     client = _get_foodpanda_client()
-    if client and not client.verify_webhook(payload, sig):
+    if not client:
+        return jsonify({'success': False, 'message': 'foodpanda 未設定'}), 503
+    if not client.verify_webhook(payload, sig):
         return jsonify({'success': False, 'message': '簽名驗證失敗'}), 403
 
     try:
@@ -137,8 +143,10 @@ def webhook_foodpanda():
 
             settings = DeliverySettings.get('foodpanda')
             if is_new and event == 'order.placed' and settings.get('auto_confirm'):
-                if client:
+                try:
                     client.confirm_order(normalized.get('external_order_id', ''))
+                except Exception as _ce:
+                    logger.error('foodpanda confirm_order failed: %s', _ce)
                 DeliveryOrder.update_status(oid, 'confirmed', operator='system')
                 wid = settings.get('default_warehouse_id', '')
                 if wid:

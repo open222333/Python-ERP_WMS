@@ -113,7 +113,8 @@ class FoodpandaClient:
         signature = HMAC-SHA256(secret, payload)
         """
         if not self.webhook_secret:
-            return True
+            logger.error('foodpanda webhook_secret 未設定，所有 webhook 請求將被拒絕（請在設定檔加入 [FOODPANDA] WEBHOOK_SECRET）')
+            return False
         expected = hmac.new(
             self.webhook_secret.encode(), payload_bytes, hashlib.sha256
         ).hexdigest()
