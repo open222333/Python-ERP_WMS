@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: wms-app:latest
+    hostname: wms-app
+    env_file: .env
+    environment:
+      FLASK_PORT: "${FLASK_PORT:-5000}"
+    expose:
+      - "${FLASK_PORT:-5000}"
+    volumes:
+      - ./app:/app/app
+      - ./src:/app/src
+      - ./run.py:/app/run.py
+      - ./conf:/app/conf
+      - ./logs:/app/logs
+    depends_on:
+      - mongo
+      - redis
+    restart: unless-stopped

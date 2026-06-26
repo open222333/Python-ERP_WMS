@@ -127,6 +127,7 @@ def log_stats():
 # ── GET /export ──────────────────────────────────────────
 @app_log.route('/export', methods=['GET'])
 @jwt_required()
+@require_role('operator')
 def export_logs():
     """
     匯出操作紀錄為 CSV（不限筆數）
@@ -237,6 +238,10 @@ def import_logs():
     if not rows:
         return jsonify({'success': False, 'message': '無可匯入的資料'}), 400
 
+    MAX_IMPORT_ROWS = 10000
+    if len(rows) > MAX_IMPORT_ROWS:
+        return jsonify({'success': False, 'message': f'匯入筆數上限 {MAX_IMPORT_ROWS} 筆'}), 400
+
     inserted = Log.bulk_insert(rows)
     operator = get_jwt_identity()
     Log.create(operator, '操作紀錄匯入', f'inserted={inserted}')
@@ -274,7 +279,10 @@ def cleanup_logs():
     if days is None:
         days = int(SystemSettings.get('log_retention_days', 0) or 0)
     else:
-        days = int(days)
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'message': 'days 必須為整數'}), 400
 
     if days <= 0:
         return jsonify({'success': False, 'message': '保留天數未設定或為 0，無法清除'}), 400

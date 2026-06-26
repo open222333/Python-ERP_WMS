@@ -961,6 +961,7 @@ async function confirmCheckout() {
 
     const saleResp = await http.post('/pos/sale', {
       warehouse_id: selectedWarehouse.value,
+      store_id:     auth.activeStoreId ?? undefined,
       items,
       payment,
       discount: discount.value,

@@ -111,7 +111,7 @@ onMounted(load)
           class="form-control form-control-sm"
           style="width:110px"
           placeholder="使用者"
-          @keydown.enter="load"
+          @keydown.enter="(e) => !e.isComposing && load()"
         />
         <input
           v-model="fAction"
@@ -119,7 +119,7 @@ onMounted(load)
           class="form-control form-control-sm"
           style="width:110px"
           placeholder="操作類型"
-          @keydown.enter="load"
+          @keydown.enter="(e) => !e.isComposing && load()"
         />
         <input
           v-model="fStart"

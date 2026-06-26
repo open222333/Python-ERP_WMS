@@ -1,7 +1,22 @@
 from datetime import datetime
 from bson import ObjectId
+from bson.errors import InvalidId
 from src.mongo import get_db
 import random, string
+
+
+def _to_object_id(value, field_name: str):
+    """
+    Convert *value* to ObjectId, raising ValueError with a clear message on
+    failure.  Treats None, empty string, and the literal string 'None' all as
+    absent (returns None).
+    """
+    if value is None or value == '' or value == 'None':
+        return None
+    try:
+        return ObjectId(value)
+    except (InvalidId, TypeError):
+        raise ValueError(f'{field_name} 格式無效: {value!r}')
 
 
 def _gen_order_no() -> str:
@@ -43,7 +58,7 @@ def _fmt(doc) -> dict:
         return None
     d = {k: v for k, v in doc.items() if k != '_id'}
     d['_id'] = str(doc['_id'])
-    for key in ('warehouse_id',):
+    for key in ('warehouse_id', 'store_id'):
         if key in d and d[key]:
             d[key] = str(d[key])
     for key in ('created_at', 'refunded_at'):
@@ -68,8 +83,8 @@ class PosOrder:
     @classmethod
     def find_all(cls, date_from: datetime = None, date_to: datetime = None,
                  cashier: str = None, status: str = None, source: str = None,
-                 limit: int = 200) -> list:
-        q = {}
+                 limit: int = 200, store_filter: dict = None) -> list:
+        q = dict(store_filter or {})
         if date_from or date_to:
             q['created_at'] = {}
             if date_from:
@@ -89,15 +104,19 @@ class PosOrder:
         return [_fmt(d) for d in docs]
 
     @classmethod
-    def find_by_id(cls, sid: str) -> dict:
+    def find_by_id(cls, sid: str, store_filter: dict = None) -> dict:
         try:
-            return _fmt(cls._col().find_one({'_id': ObjectId(sid)}))
+            q = {'_id': ObjectId(sid)}
+            if store_filter:
+                q.update(store_filter)
+            return _fmt(cls._col().find_one(q))
         except Exception:
             return None
 
     @classmethod
     def create_sale(cls, warehouse_id: str, items: list, payment: dict,
-                    discount: float, cashier: str, remark: str = '') -> dict:
+                    discount: float, cashier: str, remark: str = '',
+                    store_id: str = None) -> dict:
         """
         建立銷售單並原子性扣減庫存。
         items: [{product_id, product_name, product_sku, unit, quantity, unit_price}]
@@ -109,7 +128,9 @@ class PosOrder:
 
         db = get_db()
         inv_col = db['inventory']
-        wid_obj = ObjectId(warehouse_id)
+        wid_obj = _to_object_id(warehouse_id, 'warehouse_id')
+        if wid_obj is None:
+            raise ValueError(f'warehouse_id 格式無效: {warehouse_id!r}')
         w = Warehouse.find_by_id(warehouse_id)
 
         now = datetime.utcnow()
@@ -216,6 +237,11 @@ class PosOrder:
             'status':                 'completed',
             'created_at':             now,
         }
+        if store_id:
+            sid_obj = _to_object_id(store_id, 'store_id')
+            if sid_obj is None:
+                raise ValueError(f'store_id 格式無效: {store_id!r}')
+            order_doc['store_id'] = sid_obj
         sid = str(db[cls.COLLECTION].insert_one(order_doc).inserted_id)
 
         # ── 記錄 StockMovement（每個 linked_product 各一筆）──────────────────────────
@@ -241,6 +267,8 @@ class PosOrder:
         order_doc['_id'] = sid
         order_doc['warehouse_id'] = warehouse_id
         order_doc['created_at'] = now.isoformat() + 'Z'
+        if 'store_id' in order_doc:
+            order_doc['store_id'] = str(order_doc['store_id'])
         for i in order_doc['items']:
             i['product_id'] = str(i['product_id']) if i['product_id'] else None
         return {'success': True, 'order': order_doc}
@@ -523,32 +551,40 @@ class PosOrder:
             return {'success': False, 'error': '銷售單不存在或已退款'}
 
         now = datetime.utcnow()
-        warehouse_id = str(order['warehouse_id'])
-        w = Warehouse.find_by_id(warehouse_id)
+        raw_wid = order.get('warehouse_id')
+        # Guard against None, empty string, or the literal string 'None' stored
+        # in older documents; any of those means "no warehouse tracked".
+        _raw_wid_str = str(raw_wid) if raw_wid is not None else ''
+        warehouse_id = _raw_wid_str if _raw_wid_str not in ('', 'None') else None
+        w = Warehouse.find_by_id(warehouse_id) if warehouse_id else None
 
         for item in order['items']:
             if not item.get('product_id'):
                 continue
-            before_qty, after_qty = Inventory.adjust(
-                product_id=str(item['product_id']),
-                warehouse_id=warehouse_id,
-                delta=item['quantity'],
-            )
-            StockMovement.create(
-                product_id=str(item['product_id']),
-                warehouse_id=warehouse_id,
-                movement_type='inbound',
-                quantity=item['quantity'],
-                before_qty=before_qty,
-                after_qty=after_qty,
-                product_name=item['product_name'],
-                product_sku=item['product_sku'],
-                warehouse_name=w['name'] if w else '',
-                reference_type='pos_refund',
-                reference_id=sid,
-                remark=f"POS 退款 {order['order_no']}",
-                operator=operator,
-            )
+            if not warehouse_id:
+                # Skip inventory restore for orders without warehouse tracking
+                pass
+            else:
+                before_qty, after_qty = Inventory.adjust(
+                    product_id=str(item['product_id']),
+                    warehouse_id=warehouse_id,
+                    delta=item['quantity'],
+                )
+                StockMovement.create(
+                    product_id=str(item['product_id']),
+                    warehouse_id=warehouse_id,
+                    movement_type='inbound',
+                    quantity=item['quantity'],
+                    before_qty=before_qty,
+                    after_qty=after_qty,
+                    product_name=item['product_name'],
+                    product_sku=item['product_sku'],
+                    warehouse_name=w['name'] if w else '',
+                    reference_type='pos_refund',
+                    reference_id=sid,
+                    remark=f"POS 退款 {order['order_no']}",
+                    operator=operator,
+                )
 
         cls._col().update_one(
             {'_id': ObjectId(sid)},

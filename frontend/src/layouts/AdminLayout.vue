@@ -27,7 +27,7 @@
         </template>
 
         <!-- 倉儲管理 -->
-        <template v-if="auth.pageVisible('warehouses') || auth.pageVisible('inventory')">
+        <template v-if="auth.pageVisible('warehouses') || auth.pageVisible('inventory') || auth.pageVisible('inbound') || auth.pageVisible('outbound') || auth.pageVisible('movements') || auth.pageVisible('quick-io')">
           <div class="nav-section">倉儲管理</div>
           <RouterLink v-if="auth.pageVisible('warehouses')" to="/admin/warehouses" class="nav-link" @click="closeMobile">
             <i class="bi bi-building"></i><span>倉庫管理</span>
@@ -35,16 +35,8 @@
           <RouterLink v-if="auth.pageVisible('inventory')" to="/admin/inventory" class="nav-link" @click="closeMobile">
             <i class="bi bi-archive"></i><span>庫存查詢</span>
           </RouterLink>
-        </template>
-
-        <!-- 出入庫 -->
-        <template v-if="auth.pageVisible('inbound') || auth.pageVisible('outbound') || auth.pageVisible('movements') || auth.pageVisible('quick-io')">
-          <div class="nav-section">出入庫</div>
-          <RouterLink v-if="auth.pageVisible('inbound')"   to="/admin/inbound"   class="nav-link" @click="closeMobile">
-            <i class="bi bi-box-arrow-in-down"></i><span>入庫管理</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('outbound')"  to="/admin/outbound"  class="nav-link" @click="closeMobile">
-            <i class="bi bi-box-arrow-up"></i><span>出庫管理</span>
+          <RouterLink v-if="auth.pageVisible('inbound') || auth.pageVisible('outbound')" to="/admin/inbound" class="nav-link" @click="closeMobile">
+            <i class="bi bi-arrow-down-up"></i><span>出入庫管理</span>
           </RouterLink>
           <RouterLink v-if="auth.pageVisible('movements')" to="/admin/movements" class="nav-link" @click="closeMobile">
             <i class="bi bi-arrow-left-right"></i><span>庫存移動</span>
@@ -69,13 +61,14 @@
             <i class="bi bi-qr-code"></i><span>顧客點單頁</span>
             <i class="bi bi-box-arrow-up-right ext-icon"></i>
           </a>
-          <RouterLink v-if="auth.pageVisible('qr-codes')" to="/admin/qr-codes" class="nav-link" @click="closeMobile">
+          <!-- QR 碼管理暫時關閉 -->
+          <!-- <RouterLink v-if="auth.pageVisible('qr-codes')" to="/admin/qr-codes" class="nav-link" @click="closeMobile">
             <i class="bi bi-qr-code-scan"></i><span>QR 碼管理</span>
-          </RouterLink>
+          </RouterLink> -->
         </template>
 
         <!-- 財務 -->
-        <template v-if="auth.pageVisible('pos-sales') || auth.pageVisible('pos-report') || auth.pageVisible('invoices') || auth.pageVisible('invoice-settings')">
+        <template v-if="auth.pageVisible('pos-sales') || auth.pageVisible('pos-report') || auth.pageVisible('invoices')">
           <div class="nav-section">財務</div>
           <RouterLink v-if="auth.pageVisible('pos-sales')" to="/admin/pos-sales" class="nav-link" @click="closeMobile">
             <i class="bi bi-receipt"></i><span>銷售記錄</span>
@@ -85,9 +78,6 @@
           </RouterLink>
           <RouterLink v-if="auth.pageVisible('invoices')" to="/admin/invoices" class="nav-link" @click="closeMobile">
             <i class="bi bi-receipt-cutoff"></i><span>電子發票</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('invoice-settings')" to="/admin/invoice-settings" class="nav-link" @click="closeMobile">
-            <i class="bi bi-gear"></i><span>發票設定</span>
           </RouterLink>
         </template>
 
@@ -104,18 +94,15 @@
         </template>
 
         <!-- 外送平台 -->
-        <template v-if="auth.pageVisible('delivery-orders') || auth.pageVisible('delivery-settings')">
+        <template v-if="auth.pageVisible('delivery-orders')">
           <div class="nav-section">外送平台</div>
-          <RouterLink v-if="auth.pageVisible('delivery-orders')"   to="/admin/delivery-orders"   class="nav-link" @click="closeMobile">
+          <RouterLink v-if="auth.pageVisible('delivery-orders')" to="/admin/delivery-orders" class="nav-link" @click="closeMobile">
             <i class="bi bi-scooter"></i><span>外送訂單</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('delivery-settings')" to="/admin/delivery-settings" class="nav-link" @click="closeMobile">
-            <i class="bi bi-gear"></i><span>平台設定</span>
           </RouterLink>
         </template>
 
         <!-- 系統（依角色 / 模板設定顯示） -->
-        <template v-if="auth.isAdmin || auth.pageVisible('users') || auth.pageVisible('logs') || auth.pageVisible('settings')">
+        <template v-if="auth.isAdmin || auth.pageVisible('users') || auth.pageVisible('logs') || auth.pageVisible('settings') || auth.pageVisible('delivery-settings') || auth.pageVisible('invoice-settings')">
           <div class="nav-section">系統</div>
           <RouterLink v-if="auth.isAdmin || auth.pageVisible('users')" to="/admin/users" class="nav-link" @click="closeMobile">
             <i class="bi bi-people"></i><span>使用者管理</span>
@@ -125,6 +112,12 @@
           </RouterLink>
           <RouterLink v-if="auth.isAdmin || auth.pageVisible('settings')" to="/admin/settings" class="nav-link" @click="closeMobile">
             <i class="bi bi-sliders"></i><span>系統設定</span>
+          </RouterLink>
+          <RouterLink v-if="auth.isAdmin || auth.pageVisible('delivery-settings')" to="/admin/delivery-settings" class="nav-link" @click="closeMobile">
+            <i class="bi bi-scooter"></i><span>平台設定</span>
+          </RouterLink>
+          <RouterLink v-if="auth.isAdmin || auth.pageVisible('invoice-settings')" to="/admin/invoice-settings" class="nav-link" @click="closeMobile">
+            <i class="bi bi-receipt-cutoff"></i><span>發票設定</span>
           </RouterLink>
           <a v-if="auth.isAdmin" href="/docs/" target="_blank" class="nav-link external">
             <i class="bi bi-book"></i><span>使用說明</span>
@@ -233,6 +226,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/menus':             '菜單管理',
   '/admin/delivery-orders':   '外送訂單',
   '/admin/delivery-settings': '平台設定',
+  '/admin/stores':            '店家管理',
   '/admin/users':             '使用者管理',
   '/admin/logs':              '操作紀錄',
   '/admin/settings':          '系統設定',
@@ -324,6 +318,14 @@ function handleLogout() {
 .nav-link.router-link-active { background: var(--accent); color: #fff; }
 .nav-link.external.router-link-active { background: var(--sidebar-hover); color: rgba(255,255,255,.9); }
 .nav-link i { width: 18px; text-align: center; flex-shrink: 0; }
+.nav-subsection {
+  font-size: .65rem;
+  color: rgba(255,255,255,.25);
+  padding: 8px 16px 2px 24px;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+.nav-link-sub { margin-left: 10px; }
 .ext-icon { font-size: .6rem; margin-left: auto; opacity: .6; }
 
 .sidebar-footer {

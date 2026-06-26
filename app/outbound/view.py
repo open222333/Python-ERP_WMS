@@ -336,6 +336,10 @@ def confirm_order(oid):
     order = OutboundOrder.find_by_id(oid)
     if not order:
         return jsonify({'success': False, 'message': '出庫單不存在'}), 404
+    if order['status'] == 'confirmed':
+        return jsonify({'success': True, 'message': '已確認'}), 200
+    if order['status'] != 'pending':
+        return jsonify({'success': False, 'message': f"無法從 {order['status']} 狀態確認"}), 400
     if not order.get('items'):
         return jsonify({'success': False, 'message': '請先新增出庫明細'}), 400
     # 檢查庫存是否足夠
@@ -347,8 +351,12 @@ def confirm_order(oid):
                 'success': False,
                 'message': f"產品 {item['product_name']} 庫存不足 (現有:{current_qty}, 需求:{item['expected_qty']})"
             }), 400
+    # Fix 2: the status transition is done atomically in the model via
+    # find_one_and_update with {status: 'pending'} as the filter, so a
+    # concurrent confirm that races past the stock check above will find the
+    # document already flipped to 'confirmed' and get matched_count == 0.
     if not OutboundOrder.confirm(oid, get_jwt_identity()):
-        return jsonify({'success': False, 'message': '確認失敗'}), 400
+        return jsonify({'success': False, 'message': '確認失敗，可能已被其他請求處理'}), 400
     Log.create(get_jwt_identity(), '確認出庫單', f"order_no={order['order_no']}")
     return jsonify({'success': True})
 

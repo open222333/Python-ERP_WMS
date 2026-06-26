@@ -43,9 +43,13 @@ def list_orders():
     """
     status = request.args.get('status', '')
     warehouse_id = request.args.get('warehouse_id', '')
+    limit = min(int(request.args.get('limit', 50)), 200)
+    offset = int(request.args.get('offset', 0))
     data = InboundOrder.find_all(
         status=status or None,
-        warehouse_id=warehouse_id or None
+        warehouse_id=warehouse_id or None,
+        limit=limit,
+        offset=offset
     )
     return jsonify({'success': True, 'data': data})
 
@@ -218,6 +222,9 @@ def add_item(oid):
     data = request.get_json(silent=True) or {}
     if not data.get('product_id'):
         return jsonify({'success': False, 'message': '請指定產品'}), 400
+    expected_qty = data.get('expected_qty', 0)
+    if expected_qty <= 0:
+        return jsonify({'success': False, 'message': '數量必須大於 0'}), 400
     p = Product.find_by_id(data['product_id'])
     if not p:
         return jsonify({'success': False, 'message': '產品不存在'}), 404
@@ -264,6 +271,10 @@ def update_item(oid, item_id):
         description: 更新失敗
     """
     data = request.get_json(silent=True) or {}
+    if 'expected_qty' in data:
+        expected_qty = data['expected_qty']
+        if expected_qty <= 0:
+            return jsonify({'success': False, 'message': '數量必須大於 0'}), 400
     if not InboundOrder.update_item(oid, item_id, data):
         return jsonify({'success': False, 'message': '更新失敗'}), 400
     return jsonify({'success': True})
@@ -378,10 +389,18 @@ def complete_order(oid):
     received_qtys = data.get('received_qtys')  # {item_id: qty}
     operator = get_jwt_identity()
 
+    order = InboundOrder.find_by_id(oid)
+    if order is None:
+        return jsonify({'success': False, 'message': '入庫單不存在'}), 404
+
+    if received_qtys is not None:
+        for item_id, qty in received_qtys.items():
+            if qty < 0:
+                return jsonify({'success': False, 'message': f'實收數量不可為負值（item_id={item_id}）'}), 400
+
     completed = InboundOrder.complete(oid, operator, received_qtys)
     if not completed:
-        order = InboundOrder.find_by_id(oid)
-        current = order['status'] if order else 'not found'
+        current = order['status']
         return jsonify({'success': False,
                         'message': f'完成失敗，目前狀態為「{current}」，需為「confirmed」'}), 400
 

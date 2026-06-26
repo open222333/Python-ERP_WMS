@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
+import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
-import type { Warehouse } from '@/types'
+import type { Warehouse, Store } from '@/types'
 
 const toast = useToastStore()
+const auth  = useAuthStore()
 
 // ── State ──────────────────────────────────────────────────
 const warehouses = ref<Warehouse[]>([])
+const stores     = ref<Store[]>([])
+const storeMap   = computed(() => Object.fromEntries(stores.value.map(s => [s._id, s.name])))
 const loading    = ref(false)
 const saving     = ref(false)
 const showModal  = ref(false)
@@ -21,6 +25,7 @@ interface WarehouseForm {
   manager:     string
   phone:       string
   description: string
+  store_id:    string
 }
 
 function genCode(): string {
@@ -31,7 +36,7 @@ function genCode(): string {
 }
 
 const emptyForm = (): WarehouseForm => ({
-  _id: '', code: genCode(), name: '', address: '', manager: '', phone: '', description: '',
+  _id: '', code: genCode(), name: '', address: '', manager: '', phone: '', description: '', store_id: '',
 })
 
 const form = ref<WarehouseForm>(emptyForm())
@@ -40,8 +45,12 @@ const form = ref<WarehouseForm>(emptyForm())
 async function load() {
   loading.value = true
   try {
-    const { data } = await http.get('/warehouse/')
-    warehouses.value = data.data ?? data ?? []
+    const [wRes, sRes] = await Promise.all([
+      http.get('/warehouse/'),
+      auth.isAdmin ? http.get('/store/') : Promise.resolve({ data: { data: [] } }),
+    ])
+    warehouses.value = wRes.data.data ?? wRes.data ?? []
+    stores.value     = sRes.data.data ?? []
   } catch {
     toast.show('載入倉庫失敗', 'danger')
   } finally {
@@ -60,6 +69,7 @@ function openModal(w?: Warehouse) {
         manager:     w.manager ?? '',
         phone:       w.phone ?? '',
         description: w.description ?? '',
+        store_id:    w.store_id ?? '',
       }
     : emptyForm()
   showModal.value = true
@@ -77,7 +87,7 @@ async function save() {
   }
   saving.value = true
   try {
-    const payload = {
+    const payload: Record<string, any> = {
       code:        form.value.code.trim(),
       name:        form.value.name.trim(),
       address:     form.value.address.trim(),
@@ -85,8 +95,9 @@ async function save() {
       phone:       form.value.phone.trim(),
       description: form.value.description.trim(),
     }
+    if (!form.value._id && form.value.store_id) payload.store_id = form.value.store_id
     if (form.value._id) {
-      await http.put(`/api/warehouse/${form.value._id}`, payload)
+      await http.put(`/warehouse/${form.value._id}`, payload)
     } else {
       await http.post('/warehouse/', payload)
     }
@@ -104,7 +115,7 @@ async function save() {
 async function del(id: string) {
   if (!confirm('確定要刪除此倉庫？此操作無法復原。')) return
   try {
-    await http.delete(`/api/warehouse/${id}`)
+    await http.delete(`/warehouse/${id}`)
     toast.show('已刪除', 'success')
     await load()
   } catch (e: any) {
@@ -130,6 +141,7 @@ onMounted(load)
           <tr>
             <th>代碼</th>
             <th>名稱</th>
+            <th v-if="auth.isAdmin && stores.length">店家</th>
             <th>地址</th>
             <th>負責人</th>
             <th>備註</th>
@@ -138,16 +150,19 @@ onMounted(load)
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="6" class="text-center py-3">
+            <td :colspan="auth.isAdmin && stores.length ? 7 : 6" class="text-center py-3">
               <div class="spinner-border spinner-border-sm text-primary"></div>
             </td>
           </tr>
           <tr v-else-if="!warehouses.length">
-            <td colspan="6" class="text-center text-muted py-3">尚無倉庫</td>
+            <td :colspan="auth.isAdmin && stores.length ? 7 : 6" class="text-center text-muted py-3">尚無倉庫</td>
           </tr>
           <tr v-for="w in warehouses" :key="w._id">
             <td><code>{{ w.code || '—' }}</code></td>
             <td class="fw-semibold">{{ w.name }}</td>
+            <td v-if="auth.isAdmin && stores.length" class="text-muted small">
+              {{ w.store_id ? (storeMap[w.store_id] ?? '—') : '—' }}
+            </td>
             <td class="text-muted">{{ w.address || '—' }}</td>
             <td class="text-muted">{{ w.manager || '—' }}</td>
             <td class="text-muted">{{ w.description || '—' }}</td>
@@ -247,6 +262,15 @@ onMounted(load)
                   rows="2"
                   placeholder="選填"
                 ></textarea>
+              </div>
+
+              <!-- Store (create only, admin only) -->
+              <div v-if="!form._id && auth.isAdmin && stores.length" class="col-12">
+                <label class="form-label fw-semibold">綁定店家</label>
+                <select v-model="form.store_id" class="form-select">
+                  <option value="">— 不綁定店家 —</option>
+                  <option v-for="s in stores" :key="s._id" :value="s._id">{{ s.name }}（{{ s.code }}）</option>
+                </select>
               </div>
             </div>
           </div>

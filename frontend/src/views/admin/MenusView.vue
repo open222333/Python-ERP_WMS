@@ -2,8 +2,11 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { useAuthStore } from '@/stores/auth'
+import type { Store } from '@/types'
 
 const toast = useToastStore()
+const auth  = useAuthStore()
 
 // ── 商品 / 倉庫（庫存聯動用）─────────────────────────
 interface SimpleProduct   { _id: string; name: string; sku: string }
@@ -70,10 +73,15 @@ interface MenuData {
   description:   string
   sort_order:    number
   status:        number
+  store_id?:     string | null
   categories?:   MenuCat[]
   items?:        MenuItemData[]
   option_groups?: OptionGroup[]
 }
+
+// ── Stores ─────────────────────────────────────────────
+const stores   = ref<Store[]>([])
+const storeMap = computed(() => Object.fromEntries(stores.value.map(s => [s._id, s.name])))
 
 // ── State ──────────────────────────────────────────────
 const menus          = ref<MenuData[]>([])
@@ -82,6 +90,8 @@ const selectedMenuData = ref<MenuData | null>(null)
 const loading  = ref(false)
 const saving   = ref(false)
 const activeTab = ref<'items' | 'categories' | 'options'>('items')
+const importing = ref(false)
+const importFileRef = ref<HTMLInputElement>()
 
 // 預設菜單（localStorage 記憶，進頁面自動展開）
 const defaultMenuId = ref(localStorage.getItem('admin_default_menu_id') || '')
@@ -121,7 +131,7 @@ watch([selectedItemIds, () => selectedMenuData.value?.items], async () => {
 
 // 菜單 Modal
 const showMenuModal = ref(false)
-const menuForm = ref({ _id: '', name: '', description: '', sort_order: 0, status: 1 })
+const menuForm = ref({ _id: '', name: '', description: '', sort_order: 0, status: 1, store_id: '' })
 
 // 品項 Modal
 const showItemModal = ref(false)
@@ -165,8 +175,12 @@ const ogForm = ref<{
 async function loadMenus() {
   loading.value = true
   try {
-    const res = await http.get('/menu/')
-    menus.value = res.data.data || []
+    const [mRes, sRes] = await Promise.all([
+      http.get('/menu/'),
+      auth.isAdmin ? http.get('/store/') : Promise.resolve({ data: { data: [] } }),
+    ])
+    menus.value  = mRes.data.data || []
+    stores.value = sRes.data.data || []
     if (selectedMenuId.value) {
       // 確認菜單仍存在（避免被刪後報錯）
       if (menus.value.find(m => m._id === selectedMenuId.value)) {
@@ -208,9 +222,10 @@ function openMenuModal(m?: MenuData) {
     menuForm.value = {
       _id: m._id, name: m.name,
       description: m.description || '', sort_order: m.sort_order || 0, status: m.status ?? 1,
+      store_id: m.store_id ?? '',
     }
   } else if (menuForm.value._id) {
-    menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1 }
+    menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1, store_id: '' }
   }
   showMenuModal.value = true
 }
@@ -223,11 +238,13 @@ async function saveMenu() {
     if (menuForm.value._id) {
       await http.put(`/menu/${menuForm.value._id}`, menuForm.value)
     } else {
-      await http.post('/menu/', menuForm.value)
+      const payload: Record<string, any> = { ...menuForm.value }
+      if (!payload.store_id) delete payload.store_id
+      await http.post('/menu/', payload)
     }
     toast.show('儲存成功', 'success')
     showMenuModal.value = false
-    if (isNew) menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1 }
+    if (isNew) menuForm.value = { _id: '', name: '', description: '', sort_order: 0, status: 1, store_id: '' }
     await loadMenus()
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
@@ -514,6 +531,49 @@ async function saveBatch() {
   }
 }
 
+// ── 匯出 / 匯入 ─────────────────────────────────────────
+async function exportMenu() {
+  if (!selectedMenuId.value) return
+  try {
+    const res = await http.get(`/menu/${selectedMenuId.value}/export`, { responseType: 'blob' })
+    const cd  = res.headers['content-disposition'] || ''
+    const match = cd.match(/filename\*?=(?:UTF-8'')?([^;\r\n]+)/i)
+    const filename = match ? decodeURIComponent(match[1].replace(/['"]/g, '')) : 'menu.json'
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '匯出失敗', 'danger')
+  }
+}
+
+function triggerImport() {
+  importFileRef.value?.click()
+}
+
+async function onImportFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file || !selectedMenuId.value) return
+  importing.value = true
+  try {
+    const text = await file.text()
+    const json = JSON.parse(text)
+    const res  = await http.post(`/menu/${selectedMenuId.value}/import`, json)
+    const d    = res.data
+    toast.show(
+      `匯入完成：分類 ${d.categories_created ?? 0} 筆、品項 ${d.items_created ?? 0} 新增 / ${d.items_updated ?? 0} 更新`,
+      'success'
+    )
+    await loadMenuDetail(selectedMenuId.value)
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '匯入失敗', 'danger')
+  } finally {
+    importing.value = false
+    if (importFileRef.value) importFileRef.value.value = ''
+  }
+}
+
 onMounted(() => {
   // 預設菜單：進頁面前先設定 selectedMenuId，讓 loadMenus 自動展開
   if (defaultMenuId.value) selectedMenuId.value = defaultMenuId.value
@@ -561,6 +621,7 @@ onMounted(() => {
                 <td class="fw-semibold">
                   {{ m.name }}
                   <span v-if="defaultMenuId === m._id" class="badge bg-warning text-dark ms-1" style="font-size:.65rem">預設</span>
+                  <span v-if="m.store_id && storeMap[m.store_id]" class="badge bg-info text-dark ms-1" style="font-size:.65rem">{{ storeMap[m.store_id] }}</span>
                 </td>
                 <td class="text-muted small">{{ m.items?.length ?? 0 }}</td>
                 <td>
@@ -632,6 +693,17 @@ onMounted(() => {
             </button>
             <button v-if="activeTab === 'categories'" class="btn btn-sm btn-outline-secondary" @click="openCatModal()"><i class="bi bi-plus-lg"></i> 新增分類</button>
             <button v-if="activeTab === 'options'"    class="btn btn-sm btn-outline-secondary" @click="openOgModal()"><i class="bi bi-plus-lg"></i> 新增選項組</button>
+            <!-- 匯出 / 匯入 -->
+            <div class="btn-group btn-group-sm ms-1">
+              <button class="btn btn-outline-secondary" title="匯出菜單 JSON" @click="exportMenu">
+                <i class="bi bi-box-arrow-up me-1"></i>匯出
+              </button>
+              <button class="btn btn-outline-secondary" title="從 JSON 匯入分類與品項" :disabled="importing" @click="triggerImport">
+                <span v-if="importing" class="spinner-border spinner-border-sm me-1"></span>
+                <i v-else class="bi bi-box-arrow-in-down me-1"></i>匯入
+              </button>
+            </div>
+            <input ref="importFileRef" type="file" accept=".json,application/json" class="d-none" @change="onImportFile" />
           </div>
         </div>
 
@@ -800,6 +872,13 @@ onMounted(() => {
             <div class="mb-3">
               <label class="form-label fw-semibold">描述</label>
               <input v-model="menuForm.description" type="text" class="form-control" placeholder="選填" />
+            </div>
+            <div v-if="!menuForm._id && auth.isAdmin && stores.length" class="mb-3">
+              <label class="form-label fw-semibold">綁定店家</label>
+              <select v-model="menuForm.store_id" class="form-select">
+                <option value="">— 不綁定店家 —</option>
+                <option v-for="s in stores" :key="s._id" :value="s._id">{{ s.name }}（{{ s.code }}）</option>
+              </select>
             </div>
             <div class="row g-3">
               <div class="col-6">

@@ -22,6 +22,7 @@ QR Token 管理：
 """
 import time
 import json
+import logging
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -35,9 +36,10 @@ from src.models.table_session import TableSession
 from src.models.menu import Menu
 from src.models.settings import SystemSettings
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, get_store_filter, get_current_store_id
 
 app_customer_order = Blueprint('app_customer_order', __name__)
+logger = logging.getLogger(__name__)
 
 
 # ── QR Token 工具函式 ─────────────────────────────
@@ -209,10 +211,12 @@ def create_order():
 
     if not table_no:
         return jsonify({'success': False, 'message': '請登入或輸入桌號/姓名'}), 400
-    if not items:
-        return jsonify({'success': False, 'message': '請至少選擇一個品項'}), 400
     if not isinstance(items, list):
         return jsonify({'success': False, 'message': '品項格式錯誤'}), 400
+    if len(items) == 0:
+        return jsonify({'success': False, 'message': '訂單不含品項'}), 400
+    if len(items) > 50:
+        return jsonify({'success': False, 'message': '單筆訂單品項不得超過 50 項'}), 400
 
     # 基本欄位驗證
     for i, it in enumerate(items):
@@ -222,6 +226,11 @@ def create_order():
         if not isinstance(it.get('qty', 0), (int, float)) or it.get('qty', 0) <= 0:
             return jsonify({'success': False,
                             'message': f'第 {i+1} 筆品項數量無效'}), 400
+    for item in items:
+        if int(item.get('qty', 0)) <= 0:
+            return jsonify({'success': False, 'message': '品項數量必須大於 0'}), 400
+        if float(item.get('price', -1)) < 0:
+            return jsonify({'success': False, 'message': '品項價格不得為負數'}), 400
 
     try:
         computed_total = round(
@@ -229,12 +238,19 @@ def create_order():
         )
     except (ValueError, TypeError):
         return jsonify({'success': False, 'message': '品項金額格式錯誤'}), 400
+    # 從菜單繼承 store_id（掃 QR 點餐屬公開端點，無 JWT，靠 menu 判斷分店）
+    order_store_id = None
+    if menu_id:
+        m = Menu.find_by_id(menu_id)
+        if m and m.get('store_id'):
+            order_store_id = m['store_id']
     oid = CustomerOrder.create(
         table_no=table_no,
         items=items,
         total=computed_total,
         remark=remark,
         menu_id=menu_id,
+        store_id=order_store_id,
     )
     order = CustomerOrder.find_by_id(oid)
     return jsonify({
@@ -251,6 +267,7 @@ def stream_orders():
     SSE 推送廚房訂單（每 2 秒檢查，有變更才推送）
     JWT 以 ?token= query string 傳遞（EventSource 不支援自訂 header）
     """
+    # kitchen stream: intentionally open to all authenticated users
     if not request.args.get('token', ''):
         return jsonify({'success': False, 'message': '未授權'}), 401
     try:
@@ -271,7 +288,7 @@ def stream_orders():
                 if h != last_hash:
                     last_hash = h
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
-                time.sleep(1)
+                time.sleep(2)
             except GeneratorExit:
                 break
             except Exception:
@@ -303,6 +320,7 @@ def list_orders():
         status=status or None,
         date=date or None,
         limit=limit,
+        store_filter=get_store_filter(),
     )
     return jsonify({'success': True, 'data': data})
 
@@ -312,7 +330,7 @@ def list_orders():
 @jwt_required()
 def active_orders():
     """取得待處理 + 處理中的訂單（廚房顯示，先進先出）"""
-    data = CustomerOrder.find_active()
+    data = CustomerOrder.find_active(store_filter=get_store_filter())
     return jsonify({'success': True, 'data': data})
 
 
@@ -321,7 +339,7 @@ def active_orders():
 @jwt_required()
 def order_stats():
     """今日各狀態訂單數量與金額"""
-    stats = CustomerOrder.today_stats()
+    stats = CustomerOrder.today_stats(store_filter=get_store_filter())
     labeled = {
         ORDER_STATUS_LABEL.get(k, k): v
         for k, v in stats.items()
@@ -333,7 +351,7 @@ def order_stats():
 @app_customer_order.route('/<oid>', methods=['GET'])
 @jwt_required()
 def get_order(oid):
-    order = CustomerOrder.find_by_id(oid)
+    order = CustomerOrder.find_by_id(oid, store_filter=get_store_filter())
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
     return jsonify({'success': True, 'data': order})
@@ -348,17 +366,30 @@ def update_order_status(oid):
     更新訂單狀態
     body: { status: 'processing' | 'completed' | 'cancelled' }
     """
-    data   = request.get_json(silent=True) or {}
-    status = data.get('status', '')
-    if not status:
+    data       = request.get_json(silent=True) or {}
+    new_status = data.get('status', '')
+    if not new_status:
         return jsonify({'success': False, 'message': '請提供 status'}), 400
 
+    # Bug 1 fix: validate state-machine transition before persisting
+    VALID_TRANSITIONS = {
+        'pending':    ['processing', 'cancelled'],
+        'processing': ['completed', 'cancelled'],
+    }
+    order = CustomerOrder.find_by_id(oid, store_filter=get_store_filter())
+    if not order:
+        return jsonify({'success': False, 'message': '訂單不存在'}), 404
+    if new_status not in VALID_TRANSITIONS.get(order['status'], []):
+        return jsonify({'success': False,
+                        'message': f"不允許從 {order['status']} 轉換至 {new_status}"}), 400
+
     operator = get_jwt_identity()
-    ok = CustomerOrder.update_status(oid, status, operator)
+    ok = CustomerOrder.update_status(oid, new_status, operator)
     if not ok:
         return jsonify({'success': False, 'message': '訂單不存在或狀態無效'}), 404
 
     order = CustomerOrder.find_by_id(oid)
+    status = new_status
     Log.create(operator, '更新顧客訂單狀態',
                f"order={order['order_no']} status={status}")
 
@@ -368,14 +399,20 @@ def update_order_status(oid):
             from src.models.pos import PosOrder
             PosOrder.create_from_cust_order(order, operator)
         except Exception:
-            pass
+            # Bug 2 fix: log the failure visibly instead of swallowing it
+            logger.exception(
+                'PosOrder.create_from_cust_order failed for order %s — '
+                'POS record was NOT created but order status is already completed',
+                order.get('order_no', oid),
+            )
 
     # 結帳或取消 → 關閉桌況 session（通知顧客端 SSE）
     if status in ('completed', 'cancelled') and order and order.get('table_no'):
+        table_no = order['table_no']
         try:
-            TableSession.close(order['table_no'])
-        except Exception:
-            pass
+            TableSession.close(table_no)
+        except Exception as e:
+            logger.warning('TableSession.close failed for %s: %s', table_no, e)
 
     return jsonify({'success': True})
 
@@ -451,7 +488,7 @@ def customer_stream():
 # ── Admin：手動關閉桌況 session ───────────────────
 @app_customer_order.route('/session/<table_no>', methods=['DELETE'])
 @jwt_required()
-@require_role('admin', 'operator')
+@require_role('operator')
 def close_table_session(table_no):
     """
     管理員手動關閉桌況（會觸發顧客端 SSE session_closed 事件）

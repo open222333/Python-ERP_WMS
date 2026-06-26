@@ -3,12 +3,15 @@ import { ref, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { useThemeStore, THEMES } from '@/stores/theme'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToastStore()
 const themeStore = useThemeStore()
+const authStore = useAuthStore()
 
 // ── Types ────────────────────────────────────────────────
 interface Warehouse { _id: string; name: string; code?: string }
+interface Store    { _id: string; name: string }
 interface PayMethod {
   id:         string
   label:      string
@@ -30,9 +33,11 @@ const savingLog  = ref(false)
 const cleaningLog = ref(false)
 
 const warehouses         = ref<Warehouse[]>([])
+const stores             = ref<Store[]>([])
 const menus              = ref<Menu[]>([])
 const defaultWarehouseId = ref('')
 const posDefaultMenuId   = ref('')
+const posDefaultStoreId  = ref('')
 const logRetentionDays   = ref(0)
 const logTotal           = ref<number | null>(null)
 const logOlderCount      = ref<number | null>(null)
@@ -94,20 +99,23 @@ async function saveTheme() {
 async function load() {
   loading.value = true
   try {
-    const [whR, settR, pmR, menR, lpR, zpR] = await Promise.all([
+    const [whR, settR, pmR, menR, lpR, zpR, stR] = await Promise.all([
       http.get('/warehouse/'),
       http.get('/settings/'),
       http.get('/pos/payment-methods'),
       http.get('/menu/?status=1'),
       http.get('/pos/linepay-settings'),
       http.get('/pos/zpay-settings'),
+      http.get('/store/'),
     ])
 
     warehouses.value         = whR.data?.data || []
+    stores.value             = stR.data?.data || []
     menus.value              = menR.data?.data || []
     const s                  = settR.data?.data || {}
-    defaultWarehouseId.value = s.default_warehouse_id || ''
+    defaultWarehouseId.value = s.default_warehouse_id  || ''
     posDefaultMenuId.value   = s.pos_default_menu_id   || ''
+    posDefaultStoreId.value  = s.pos_default_store_id  || ''
     logRetentionDays.value   = Number(s.log_retention_days ?? 0)
     logLastCleanup.value     = s.log_last_cleanup_at   || null
     discountPresets.value    = s.pos_discount_presets  || []
@@ -169,8 +177,13 @@ async function savePosSettings() {
   savingPos.value = true
   try {
     await http.put('/settings/', {
-      pos_default_menu_id: posDefaultMenuId.value || null,
+      pos_default_menu_id:  posDefaultMenuId.value  || null,
+      pos_default_store_id: posDefaultStoreId.value || null,
     })
+    // 同步更新 auth store 的作業店家
+    if (posDefaultStoreId.value) {
+      authStore.activeStoreId = posDefaultStoreId.value
+    }
     toast.show('POS 設定已儲存')
   } catch (e: any) {
     toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
@@ -411,6 +424,17 @@ onMounted(async () => {
               開啟時自動切換至此菜單，仍可手動切換至其他菜單或商品模式。
             </div>
           </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">預設綁定店家</label>
+            <select v-model="posDefaultStoreId" class="form-select">
+              <option value="">— 不指定（依登入帳號的所屬店家）—</option>
+              <option v-for="s in stores" :key="s._id" :value="s._id">{{ s.name }}</option>
+            </select>
+            <div class="form-text mt-2">
+              <span class="badge bg-primary me-1">POS 收銀台</span>
+              銷售紀錄自動歸屬至此店家。若登入帳號已有所屬店家，以帳號設定為優先。
+            </div>
+          </div>
           <button class="btn btn-primary" :disabled="savingPos" @click="savePosSettings">
             <span v-if="savingPos" class="spinner-border spinner-border-sm me-1"></span>
             <i v-else class="bi bi-save me-1"></i>儲存設定
@@ -443,6 +467,11 @@ onMounted(async () => {
                 <td class="fw-semibold text-nowrap">POS 預設菜單</td>
                 <td><span class="badge bg-primary">POS 收銀台</span></td>
                 <td class="text-muted small">開啟 POS 後自動切換至指定菜單，方便快速點餐</td>
+              </tr>
+              <tr>
+                <td class="fw-semibold text-nowrap">POS 預設店家</td>
+                <td><span class="badge bg-primary">POS 收銀台</span></td>
+                <td class="text-muted small">銷售記錄自動歸屬指定店家；帳號有所屬店家時以帳號為優先</td>
               </tr>
               <tr>
                 <td class="fw-semibold text-nowrap">使用者模板</td>

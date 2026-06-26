@@ -8,7 +8,7 @@ from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.menu import Menu
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, get_store_filter, get_current_store_id
 
 app_menu = Blueprint('app_menu', __name__)
 
@@ -34,7 +34,7 @@ def list_menus():
     """
     status_str = request.args.get('status', '')
     status = int(status_str) if status_str.isdigit() else None
-    data = Menu.find_all(status=status)
+    data = Menu.find_all(status=status, store_filter=get_store_filter())
     return jsonify({'success': True, 'data': data})
 
 
@@ -49,7 +49,7 @@ def get_menu(mid):
     security:
       - Bearer: []
     """
-    m = Menu.find_by_id(mid)
+    m = Menu.find_by_id(mid, store_filter=get_store_filter())
     if not m:
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
     return jsonify({'success': True, 'data': m})
@@ -85,10 +85,17 @@ def create_menu():
     if not name:
         return jsonify({'success': False, 'message': '請填寫菜單名稱'}), 400
 
+    try:
+        sort_order = int(data.get('sort_order', 0))
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'message': 'sort_order 必須為整數'}), 400
+
+    store_id = data.get('store_id') or get_current_store_id()
     mid = Menu.create(
         name=name,
         description=data.get('description', ''),
-        sort_order=int(data.get('sort_order', 0)),
+        sort_order=sort_order,
+        store_id=store_id or None,
     )
     Log.create(get_jwt_identity(), '建立菜單', f'name={name}')
     return jsonify({'success': True, '_id': mid}), 201
@@ -106,10 +113,12 @@ def update_menu(mid):
     security:
       - Bearer: []
     """
-    data = request.get_json(silent=True) or {}
-    ok = Menu.update(mid, **data)
-    if not ok:
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
+    body = request.get_json(silent=True) or {}
+    ALLOWED_MENU_FIELDS = {'name', 'description', 'status', 'sort_order', 'is_default'}
+    data = {k: v for k, v in body.items() if k in ALLOWED_MENU_FIELDS}
+    Menu.update(mid, **data)
     Log.create(get_jwt_identity(), '更新菜單', f'id={mid}')
     return jsonify({'success': True})
 
@@ -126,9 +135,9 @@ def delete_menu(mid):
     security:
       - Bearer: []
     """
-    ok = Menu.delete(mid)
-    if not ok:
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
+    Menu.delete(mid)
     Log.create(get_jwt_identity(), '刪除菜單', f'id={mid}')
     return jsonify({'success': True})
 
@@ -142,7 +151,7 @@ def delete_menu(mid):
 @require_role('admin', 'operator')
 def export_all_menus():
     """匯出全部菜單（含分類、選項組、品項）為 JSON 檔"""
-    all_menus = Menu.find_all()   # 已格式化，含 option_groups / items
+    all_menus = Menu.find_all(store_filter=get_store_filter())
 
     menus_payload = []
     for menu in all_menus:
@@ -227,8 +236,9 @@ def import_all_menus():
         'errors':                [],
     }
 
-    # 取得現有菜單名稱對照表
-    existing_menus = {m['name']: m['_id'] for m in Menu.find_all()}
+    # 取得現有菜單名稱對照表（限目前分店）
+    existing_menus = {m['name']: m['_id']
+                      for m in Menu.find_all(store_filter=get_store_filter())}
 
     for md in menus_data:
         mname = (md.get('name') or '').strip()
@@ -238,10 +248,15 @@ def import_all_menus():
 
         # 菜單不存在則新建
         if mname not in existing_menus:
+            try:
+                sort_order = int(md.get('sort_order', 0))
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'message': f'菜單 {mname} 的 sort_order 必須為整數'}), 400
             mid = Menu.create(
                 name=mname,
                 description=md.get('description', ''),
-                sort_order=int(md.get('sort_order', 0)),
+                sort_order=sort_order,
+                store_id=get_current_store_id(),
             )
             existing_menus[mname] = mid
             total['created_menus'] += 1
@@ -308,8 +323,8 @@ def import_all_menus():
                 Menu.update_item(mid, existing_items[iname], item_data)
                 total['updated_items'] += 1
             else:
-                Menu.add_item(mid, item_data)
-                existing_items[iname] = True
+                new_item = Menu.add_item(mid, item_data)
+                existing_items[iname] = new_item['_id']
                 total['created_items'] += 1
 
     Log.create(user, '匯入全部菜單',
@@ -357,7 +372,7 @@ def add_item(mid):
       400:
         description: 缺少欄位
     """
-    if not Menu.find_by_id(mid):
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
 
     data = request.get_json(silent=True) or {}
@@ -443,7 +458,7 @@ def add_category(mid):
       404:
         description: 菜單不存在
     """
-    if not Menu.find_by_id(mid):
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
 
     data = request.get_json(silent=True) or {}
@@ -506,7 +521,7 @@ def delete_category(mid, cat_id):
 @jwt_required()
 def list_option_groups(mid):
     """列出菜單的所有選項組"""
-    menu = Menu.find_by_id(mid)
+    menu = Menu.find_by_id(mid, store_filter=get_store_filter())
     if not menu:
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
     return jsonify({'success': True, 'data': menu.get('option_groups', [])})
@@ -517,7 +532,7 @@ def list_option_groups(mid):
 @require_role('admin', 'operator')
 def add_option_group(mid):
     """新增選項組"""
-    if not Menu.find_by_id(mid):
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
@@ -562,7 +577,7 @@ def delete_option_group(mid, gid):
 @require_role('admin', 'operator')
 def export_menu(mid):
     """匯出菜單分類與品項為 JSON 檔"""
-    menu = Menu.find_by_id(mid)
+    menu = Menu.find_by_id(mid, store_filter=get_store_filter())
     if not menu:
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
 
@@ -634,7 +649,7 @@ def import_menu(mid):
     - 分類：名稱不存在則新建，已存在略過
     - 品項：名稱不存在則新建，已存在則更新（price、description、category 等）
     """
-    menu = Menu.find_by_id(mid)
+    menu = Menu.find_by_id(mid, store_filter=get_store_filter())
     if not menu:
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
 
@@ -724,8 +739,8 @@ def import_menu(mid):
             Menu.update_item(mid, existing_items[name], item_data)
             result['updated_items'] += 1
         else:
-            Menu.add_item(mid, item_data)
-            existing_items[name] = True
+            new_item = Menu.add_item(mid, item_data)
+            existing_items[name] = new_item['_id']
             result['created_items'] += 1
 
     Log.create(user, '匯入菜單品項',

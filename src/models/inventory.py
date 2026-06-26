@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 from src.mongo import get_db
 
@@ -69,8 +69,20 @@ class Inventory:
             upsert=True,
             return_document=False,  # 回傳更新前的文件
         )
+        # before_doc is None when the document did not previously exist (upsert
+        # created a new record).  In that case before_qty is 0 and after_qty
+        # equals delta.  A negative delta on a brand-new document would leave
+        # the inventory at a negative quantity, which is invalid; raise early so
+        # the caller can roll back any associated StockMovement record.
         before_qty = before_doc.get('quantity', 0) if before_doc else 0
         after_qty  = before_qty + delta
+        if after_qty < 0:
+            # Undo the $inc to leave the collection in a consistent state.
+            cls._col().update_one(q, {'$inc': {'quantity': -delta}})
+            raise ValueError(
+                f"Inventory adjustment would result in negative quantity "
+                f"(before={before_qty}, delta={delta})."
+            )
         return before_qty, after_qty
 
     @classmethod
@@ -159,10 +171,24 @@ class StockMovement:
         if product_only:
             # 排除菜單品項觸發的移動（只紀錄，不在後台顯示）
             q['reference_type'] = {'$nin': list(cls._MENU_REF_TYPES)}
-        docs = cls._col().find(q, {'_id': 0}).sort('created_at', -1).limit(limit)
+        # No field projection is applied so callers receive every stored field,
+        # including _id (stringified below).  All fields in stock_movements are
+        # intentionally returned: there are no internal-only or oversized
+        # embedded fields in this collection.
+        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
         result = []
         for d in docs:
+            d['_id'] = str(d['_id'])
             d['product_id'] = str(d['product_id'])
             d['warehouse_id'] = str(d['warehouse_id'])
             result.append(d)
         return result
+
+    @classmethod
+    def cleanup_old(cls, days: int) -> int:
+        """刪除超過 days 天的移動紀錄，傳回刪除筆數。"""
+        if days <= 0:
+            return 0
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        result = cls._col().delete_many({'created_at': {'$lt': cutoff}})
+        return result.deleted_count

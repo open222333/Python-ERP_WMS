@@ -40,7 +40,7 @@ class TestingConfig(BasicConfig):
     Args:
         BasicConfig (_type_): _description_
     """
-    TESTING = False,
-    DEBUG = False,
+    TESTING = False
+    DEBUG = False
     DB_SERVER = 'localhost'
     DATABASE_URI = 'sqlite:///:memory:'

@@ -3,6 +3,7 @@ from flasgger import Swagger
 from flask_jwt_extended import JWTManager
 from app.extensions import limiter
 from app.auth.view import app_auth
+from app.store.view import app_store
 from app.user.view import app_user
 from app.log.view import app_log
 from app.product.view import app_product
@@ -122,6 +123,32 @@ def _ensure_indexes():
          {'name': 'inbound_created_at'}),
         ('outbound_orders', [('created_at', DESCENDING)],
          {'name': 'outbound_created_at'}),
+        ('menus',           [('store_id', ASCENDING)],
+         {'name': 'menus_store_id'}),
+        ('warehouses',      [('store_id', ASCENDING)],
+         {'name': 'warehouses_store_id'}),
+        ('pos_orders',      [('store_id', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'pos_store_created_at'}),
+        ('users',           [('store_ids', ASCENDING)],
+         {'name': 'users_store_ids', 'sparse': True}),
+        ('logs',            [('username', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'logs_username_time'}),
+        ('logs',            [('action', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'logs_action_time'}),
+        # inventory: 依倉庫查所有產品（與唯一索引 product_id 開頭互補）
+        ('inventory',       [('warehouse_id', ASCENDING), ('product_id', ASCENDING)],
+         {'name': 'inv_warehouse_product'}),
+        # inbound/outbound: 列表頁依 status 篩選
+        ('inbound_orders',  [('status', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'inbound_status_time'}),
+        ('outbound_orders', [('status', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'outbound_status_time'}),
+        # pos: 依收銀員篩選銷售記錄
+        ('pos_orders',      [('cashier', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'pos_cashier_time'}),
+        # customer_orders: 廚房看板依 status 篩選
+        ('customer_orders', [('status', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'cust_order_status_time'}),
     ]
     for col_name, keys, kwargs in _indexes:
         try:
@@ -129,14 +156,89 @@ def _ensure_indexes():
         except Exception as e:
             _log.error('索引建立失敗 %s %s：%s', col_name, kwargs.get('name'), e)
 
+    # ── 舊 users.store_id → store_ids 陣列遷移（冪等）────
+    try:
+        # 找出還有舊 store_id 欄位的 user（不論是否已有 store_ids）
+        old_users = list(db['users'].find({'store_id': {'$exists': True}}))
+        for u in old_users:
+            old_sid = u.get('store_id')
+            existing = u.get('store_ids', [])
+            if old_sid and old_sid not in existing:
+                existing.insert(0, old_sid)
+            db['users'].update_one(
+                {'_id': u['_id']},
+                {'$set': {'store_ids': existing}, '$unset': {'store_id': ''}},
+            )
+        if old_users:
+            _log.info('users store_id → store_ids 遷移完成，共 %d 筆', len(old_users))
+    except Exception as e:
+        _log.error('users store_id 遷移失敗：%s', e)
+
+    # ── 補無 store_ids 欄位的舊 users（冪等）─────────────
+    try:
+        r = db['users'].update_many(
+            {'store_ids': {'$exists': False}},
+            {'$set': {'store_ids': []}},
+        )
+        if r.modified_count:
+            _log.info('補充 users.store_ids=[] 共 %d 筆', r.modified_count)
+    except Exception as e:
+        _log.error('users store_ids 補欄位失敗：%s', e)
+
+    # ── 補舊分類缺少的 sort_order 欄位（冪等）────────────
+    try:
+        r = db['product_categories'].update_many(
+            {'sort_order': {'$exists': False}},
+            {'$set': {'sort_order': 0}},
+        )
+        if r.modified_count:
+            _log.info('補充 product_categories.sort_order=0 共 %d 筆', r.modified_count)
+    except Exception as e:
+        _log.error('product_categories sort_order 補欄位失敗：%s', e)
+
+
+def _seed_defaults():
+    """建立預設店家角色模板（總代理、店家）及預設總代理。"""
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        from src.models.store_role import StoreRole
+        from src.models.store import Store
+        from src.models.menu import Menu
+        from src.models.warehouse import Warehouse
+        from src.mongo import get_db
+        db = get_db()
+        # ── 舊名稱遷移（冪等）：總店→總代理、分店→店家 ──────────
+        for old_name, new_name in (('總店', '總代理'), ('分店', '店家')):
+            r = db['store_roles'].update_one(
+                {'name': old_name},
+                {'$set': {'name': new_name}},
+            )
+            if r.modified_count:
+                _log.info('store_roles 角色模板重命名：%s → %s', old_name, new_name)
+        role_ids = StoreRole.ensure_defaults()
+        if db['stores'].count_documents({}) == 0:
+            main_role_id = role_ids.get('總代理')
+            store_id = Store.create(name='總代理', store_role_id=main_role_id)
+            store = Store.find_by_id(store_id)
+            Menu.create(name='總代理', store_id=store_id)
+            Warehouse.create({'code': store['code'], 'name': '總代理',
+                              'address': '', 'manager': '', 'phone': '', 'description': ''},
+                             store_id=store_id)
+            _log.info('已建立預設總代理及預設角色模板')
+    except Exception as e:
+        _log.error('_seed_defaults 失敗：%s', e)
+
 
 def create_app(config_object=None):
     from src.models.user import User
     User.ensure_guest_user()
     _ensure_indexes()
+    _seed_defaults()
 
     # ── API Blueprints（原始路徑，與 nginx proxy 規則一致）──────
     app.register_blueprint(blueprint=app_auth,           url_prefix='/auth')
+    app.register_blueprint(blueprint=app_store,          url_prefix='/store')
     app.register_blueprint(blueprint=app_user,           url_prefix='/user')
     app.register_blueprint(blueprint=app_log,            url_prefix='/log')
     app.register_blueprint(blueprint=app_product,        url_prefix='/product')

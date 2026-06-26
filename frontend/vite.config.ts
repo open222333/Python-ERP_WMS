@@ -15,6 +15,14 @@ export default defineConfig({
     // 輸出到專案根目錄的 frontend-dist/，供 nginx volume 掛載
     outDir:     '../frontend-dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue':       ['vue', 'vue-router', 'pinia'],
+          'vendor-bootstrap': ['bootstrap'],
+        },
+      },
+    },
   },
   server: {
     port: 3000,

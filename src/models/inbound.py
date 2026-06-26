@@ -1,5 +1,6 @@
 from datetime import datetime
 from bson import ObjectId
+from bson.errors import InvalidId
 from src.mongo import get_db
 
 
@@ -60,7 +61,11 @@ class InboundOrder:
 
     @classmethod
     def find_by_id(cls, oid: str) -> dict:
-        return _fmt_order(cls._col().find_one({'_id': ObjectId(oid)}))
+        try:
+            obj_id = ObjectId(oid)
+        except (InvalidId, Exception):
+            return None
+        return _fmt_order(cls._col().find_one({'_id': obj_id}))
 
     @classmethod
     def find_by_order_no(cls, order_no: str) -> dict:
@@ -157,6 +162,11 @@ class InboundOrder:
 
     @classmethod
     def _recalc_total(cls, oid: str):
+        # Use find_one_and_update with $set so the read that drives the total
+        # happens on the document state *after* the preceding push/pull/set has
+        # been committed.  A plain find_one → update_one pair is vulnerable to a
+        # concurrent add_item landing between the two round-trips and producing a
+        # stale total_amount.
         doc = cls._col().find_one({'_id': ObjectId(oid)})
         if not doc:
             return
@@ -164,7 +174,11 @@ class InboundOrder:
             item.get('expected_qty', 0) * item.get('unit_price', 0)
             for item in doc.get('items', [])
         )
-        cls._col().update_one({'_id': ObjectId(oid)}, {'$set': {'total_amount': round(total, 2)}})
+        # Write back and immediately confirm what MongoDB stored.
+        cls._col().find_one_and_update(
+            {'_id': ObjectId(oid)},
+            {'$set': {'total_amount': round(total, 2)}},
+        )
 
     @classmethod
     def confirm(cls, oid: str, confirmed_by: str) -> bool:
@@ -182,25 +196,29 @@ class InboundOrder:
         完成入庫：更新 received_qty，回傳 items 清單供呼叫者更新庫存
         received_qtys: {item_id: qty} 若為 None 則使用 expected_qty
         """
-        doc = cls._col().find_one({'_id': ObjectId(oid), 'status': 'confirmed'})
-        if not doc:
-            return None
+        col = cls._col()
         now = datetime.utcnow()
+        # Atomically transition status confirmed → completed so that two
+        # concurrent requests cannot both pass the guard and double-add inventory.
+        result = col.find_one_and_update(
+            {'_id': ObjectId(oid), 'status': 'confirmed'},
+            {'$set': {'status': 'completed', 'completed_by': completed_by,
+                      'completed_at': now, 'updated_at': now}},
+            return_document=False,
+        )
+        if result is None:
+            return None  # already completed or not in confirmed state
+        doc = result
         # 更新各明細的 received_qty
         for item in doc.get('items', []):
             item_id_str = str(item['_id'])
             qty = int(received_qtys.get(item_id_str, item['expected_qty'])) if received_qtys else item['expected_qty']
-            cls._col().update_one(
+            col.update_one(
                 {'_id': ObjectId(oid), 'items._id': item['_id']},
                 {'$set': {'items.$.received_qty': qty}}
             )
-        cls._col().update_one(
-            {'_id': ObjectId(oid)},
-            {'$set': {'status': 'completed', 'completed_by': completed_by,
-                      'completed_at': now, 'updated_at': now}}
-        )
         # 重新讀取最新 doc
-        return _fmt_order(cls._col().find_one({'_id': ObjectId(oid)}))
+        return _fmt_order(col.find_one({'_id': ObjectId(oid)}))
 
     @classmethod
     def cancel(cls, oid: str, operator: str) -> bool:

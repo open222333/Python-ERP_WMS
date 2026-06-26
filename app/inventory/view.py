@@ -1,12 +1,37 @@
+import logging
+from datetime import datetime
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.inventory import Inventory, StockMovement, MOVEMENT_TYPES, MOVEMENT_LABEL
 from src.models.product import Product
 from src.models.warehouse import Warehouse
 from src.models.log import Log
+from src.models.settings import SystemSettings
 from src.permissions import require_role
 
 app_inventory = Blueprint('app_inventory', __name__)
+logger = logging.getLogger(__name__)
+
+
+def _maybe_auto_cleanup_movements():
+    """懶觸發：若設定保留天數且距上次清除 ≥ 1 天則自動清除庫存移動紀錄。"""
+    try:
+        s = SystemSettings.get_all()
+        days = int(s.get('movements_retention_days', 0) or 0)
+        if days <= 0:
+            return
+        last_str = s.get('movements_last_cleanup_at', '')
+        if last_str:
+            last_dt = datetime.fromisoformat(last_str)
+            if (datetime.utcnow() - last_dt).total_seconds() < 86400:
+                return
+        deleted = StockMovement.cleanup_old(days)
+        SystemSettings.set('movements_last_cleanup_at', datetime.utcnow().isoformat())
+        if deleted:
+            logger.info('auto-cleanup: removed %d stock_movements older than %d days', deleted, days)
+    except Exception as e:
+        logger.warning('movements auto-cleanup error: %s', e)
 
 
 @app_inventory.route('/', methods=['GET'])
@@ -15,9 +40,11 @@ def list_inventory():
     """查詢庫存（含產品名稱、倉庫名稱）"""
     warehouse_id = request.args.get('warehouse_id', '')
     product_id = request.args.get('product_id', '')
+    limit = min(int(request.args.get('limit', 500)), 2000)
     rows = Inventory.find_all(
         warehouse_id=warehouse_id or None,
-        product_id=product_id or None
+        product_id=product_id or None,
+        limit=limit,
     )
     # 補充 product / warehouse 名稱
     product_cache = {}
@@ -228,16 +255,17 @@ def batch_move():
         'results':  results,
         'errors':   errors,
         'message':  f'成功 {len(results)} 筆' + (f'，{len(errors)} 筆失敗' if errors else ''),
-    })
+    }), 207 if errors else 200
 
 
 @app_inventory.route('/movement/', methods=['GET'])
 @jwt_required()
 def list_movements():
+    _maybe_auto_cleanup_movements()
     warehouse_id  = request.args.get('warehouse_id', '')
     product_id    = request.args.get('product_id', '')
     movement_type = request.args.get('movement_type', '')
-    limit         = int(request.args.get('limit', 200))
+    limit         = min(int(request.args.get('limit', 200)), 1000)
     # product_only=1（預設）：後台只顯示產品資料操作，菜單品項觸發的只紀錄不顯示
     product_only  = request.args.get('product_only', '1') != '0'
     data = StockMovement.find_all(

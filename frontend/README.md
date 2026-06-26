@@ -54,18 +54,16 @@ python run.py    # http://localhost:5000
 
 ## 部署（生產）
 
-```bash
-cd frontend
-npm run build    # 輸出到 ../frontend-dist/
-```
-
-`frontend-dist/` 由 nginx 直接 serve 靜態檔案，API 請求透過 nginx `proxy_pass` 轉發到 Flask。
+前端由 `docker/Dockerfile.nginx` 在 Docker 內部自動編譯，**不需在本機安裝 Node.js**：
 
 ```bash
-docker compose up -d
+# 首次或前端原始碼有變動時
+docker compose build nginx
+docker compose up -d nginx
 ```
 
-> `frontend-dist/` 目錄已在 `docker-compose.yml` 中掛載到 nginx 容器的 `/usr/share/nginx/html`，build 後重啟 nginx 即生效，無需重新 build Docker image。
+> `docker/Dockerfile.nginx` 使用 Node 20 multi-stage build：Stage 1 執行 `npm ci && npm run build`，Stage 2 將產物複製至 `nginx:1.26-alpine`。
+> 只修改 Python / 設定檔時無需 rebuild nginx。
 
 ## 路由結構
 
@@ -73,6 +71,7 @@ docker compose up -d
 |------|------|---------|-----------|------|
 | `/login` | LoginView | ✗ | 登入 — WMS | 後台登入 |
 | `/admin/*` | AdminLayout + 子頁面 | ✓ | 功能名稱 — WMS | 後台管理 |
+| `/admin/inbound` | InOutboundView | ✓ | 出入庫管理 — WMS | 入庫／出庫 tab 切換（`/admin/outbound` 自動導向此頁） |
 | `/pos` | PosView | ✓ | POS 收銀台 — WMS | POS 收銀台 |
 | `/quick-io` | QuickIoView | ✓ | 快速出入庫 — WMS | 快速出入庫 |
 | `/kitchen` | KitchenView | ✗ | 備餐顯示 — WMS | 廚房看板（免登入） |

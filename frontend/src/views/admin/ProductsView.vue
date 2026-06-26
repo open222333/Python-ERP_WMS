@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
 import http from '@/api'
 import type { Category, Product } from '@/types'
@@ -38,24 +38,99 @@ const filteredProducts = computed(() => {
   return list
 })
 
+// ── Selection ──────────────────────────────────────────────
+const selectedIds = ref<Set<string>>(new Set())
+
+const allSelected = computed(() =>
+  filteredProducts.value.length > 0 &&
+  filteredProducts.value.every(p => selectedIds.value.has(p._id))
+)
+const someSelected = computed(() =>
+  filteredProducts.value.some(p => selectedIds.value.has(p._id)) && !allSelected.value
+)
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    filteredProducts.value.forEach(p => selectedIds.value.delete(p._id))
+  } else {
+    filteredProducts.value.forEach(p => selectedIds.value.add(p._id))
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+function toggleSelect(id: string) {
+  if (selectedIds.value.has(id)) {
+    selectedIds.value.delete(id)
+  } else {
+    selectedIds.value.add(id)
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+// 篩選條件變動時清除選取
+watch([filterCatId, keyword], clearSelection)
+
+// ── Batch ──────────────────────────────────────────────────
+const batchCatId  = ref('')
+const batchSaving = ref(false)
+
+async function batchApply(updates: Record<string, unknown>) {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  batchSaving.value = true
+  try {
+    const { data } = await http.put('/product/batch', { ids, ...updates })
+    toast.show(`已更新 ${data.updated} 項`, 'success')
+    clearSelection()
+    batchCatId.value = ''
+    await loadProducts()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '批量更新失敗', 'danger')
+  } finally {
+    batchSaving.value = false
+  }
+}
+
+async function batchDelete() {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  if (!confirm(`確定刪除選取的 ${ids.length} 個產品？此操作無法復原。`)) return
+  batchSaving.value = true
+  try {
+    const { data } = await http.delete('/product/batch', { data: { ids } })
+    toast.show(`已刪除 ${data.deleted} 項`, 'success')
+    clearSelection()
+    await loadProducts()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '批量刪除失敗', 'danger')
+  } finally {
+    batchSaving.value = false
+  }
+}
+
 // ── Form ───────────────────────────────────────────────────
 interface ProductForm {
   _id:         string
   name:        string
   sku:         string
+  barcode:     string
   category_id: string
   unit:        string
-  price:       number
-  cost:        number
+  sell_price:  number
+  cost_price:  number
   min_stock:   number
   description: string
-  enabled:     boolean
+  status:      number
 }
 
 const emptyForm = (): ProductForm => ({
-  _id: '', name: '', sku: genSku(), category_id: '',
-  unit: '個', price: 0, cost: 0, min_stock: 0,
-  description: '', enabled: true,
+  _id: '', name: '', sku: genSku(), barcode: '', category_id: '',
+  unit: '個', sell_price: 0, cost_price: 0, min_stock: 0,
+  description: '', status: 1,
 })
 
 const form = ref<ProductForm>(emptyForm())
@@ -98,19 +173,18 @@ function openModal(p?: Product) {
       _id:         p._id,
       name:        p.name,
       sku:         p.sku,
+      barcode:     p.barcode ?? '',
       category_id: p.category_id ?? '',
       unit:        p.unit,
-      price:       p.price ?? 0,
-      cost:        p.cost ?? 0,
+      sell_price:  p.sell_price ?? p.price ?? 0,
+      cost_price:  p.cost_price ?? p.cost ?? 0,
       min_stock:   p.min_stock ?? 0,
       description: p.description ?? '',
-      enabled:     p.enabled ?? true,
+      status:      p.status ?? 1,
     }
   } else if (form.value._id) {
-    // 上次為編輯模式，切回新增時才清空
     form.value = emptyForm()
   }
-  // 無 _id 且草稿存在 → 保留未儲存內容
   showModal.value = true
 }
 
@@ -126,22 +200,23 @@ async function save() {
     const payload = {
       name:        form.value.name.trim(),
       sku:         form.value.sku.trim(),
+      barcode:     form.value.barcode.trim(),
       category_id: form.value.category_id || null,
       unit:        form.value.unit,
-      price:       Number(form.value.price),
-      cost:        Number(form.value.cost),
+      sell_price:  Number(form.value.sell_price),
+      cost_price:  Number(form.value.cost_price),
       min_stock:   Number(form.value.min_stock),
       description: form.value.description,
-      enabled:     form.value.enabled,
+      status:      form.value.status,
     }
     if (form.value._id) {
-      await http.put(`/api/product/${form.value._id}`, payload)
+      await http.put(`/product/${form.value._id}`, payload)
     } else {
       await http.post('/product/', payload)
     }
     toast.show('儲存成功', 'success')
     showModal.value = false
-    if (isNew) form.value = emptyForm()  // 新增成功後清空草稿
+    if (isNew) form.value = emptyForm()
     await loadProducts()
   } catch (e: any) {
     toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
@@ -154,7 +229,7 @@ async function save() {
 async function del(id: string) {
   if (!confirm('確定要刪除此產品？')) return
   try {
-    await http.delete(`/api/product/${id}`)
+    await http.delete(`/product/${id}`)
     toast.show('已刪除', 'success')
     await loadProducts()
   } catch (e: any) {
@@ -238,7 +313,7 @@ onMounted(async () => {
           class="form-control form-control-sm"
           style="width: 180px"
           placeholder="搜尋名稱/SKU"
-          @keydown.enter="loadProducts"
+          @keydown.enter="(e) => !e.isComposing && loadProducts()"
         />
         <button class="btn btn-sm btn-outline-secondary" @click="loadProducts" title="搜尋">
           <i class="bi bi-search"></i>
@@ -265,10 +340,85 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Batch action bar -->
+    <Transition name="batch-bar">
+      <div
+        v-if="selectedIds.size > 0"
+        class="batch-bar d-flex align-items-center gap-2 px-3 py-2"
+      >
+        <span class="text-white fw-semibold me-1">
+          已選 {{ selectedIds.size }} 項
+        </span>
+        <div class="vr bg-white opacity-50 mx-1"></div>
+
+        <!-- 批次分類 -->
+        <select
+          v-model="batchCatId"
+          class="form-select form-select-sm"
+          style="width: 140px"
+        >
+          <option value="">— 變更分類 —</option>
+          <option value="__clear__">清除分類</option>
+          <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
+        </select>
+        <button
+          class="btn btn-sm btn-light"
+          :disabled="!batchCatId || batchSaving"
+          @click="batchApply({ category_id: batchCatId === '__clear__' ? null : batchCatId })"
+        >
+          套用
+        </button>
+
+        <div class="vr bg-white opacity-50 mx-1"></div>
+
+        <!-- 狀態 -->
+        <button
+          class="btn btn-sm btn-success"
+          :disabled="batchSaving"
+          @click="batchApply({ status: 1 })"
+          title="批次啟用"
+        >
+          <i class="bi bi-check-circle me-1"></i>啟用
+        </button>
+        <button
+          class="btn btn-sm btn-secondary"
+          :disabled="batchSaving"
+          @click="batchApply({ status: 0 })"
+          title="批次停用"
+        >
+          <i class="bi bi-slash-circle me-1"></i>停用
+        </button>
+
+        <div class="vr bg-white opacity-50 mx-1"></div>
+
+        <!-- 刪除 -->
+        <button
+          class="btn btn-sm btn-danger"
+          :disabled="batchSaving"
+          @click="batchDelete"
+        >
+          <i class="bi bi-trash me-1"></i>刪除
+        </button>
+
+        <button class="btn btn-sm btn-outline-light ms-auto" @click="clearSelection">
+          取消選取
+        </button>
+      </div>
+    </Transition>
+
     <div class="table-responsive">
       <table class="table mb-0">
         <thead>
           <tr>
+            <th style="width:36px">
+              <input
+                type="checkbox"
+                class="form-check-input"
+                :checked="allSelected"
+                :indeterminate="someSelected"
+                @change="toggleSelectAll"
+              />
+            </th>
             <th>名稱</th>
             <th>SKU</th>
             <th>分類</th>
@@ -282,30 +432,44 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="9" class="text-center py-3">
+            <td colspan="10" class="text-center py-3">
               <div class="spinner-border spinner-border-sm text-primary"></div>
             </td>
           </tr>
           <tr v-else-if="!filteredProducts.length">
-            <td colspan="9" class="text-center text-muted py-3">無產品資料</td>
+            <td colspan="10" class="text-center text-muted py-3">無產品資料</td>
           </tr>
-          <tr v-for="p in filteredProducts" :key="p._id">
+          <tr
+            v-for="p in filteredProducts"
+            :key="p._id"
+            :class="{ 'table-active': selectedIds.has(p._id) }"
+            @click.exact="toggleSelect(p._id)"
+            style="cursor:pointer"
+          >
+            <td @click.stop>
+              <input
+                type="checkbox"
+                class="form-check-input"
+                :checked="selectedIds.has(p._id)"
+                @change="toggleSelect(p._id)"
+              />
+            </td>
             <td class="fw-semibold">{{ p.name }}</td>
             <td><code class="text-primary">{{ p.sku }}</code></td>
             <td>{{ catMap[p.category_id ?? ''] || '—' }}</td>
             <td>{{ p.unit }}</td>
-            <td>${{ Number(p.price ?? 0).toFixed(2) }}</td>
-            <td>${{ Number(p.cost  ?? 0).toFixed(2) }}</td>
+            <td>${{ Number(p.sell_price ?? p.price ?? 0).toFixed(2) }}</td>
+            <td>${{ Number(p.cost_price ?? p.cost  ?? 0).toFixed(2) }}</td>
             <td>{{ (p.min_stock ?? 0) > 0 ? p.min_stock : '—' }}</td>
             <td>
               <span
                 class="badge"
-                :class="p.enabled ? 'bg-success' : 'bg-secondary'"
+                :class="(p.status ?? 1) === 1 ? 'bg-success' : 'bg-secondary'"
               >
-                {{ p.enabled ? '啟用' : '停用' }}
+                {{ (p.status ?? 1) === 1 ? '啟用' : '停用' }}
               </span>
             </td>
-            <td>
+            <td @click.stop>
               <button
                 class="btn btn-sm btn-outline-primary me-1"
                 @click="openModal(p)"
@@ -373,6 +537,12 @@ onMounted(async () => {
                 <input v-model="form.name" type="text" class="form-control" />
               </div>
 
+              <!-- Barcode -->
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">條碼</label>
+                <input v-model="form.barcode" type="text" class="form-control" placeholder="EAN / UPC" />
+              </div>
+
               <!-- Category -->
               <div class="col-md-6">
                 <label class="form-label fw-semibold">分類</label>
@@ -387,18 +557,18 @@ onMounted(async () => {
               </div>
 
               <!-- Unit -->
-              <div class="col-md-6">
+              <div class="col-md-4">
                 <label class="form-label fw-semibold">單位</label>
                 <input v-model="form.unit" type="text" class="form-control" placeholder="個" />
               </div>
 
-              <!-- Price -->
+              <!-- Sell price -->
               <div class="col-md-4">
                 <label class="form-label fw-semibold">售價</label>
                 <div class="input-group">
                   <span class="input-group-text">$</span>
                   <input
-                    v-model.number="form.price"
+                    v-model.number="form.sell_price"
                     type="number"
                     step="0.01"
                     min="0"
@@ -407,13 +577,13 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <!-- Cost -->
+              <!-- Cost price -->
               <div class="col-md-4">
                 <label class="form-label fw-semibold">成本價</label>
                 <div class="input-group">
                   <span class="input-group-text">$</span>
                   <input
-                    v-model.number="form.cost"
+                    v-model.number="form.cost_price"
                     type="number"
                     step="0.01"
                     min="0"
@@ -434,25 +604,19 @@ onMounted(async () => {
                 <div class="form-text">0 = 不限制</div>
               </div>
 
+              <!-- Status -->
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">狀態</label>
+                <select v-model.number="form.status" class="form-select">
+                  <option :value="1">啟用</option>
+                  <option :value="0">停用</option>
+                </select>
+              </div>
+
               <!-- Description -->
               <div class="col-12">
                 <label class="form-label fw-semibold">描述</label>
                 <textarea v-model="form.description" class="form-control" rows="2"></textarea>
-              </div>
-
-              <!-- Enabled toggle (edit mode) -->
-              <div class="col-12">
-                <div class="form-check form-switch">
-                  <input
-                    v-model="form.enabled"
-                    class="form-check-input"
-                    type="checkbox"
-                    id="prod-enabled"
-                  />
-                  <label class="form-check-label fw-semibold" for="prod-enabled">
-                    {{ form.enabled ? '啟用' : '停用' }}
-                  </label>
-                </div>
               </div>
             </div>
           </div>
@@ -469,3 +633,32 @@ onMounted(async () => {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.batch-bar {
+  background: #0d6efd;
+  border-radius: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.batch-bar-enter-active,
+.batch-bar-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.batch-bar-enter-from,
+.batch-bar-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.batch-bar-enter-to,
+.batch-bar-leave-from {
+  max-height: 60px;
+  opacity: 1;
+}
+</style>

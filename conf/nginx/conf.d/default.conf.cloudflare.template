@@ -14,7 +14,7 @@
 #   3. SSL/TLS 模式改為「Full (Strict)」以確保端到端加密
 # ============================================================
 upstream flask_app {
-    server app:5000;
+    server api:5000;
 }
 
 # ════════════════════════════════════════════════════════════
@@ -48,7 +48,7 @@ server {
 
     client_max_body_size 50M;
 
-    access_log  /var/log/nginx/$server_name-access.log;
+    access_log  /var/log/nginx/admin-access.log  main;
     error_log   /var/log/nginx/error.log;
 
     # ── 還原 Cloudflare 真實訪客 IP ─────────────────────────
@@ -100,7 +100,7 @@ server {
     }
 
     # ── Flask API ─────────────────────────────────────────────
-    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|settings|customer-order|invoice|docs|apidocs)/ {
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|store|settings|customer-order|invoice|docs|apidocs)/ {
         proxy_pass         http://flask_app;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
@@ -171,7 +171,7 @@ server {
 
     client_max_body_size 5M;
 
-    access_log  /var/log/nginx/$server_name-order-access.log;
+    access_log  /var/log/nginx/order-access.log  main;
     error_log   /var/log/nginx/order-error.log;
 
     # ── 還原 Cloudflare 真實訪客 IP ─────────────────────────
@@ -203,7 +203,7 @@ server {
     index index.html;
 
     # ── 封鎖所有後台 API ────────────────────────────────────
-    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|settings|invoice|docs|apidocs)/ {
+    location ~* ^/(auth|user|log|product|warehouse|inventory|inbound|outbound|analytics|pos|delivery|menu|quick-io|store|settings|invoice|docs|apidocs)/ {
         return 403;
     }
     location = /apidocs {

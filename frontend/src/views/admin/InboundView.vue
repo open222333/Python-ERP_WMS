@@ -160,7 +160,7 @@ async function addItem() {
 async function removeItem(itemId: string) {
   if (!confirm('確定要移除此品項？') || !detailOrder.value) return
   try {
-    await http.delete(`/api/inbound/${detailOrder.value._id}/item/${itemId}`)
+    await http.delete(`/inbound/${detailOrder.value._id}/item/${itemId}`)
     toast.show('已移除', 'success')
     await openDetail(detailOrder.value)
   } catch (e: any) {

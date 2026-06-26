@@ -1,41 +1,54 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import http from '@/api'
+import { storeApi } from '@/api/store'
 import { useToastStore } from '@/stores/toast'
 import { fmtDate, ROLE_COLOR, ROLE_LABEL } from '@/utils/format'
-import type { User, UserTemplate } from '@/types'
+import type { User, UserTemplate, Store, StoreRole } from '@/types'
 
 const toast = useToastStore()
 
 // ── State ────────────────────────────────────────────────
-const activeTab  = ref<'users' | 'templates'>('users')
-const loading    = ref(false)
-const saving     = ref(false)
+const activeTab = ref<'users' | 'templates' | 'stores' | 'store-roles'>('users')
+const loading   = ref(false)
+const saving    = ref(false)
 
-const users     = ref<User[]>([])
-const templates = ref<UserTemplate[]>([])
+const users      = ref<User[]>([])
+const templates  = ref<UserTemplate[]>([])
+const stores     = ref<Store[]>([])
+const storeRoles = ref<StoreRole[]>([])
 
 // ── User modal ───────────────────────────────────────────
 const showUserModal = ref(false)
 const userForm = ref({
-  _id: '',
-  username: '',
-  password: '',
+  _id:         '',
+  username:    '',
+  password:    '',
   template_id: '',
+  store_ids:   [] as string[],
 })
 const selectedTemplateMeta = computed(() => {
   if (!userForm.value.template_id) return null
   return templates.value.find(t => t._id === userForm.value.template_id) || null
 })
 
+// ── Store modal ──────────────────────────────────────────
+const showStoreModal  = ref(false)
+const isEditingStore  = ref(false)
+const storeForm = ref({ _id: '', name: '', code: '', status: 'active', store_role_id: '' })
+
+// ── StoreRole modal ──────────────────────────────────────
+const showStoreRoleModal = ref(false)
+const storeRoleForm      = ref({ _id: '', name: '', description: '', is_system: false })
+
 // ── Template modal ───────────────────────────────────────
 const showTplModal = ref(false)
 const tplForm = ref({
-  _id: '',
-  name: '',
-  role: 'operator' as 'admin' | 'operator' | 'viewer',
-  description: '',
-  is_system: false,
+  _id:           '',
+  name:          '',
+  role:          'operator' as 'admin' | 'operator' | 'viewer',
+  description:   '',
+  is_system:     false,
   pages_enabled: {} as Record<string, boolean>,
 })
 
@@ -59,9 +72,9 @@ const NAV_PAGES: NavPage[] = [
   { key: 'menus',             label: '菜單管理',   group: 'POS 收銀' },
   { key: 'pos-link',          label: '開啟收銀台', group: 'POS 收銀' },
   { key: 'delivery-orders',   label: '外送訂單',   group: '外送平台' },
-  { key: 'delivery-settings', label: '平台設定',   group: '外送平台' },
   { key: 'invoices',          label: '電子發票',   group: '財務' },
-  { key: 'invoice-settings',  label: '發票設定',   group: '財務' },
+  { key: 'delivery-settings', label: '平台設定',   group: '系統', system: true },
+  { key: 'invoice-settings',  label: '發票設定',   group: '系統', system: true },
   { key: 'users',    label: '使用者管理', group: '系統', system: true },
   { key: 'logs',     label: '操作紀錄',   group: '系統', system: true },
   { key: 'settings', label: '系統設定',   group: '系統' },
@@ -76,10 +89,11 @@ const pageGroups = computed(() => {
   return Object.entries(map)
 })
 
-// ── Template map (id → name) ─────────────────────────────
-const tplMap = computed(() => Object.fromEntries(templates.value.map(t => [t._id, t])))
+// ── Computed maps ────────────────────────────────────────
+const tplMap          = computed(() => Object.fromEntries(templates.value.map(t => [t._id, t])))
+const storeMap        = computed(() => Object.fromEntries(stores.value.map(s => [s._id, s])))
+const storeRoleMap    = computed(() => Object.fromEntries(storeRoles.value.map(r => [r._id, r.name])))
 
-// ── User count per template ──────────────────────────────
 const tplUsageMap = computed(() => {
   const m: Record<string, number> = {}
   for (const u of users.value) {
@@ -92,12 +106,16 @@ const tplUsageMap = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const [uRes, tRes] = await Promise.all([
+    const [uRes, tRes, sRes, srRes] = await Promise.all([
       http.get('/user/'),
       http.get('/user/templates/'),
+      storeApi.getAll(),
+      storeApi.roleGetAll(),
     ])
-    users.value     = uRes.data?.data || []
-    templates.value = tRes.data?.data || []
+    users.value      = uRes.data?.data  || []
+    templates.value  = tRes.data?.data  || []
+    stores.value     = sRes.data?.data  || []
+    storeRoles.value = srRes.data?.data || []
   } catch {
     toast.show('載入失敗', 'danger')
   } finally {
@@ -112,6 +130,7 @@ function openUserModal(u?: User) {
     username:    u?.username    || '',
     password:    '',
     template_id: u?.template_id || '',
+    store_ids:   u?.store_ids ? [...u.store_ids] : [],
   }
   showUserModal.value = true
 }
@@ -124,7 +143,10 @@ async function saveUser() {
   saving.value = true
   try {
     if (f._id) {
-      const body: Record<string, unknown> = { template_id: f.template_id || null }
+      const body: Record<string, unknown> = {
+        template_id: f.template_id || null,
+        store_ids:   f.store_ids,
+      }
       if (f.password) body.password = f.password
       await http.put(`/user/${f._id}`, body)
     } else {
@@ -132,6 +154,7 @@ async function saveUser() {
         username:    f.username.trim(),
         password:    f.password,
         template_id: f.template_id,
+        store_ids:   f.store_ids,
       })
     }
     toast.show('儲存成功')
@@ -155,6 +178,107 @@ async function deleteUser(id: string, uname: string) {
   }
 }
 
+// ── Store CRUD ───────────────────────────────────────────
+function openCreateStore() {
+  const next = stores.value.length + 1
+  const suggested = `S${String(next).padStart(3, '0')}`
+  storeForm.value = { _id: '', name: '', code: suggested, status: 'active', store_role_id: '' }
+  isEditingStore.value = false
+  showStoreModal.value = true
+}
+
+function openEditStore(s: Store) {
+  storeForm.value = {
+    _id:           s._id,
+    name:          s.name,
+    code:          s.code || '',
+    status:        s.status || 'active',
+    store_role_id: s.store_role_id || '',
+  }
+  isEditingStore.value = true
+  showStoreModal.value = true
+}
+
+async function saveStore() {
+  if (!storeForm.value.name.trim()) return
+  saving.value = true
+  try {
+    if (isEditingStore.value) {
+      await storeApi.update(storeForm.value._id, {
+        name:          storeForm.value.name,
+        code:          storeForm.value.code,
+        status:        storeForm.value.status,
+        store_role_id: storeForm.value.store_role_id || null,
+      })
+      toast.show('店家已更新')
+    } else {
+      await storeApi.create({
+        name:          storeForm.value.name,
+        code:          storeForm.value.code,
+        store_role_id: storeForm.value.store_role_id || null,
+      })
+      toast.show('店家已新增')
+    }
+    showStoreModal.value = false
+    await load()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteStore(s: Store) {
+  if (!confirm(`確定刪除店家「${s.name}」？`)) return
+  try {
+    await storeApi.delete(s._id)
+    toast.show('已刪除')
+    await load()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message || '刪除失敗', 'danger')
+  }
+}
+
+// ── StoreRole CRUD ───────────────────────────────────────
+function openStoreRoleModal(r?: StoreRole) {
+  storeRoleForm.value = r
+    ? { _id: r._id, name: r.name, description: r.description || '', is_system: r.is_system }
+    : { _id: '', name: '', description: '', is_system: false }
+  showStoreRoleModal.value = true
+}
+
+async function saveStoreRole() {
+  const f = storeRoleForm.value
+  if (!f.name.trim()) { toast.show('角色名稱不得為空', 'danger'); return }
+  saving.value = true
+  try {
+    if (f._id) {
+      await storeApi.roleUpdate(f._id, { name: f.name, description: f.description })
+    } else {
+      await storeApi.roleCreate({ name: f.name.trim(), description: f.description })
+    }
+    toast.show('儲存成功')
+    showStoreRoleModal.value = false
+    await load()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteStoreRole(r: StoreRole) {
+  if (r.is_system) { toast.show('系統預設角色不可刪除', 'danger'); return }
+  if (!confirm(`確定刪除店家角色「${r.name}」？`)) return
+  try {
+    await storeApi.roleDelete(r._id)
+    toast.show('已刪除')
+    await load()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message || '刪除失敗', 'danger')
+  }
+}
+
 // ── Template CRUD ────────────────────────────────────────
 function openTplModal(t?: UserTemplate) {
   if (t) {
@@ -167,8 +291,6 @@ function openTplModal(t?: UserTemplate) {
       pages_enabled: { ...(t.pages_enabled || {}) },
     }
   } else {
-    // 新增模板：系統頁面（users/logs）預設依角色決定
-    // admin → 開啟；其餘 → 關閉（由角色選擇後可調整）
     const defaultRole = 'operator'
     const pages: Record<string, boolean> = {}
     NAV_PAGES.forEach(p => {
@@ -191,11 +313,10 @@ async function saveTpl() {
   if (!f.name.trim()) { toast.show('模板名稱不得為空', 'danger'); return }
   saving.value = true
   try {
-    // Collect pages：admin 角色強制開啟系統頁面；其餘角色可自由配置系統頁面
     const pages: Record<string, boolean> = {}
     NAV_PAGES.forEach(p => {
       if (p.system && f.role === 'admin') {
-        pages[p.key] = true   // admin 模板：系統頁面強制開啟
+        pages[p.key] = true
       } else {
         pages[p.key] = f.pages_enabled[p.key] !== false
       }
@@ -244,23 +365,27 @@ onMounted(load)
   <!-- ── Tabs ─────────────────────────────────────────── -->
   <ul class="nav nav-tabs mb-3">
     <li class="nav-item">
-      <a
-        class="nav-link"
-        :class="{ active: activeTab === 'users' }"
-        href="#"
-        @click.prevent="activeTab = 'users'"
-      >
+      <a class="nav-link" :class="{ active: activeTab === 'users' }"
+         href="#" @click.prevent="activeTab = 'users'">
         <i class="bi bi-people me-1"></i>使用者
       </a>
     </li>
     <li class="nav-item">
-      <a
-        class="nav-link"
-        :class="{ active: activeTab === 'templates' }"
-        href="#"
-        @click.prevent="activeTab = 'templates'"
-      >
+      <a class="nav-link" :class="{ active: activeTab === 'templates' }"
+         href="#" @click.prevent="activeTab = 'templates'">
         <i class="bi bi-person-badge me-1"></i>使用者模板
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" :class="{ active: activeTab === 'stores' }"
+         href="#" @click.prevent="activeTab = 'stores'">
+        <i class="bi bi-shop me-1"></i>店家
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" :class="{ active: activeTab === 'store-roles' }"
+         href="#" @click.prevent="activeTab = 'store-roles'">
+        <i class="bi bi-tags me-1"></i>店家角色模板
       </a>
     </li>
   </ul>
@@ -276,16 +401,16 @@ onMounted(load)
     <div class="table-responsive">
       <table class="table mb-0">
         <thead>
-          <tr><th>帳號</th><th>角色</th><th>使用者模板</th><th>建立時間</th><th>操作</th></tr>
+          <tr><th>帳號</th><th>角色</th><th>使用者模板</th><th>所屬店家</th><th>建立時間</th><th>操作</th></tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="5" class="text-center py-3">
+            <td colspan="6" class="text-center py-3">
               <div class="spinner-border spinner-border-sm"></div>
             </td>
           </tr>
           <tr v-else-if="!users.length">
-            <td colspan="5" class="text-center text-muted py-3">無使用者</td>
+            <td colspan="6" class="text-center text-muted py-3">無使用者</td>
           </tr>
           <tr v-for="u in users" :key="u._id">
             <td>
@@ -304,6 +429,15 @@ onMounted(load)
               </span>
               <span v-else class="text-muted small">—</span>
             </td>
+            <td>
+              <template v-if="u.store_ids && u.store_ids.length">
+                <span v-for="sid in u.store_ids" :key="sid"
+                      class="badge bg-secondary me-1">
+                  <i class="bi bi-shop me-1"></i>{{ storeMap[sid]?.name ?? sid }}
+                </span>
+              </template>
+              <span v-else class="text-muted small">—</span>
+            </td>
             <td class="text-muted small">{{ fmtDate(u.created_at) }}</td>
             <td>
               <button class="btn btn-sm btn-outline-primary me-1"
@@ -311,19 +445,12 @@ onMounted(load)
                       @click="openUserModal(u)">
                 <i class="bi bi-pencil"></i>
               </button>
-              <button
-                v-if="u.locked"
-                class="btn btn-sm btn-outline-secondary"
-                disabled
-                :title="`系統帳號「${u.username}」不可刪除`"
-              >
+              <button v-if="u.locked" class="btn btn-sm btn-outline-secondary" disabled
+                      :title="`系統帳號「${u.username}」不可刪除`">
                 <i class="bi bi-lock-fill"></i>
               </button>
-              <button
-                v-else
-                class="btn btn-sm btn-outline-danger"
-                @click="deleteUser(u._id, u.username)"
-              >
+              <button v-else class="btn btn-sm btn-outline-danger"
+                      @click="deleteUser(u._id, u.username)">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
@@ -334,7 +461,7 @@ onMounted(load)
   </div>
 
   <!-- ── Templates Tab ─────────────────────────────────── -->
-  <div v-else class="table-card">
+  <div v-else-if="activeTab === 'templates'" class="table-card">
     <div class="table-header">
       <h6><i class="bi bi-person-badge me-1"></i>使用者模板</h6>
       <button class="btn btn-sm btn-primary" @click="openTplModal()">
@@ -373,10 +500,108 @@ onMounted(load)
               <button class="btn btn-sm btn-outline-primary me-1" @click="openTplModal(t)">
                 <i class="bi bi-pencil"></i>
               </button>
+              <button v-if="!t.is_system" class="btn btn-sm btn-outline-danger"
+                      @click="deleteTpl(t._id, t.name)">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Stores Tab ─────────────────────────────────────── -->
+  <div v-else-if="activeTab === 'stores'" class="table-card">
+    <div class="table-header">
+      <h6><i class="bi bi-shop me-1"></i>店家列表</h6>
+      <button class="btn btn-sm btn-primary" @click="openCreateStore">
+        <i class="bi bi-plus-lg"></i> 新增店家
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table mb-0">
+        <thead>
+          <tr><th>店家名稱</th><th>代碼</th><th>角色</th><th>狀態</th><th>建立時間</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="6" class="text-center py-3">
+              <div class="spinner-border spinner-border-sm"></div>
+            </td>
+          </tr>
+          <tr v-else-if="!stores.length">
+            <td colspan="6" class="text-center text-muted py-3">尚無店家</td>
+          </tr>
+          <tr v-for="s in stores" :key="s._id">
+            <td><i class="bi bi-shop me-1 text-muted"></i><strong>{{ s.name }}</strong></td>
+            <td><code>{{ s.code || '—' }}</code></td>
+            <td class="text-muted small">
+              {{ s.store_role_id ? (storeRoleMap[s.store_role_id] ?? '—') : '—' }}
+            </td>
+            <td>
+              <span class="badge" :class="s.status === 'active' ? 'bg-success' : 'bg-secondary'">
+                {{ s.status === 'active' ? '啟用' : '停用' }}
+              </span>
+            </td>
+            <td class="text-muted small">{{ fmtDate(s.created_at) }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary me-1" @click="openEditStore(s)">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" @click="deleteStore(s)">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── StoreRoles Tab ─────────────────────────────────── -->
+  <div v-else-if="activeTab === 'store-roles'" class="table-card">
+    <div class="table-header">
+      <h6><i class="bi bi-tags me-1"></i>店家角色模板</h6>
+      <button class="btn btn-sm btn-primary" @click="openStoreRoleModal()">
+        <i class="bi bi-plus-lg"></i> 新增角色
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table mb-0">
+        <thead>
+          <tr><th>名稱</th><th>說明</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="3" class="text-center py-3">
+              <div class="spinner-border spinner-border-sm"></div>
+            </td>
+          </tr>
+          <tr v-else-if="!storeRoles.length">
+            <td colspan="3" class="text-center text-muted py-3">尚無角色模板</td>
+          </tr>
+          <tr v-for="r in storeRoles" :key="r._id">
+            <td>
+              <strong>{{ r.name }}</strong>
+              <span v-if="r.is_system" class="badge bg-secondary ms-1" style="font-size:.65rem">系統</span>
+            </td>
+            <td class="text-muted small">
+              {{ r.description || '—' }}
+              <span v-if="r.is_system" class="text-muted ms-1">（系統預設，不可刪除）</span>
+            </td>
+            <td>
               <button
-                v-if="!t.is_system"
+                class="btn btn-sm btn-outline-primary me-1"
+                :disabled="r.is_system"
+                @click="openStoreRoleModal(r)"
+              >
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button
                 class="btn btn-sm btn-outline-danger"
-                @click="deleteTpl(t._id, t.name)"
+                :disabled="r.is_system"
+                @click="deleteStoreRole(r)"
               >
                 <i class="bi bi-trash"></i>
               </button>
@@ -389,12 +614,8 @@ onMounted(load)
 
   <!-- ══════════ User Modal ══════════ -->
   <Teleport to="body">
-    <div
-      v-if="showUserModal"
-      class="modal d-block"
-      style="background: rgba(0,0,0,.45)"
-      @click.self="showUserModal = false"
-    >
+    <div v-if="showUserModal" class="modal d-block" style="background: rgba(0,0,0,.45)"
+         @click.self="showUserModal = false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -403,16 +624,9 @@ onMounted(load)
           </div>
           <div class="modal-body">
             <div class="mb-3">
-              <label class="form-label">
-                帳號
-                <span v-if="!userForm._id" class="text-danger">*</span>
-              </label>
-              <input
-                v-model="userForm.username"
-                type="text"
-                class="form-control"
-                :disabled="!!userForm._id"
-              />
+              <label class="form-label">帳號 <span v-if="!userForm._id" class="text-danger">*</span></label>
+              <input v-model="userForm.username" type="text" class="form-control"
+                     :disabled="!!userForm._id" />
             </div>
             <div class="mb-3">
               <label class="form-label">
@@ -436,13 +650,36 @@ onMounted(load)
               </select>
               <div class="form-text d-flex align-items-center gap-1 mt-1">
                 對應角色：
-                <span
-                  class="badge"
-                  :class="selectedTemplateMeta ? `bg-${ROLE_COLOR[selectedTemplateMeta.role]}` : 'bg-secondary'"
-                >
+                <span class="badge"
+                      :class="selectedTemplateMeta ? `bg-${ROLE_COLOR[selectedTemplateMeta.role]}` : 'bg-secondary'">
                   {{ selectedTemplateMeta ? ROLE_LABEL[selectedTemplateMeta.role] : '—' }}
                 </span>
               </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">所屬店家
+                <span class="text-muted small ms-1">（可多選，限定該使用者只看到已勾選的店家資料）</span>
+              </label>
+              <div class="border rounded p-2" style="max-height:180px; overflow-y:auto">
+                <div v-if="!stores.length" class="text-muted small py-1 px-1">尚無店家</div>
+                <div v-for="s in stores" :key="s._id" class="form-check">
+                  <input :id="`usr-store-${s._id}`" class="form-check-input" type="checkbox"
+                         :value="s._id"
+                         :checked="userForm.store_ids.includes(s._id)"
+                         @change="(e) => {
+                           const checked = (e.target as HTMLInputElement).checked
+                           if (checked) {
+                             userForm.store_ids = [...userForm.store_ids, s._id]
+                           } else {
+                             userForm.store_ids = userForm.store_ids.filter(id => id !== s._id)
+                           }
+                         }" />
+                  <label class="form-check-label small" :for="`usr-store-${s._id}`">
+                    {{ s.name }}（{{ s.code }}）
+                  </label>
+                </div>
+              </div>
+              <div class="form-text mt-1">不勾選表示不綁定特定店家（可看到所有資料）</div>
             </div>
           </div>
           <div class="modal-footer">
@@ -457,14 +694,90 @@ onMounted(load)
     </div>
   </Teleport>
 
+  <!-- ══════════ Store Modal ══════════ -->
+  <Teleport to="body">
+    <div v-if="showStoreModal" class="modal d-block" style="background: rgba(0,0,0,.45)"
+         @click.self="showStoreModal = false">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ isEditingStore ? '編輯店家' : '新增店家' }}</h5>
+            <button class="btn-close" @click="showStoreModal = false"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">店家名稱 <span class="text-danger">*</span></label>
+              <input v-model="storeForm.name" class="form-control" placeholder="例：台北信義店" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">店家代碼</label>
+              <input v-model="storeForm.code" class="form-control" placeholder="例：S001" />
+              <div v-if="!isEditingStore" class="form-text">自動產生，可手動修改</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">店家角色</label>
+              <select v-model="storeForm.store_role_id" class="form-select">
+                <option value="">— 不指派 —</option>
+                <option v-for="r in storeRoles" :key="r._id" :value="r._id">{{ r.name }}</option>
+              </select>
+            </div>
+            <div v-if="isEditingStore" class="mb-3">
+              <label class="form-label">狀態</label>
+              <select v-model="storeForm.status" class="form-select">
+                <option value="active">啟用</option>
+                <option value="inactive">停用</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showStoreModal = false">取消</button>
+            <button class="btn btn-primary" :disabled="saving || !storeForm.name.trim()" @click="saveStore">
+              <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
+              {{ isEditingStore ? '儲存' : '新增' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- ══════════ StoreRole Modal ══════════ -->
+  <Teleport to="body">
+    <div v-if="showStoreRoleModal" class="modal d-block" style="background: rgba(0,0,0,.45)"
+         @click.self="showStoreRoleModal = false">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ storeRoleForm._id ? '編輯店家角色' : '新增店家角色' }}</h5>
+            <button class="btn-close" @click="showStoreRoleModal = false"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">角色名稱 <span class="text-danger">*</span></label>
+              <input v-model="storeRoleForm.name" class="form-control" placeholder="例：加盟店"
+                     :disabled="storeRoleForm.is_system" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">說明</label>
+              <input v-model="storeRoleForm.description" class="form-control" placeholder="選填" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showStoreRoleModal = false">取消</button>
+            <button class="btn btn-primary" :disabled="saving || !storeRoleForm.name.trim()" @click="saveStoreRole">
+              <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
+              儲存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
   <!-- ══════════ Template Modal ══════════ -->
   <Teleport to="body">
-    <div
-      v-if="showTplModal"
-      class="modal d-block"
-      style="background: rgba(0,0,0,.45)"
-      @click.self="showTplModal = false"
-    >
+    <div v-if="showTplModal" class="modal d-block" style="background: rgba(0,0,0,.45)"
+         @click.self="showTplModal = false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
@@ -472,21 +785,14 @@ onMounted(load)
             <button type="button" class="btn-close" @click="showTplModal = false"></button>
           </div>
           <div class="modal-body">
-            <!-- System template notice -->
             <div v-if="tplForm.is_system" class="alert alert-warning py-2 small mb-3">
               <i class="bi bi-lock-fill me-1"></i>
               系統預設模板：名稱與角色不可修改，但可調整頁面顯示設定。
             </div>
-
             <div class="mb-3">
               <label class="form-label">模板名稱 <span class="text-danger">*</span></label>
-              <input
-                v-model="tplForm.name"
-                type="text"
-                class="form-control"
-                :disabled="tplForm.is_system"
-                placeholder="例：收銀員、倉管人員"
-              />
+              <input v-model="tplForm.name" type="text" class="form-control"
+                     :disabled="tplForm.is_system" placeholder="例：收銀員、倉管人員" />
             </div>
             <div class="mb-3">
               <label class="form-label">對應角色 <span class="text-danger">*</span></label>
@@ -501,50 +807,35 @@ onMounted(load)
             </div>
             <div class="mb-3">
               <label class="form-label">說明</label>
-              <input
-                v-model="tplForm.description"
-                type="text"
-                class="form-control"
-                placeholder="選填，簡短描述此模板用途"
-              />
+              <input v-model="tplForm.description" type="text" class="form-control"
+                     placeholder="選填，簡短描述此模板用途" />
             </div>
-
             <hr />
             <div class="mb-2 fw-semibold">頁面顯示設定</div>
             <p class="text-muted small mb-3">
               勾選此模板的使用者可在後台側欄看到哪些功能頁面。未勾選的頁面將會隱藏。
             </p>
-
             <div class="row g-2">
               <template v-for="[group, pages] in pageGroups" :key="group">
                 <div class="col-12">
-                  <div
-                    class="text-muted small fw-semibold mb-1"
-                    style="font-size:.72rem; letter-spacing:.05em; text-transform:uppercase"
-                  >
+                  <div class="text-muted small fw-semibold mb-1"
+                       style="font-size:.72rem; letter-spacing:.05em; text-transform:uppercase">
                     {{ group }}
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-1">
-                    <div
-                      v-for="p in pages"
-                      :key="p.key"
-                      class="form-check form-check-inline"
-                      :title="p.system && tplForm.role === 'admin' ? '系統頁面，Admin 模板固定開啟' : ''"
-                    >
-                      <input
-                        :id="`tpl-chk-${p.key}`"
-                        class="form-check-input"
-                        type="checkbox"
-                        :checked="(p.system && tplForm.role === 'admin') ? true : tplForm.pages_enabled[p.key] !== false"
-                        :disabled="p.system && tplForm.role === 'admin'"
-                        @change="(e) => {
-                          if (!(p.system && tplForm.role === 'admin')) {
-                            tplForm.pages_enabled[p.key] = (e.target as HTMLInputElement).checked
-                          }
-                        }"
-                      />
+                    <div v-for="p in pages" :key="p.key" class="form-check form-check-inline"
+                         :title="p.system && tplForm.role === 'admin' ? '系統頁面，Admin 模板固定開啟' : ''">
+                      <input :id="`tpl-chk-${p.key}`" class="form-check-input" type="checkbox"
+                             :checked="(p.system && tplForm.role === 'admin') ? true : tplForm.pages_enabled[p.key] !== false"
+                             :disabled="p.system && tplForm.role === 'admin'"
+                             @change="(e) => {
+                               if (!(p.system && tplForm.role === 'admin')) {
+                                 tplForm.pages_enabled[p.key] = (e.target as HTMLInputElement).checked
+                               }
+                             }" />
                       <label class="form-check-label small" :for="`tpl-chk-${p.key}`">
-                        <i v-if="p.system && tplForm.role === 'admin'" class="bi bi-lock-fill me-1" style="font-size:.7rem"></i>
+                        <i v-if="p.system && tplForm.role === 'admin'" class="bi bi-lock-fill me-1"
+                           style="font-size:.7rem"></i>
                         {{ p.label }}
                       </label>
                     </div>

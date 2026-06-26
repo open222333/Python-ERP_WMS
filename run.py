@@ -19,14 +19,22 @@ if not _flask_conf.get('SECRET_KEY'):
         json.dump(_flask_conf, _f, indent=2)
     print('[init] 已自動產生 SECRET_KEY 並寫入 conf/flask.json')
 
+import os
+
 from app import create_app
-from conf.config import TestingConfig
 from src.models.user import User
 from src.models.user_template import UserTemplate
 from src import FLASK_PORT
 
+env = os.getenv('FLASK_ENV', 'production')
+if env == 'testing':
+    from conf.config import TestingConfig; cfg = TestingConfig
+elif env == 'development':
+    from conf.config import DevelopmentConfig; cfg = DevelopmentConfig
+else:
+    from conf.config import ProductionConfig; cfg = ProductionConfig
 
-app = create_app(TestingConfig)
+app = create_app(cfg)
 
 # ── 確保預設 admin 帳號存在 ──
 admin = User.find_by_username('admin')
@@ -53,4 +61,4 @@ if admin:
         print('[init] 已將「管理者」使用者模板指派給 admin 帳號')
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=FLASK_PORT, debug=True)
+    app.run(host='0.0.0.0', port=FLASK_PORT, debug=(env != 'production'))

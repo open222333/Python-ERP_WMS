@@ -6,8 +6,7 @@
 - **產品管理**：分類、SKU 自動生成、EAN-13 條碼、成本/售價、庫存警示
 - **倉庫管理**：多倉庫、貨架位置、倉庫代碼自動生成（WH-XXX）
 - **庫存管理**：即時查詢、盤點調整、低庫存 / 超量警示
-- **入庫單**：建立 → 確認 → 完成（自動入帳庫存）+ 條碼掃描新增品項
-- **出庫單**：建立 → 確認（自動驗證庫存）→ 完成（自動扣減）+ 條碼掃描
+- **出入庫管理**（單一頁面，tab 切換入庫／出庫）：入庫單建立 → 確認 → 完成（自動入帳庫存）；出庫單建立 → 確認（自動驗證庫存）→ 完成（自動扣減）；雙方均支援條碼掃描快速新增品項
 - **庫存移動紀錄**：完整異動歷史
 - **POS 收銀**：觸控友善 UI（PWA 橫向鎖定）、現金/刷卡/混合付款、計算機數字鍵盤（1000/500/100/50 面額快鍵、+/− 模式、符合金額）、找零、印收據、退款管理、預設菜單設定；今日銷售記錄可點擊展開完整品項明細（含客製化選項、數量 × 單價、折扣）；點擊品項直接以預設客製化選項加入購物車（無需彈窗）；點擊購物車品項名稱可編輯客製化選項；點擊數量開啟 Numpad 計算機鍵盤輸入任意數量（預設空白，未輸入確認則維持原數量）
 - **銷售報表**：日 / 週 / 月 / 年多期間銷售統計、每日/每月明細、付款方式分析
@@ -28,13 +27,72 @@
 
 ---
 
+## 快速開始
+
+```bash
+# 1. 複製設定檔
+cp docker-compose.yml.default docker-compose.yml
+cp docker-compose.db.yml.default docker-compose.db.yml
+cp docker-compose.api.yml.default docker-compose.api.yml
+cp docker-compose.nginx.yml.default docker-compose.nginx.yml
+cp .env.default .env
+cp conf/config.ini.default conf/config.ini
+cp conf/flask.json.default conf/flask.json
+```
+
+```ini
+# 2. 編輯 conf/config.ini（MongoDB 主機改為容器名稱）
+[MONGO]
+MONGO_URI=mongodb://mongo:27017
+MONGO_DB=wms
+```
+
+```bash
+# 3. 啟動（首次需 build，前端在 Docker 內自動編譯，不需本機安裝 Node.js）
+docker compose up -d --build
+```
+
+後台：<http://127.0.0.1/admin/>　預設帳號：`admin` / `admin`（**請立即登入修改密碼**）
+
+### 建立測試資料（選用）
+
+```bash
+pip install requests
+python scripts/seed.py   # 建立倉庫、產品、初始庫存、POS 菜單
+```
+
+### 常用指令
+
+```bash
+docker compose ps                                              # 查看狀態
+docker compose logs -f api                                     # Flask 即時日誌
+docker compose restart api                                     # 重啟後端（修改 Python 後）
+docker compose build nginx && docker compose up -d nginx       # 更新前端
+docker compose down                                            # 停止所有服務
+```
+
+### 開發模式（快速前端迭代）
+
+```bash
+# 啟動（nginx 改用 volume mount，不需 rebuild image）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# 修改前端後更新（~30s）
+nvm use 18 && cd frontend && npm run build
+cd .. && docker compose -f docker-compose.yml -f docker-compose.dev.yml restart nginx
+```
+
+---
+
 ## 目錄
 
-- [專案結構](#專案結構)
-- [快速開始（本機）](#快速開始本機)
-- [Docker 部署](#docker-部署)
+- [快速開始](#快速開始)
+- [Docker 部署（完整設定）](#docker-部署)
+- [測試資料（Seed）](#測試資料seed)
+- [自動化測試（k6）](#自動化測試k6)
 - [主機 nginx 部署](#主機-nginx-部署)（Docker app + 主機 nginx）
 - [純主機部署（不使用 Docker）](#純主機部署不使用-docker)
+- [快速開始（本機直接跑 Flask）](#快速開始本機)
 - [API 端點總覽](#api-端點總覽)
   - [菜單管理 /menu](#菜單管理-menu)
   - [顧客點餐 /customer-order](#顧客點餐-customer-order)
@@ -43,85 +101,7 @@
 - [設定檔說明](#設定檔說明)
 - [MongoDB Collections](#mongodb-collections)
 - [注意事項](#注意事項)
-
----
-
-## 專案結構
-
-```
-Python-ERP_WMS/
-├── run.py                              # 啟動入口（自動產生 SECRET_KEY、建立預設 admin）
-├── gunicorn.py                         # Gunicorn 設定檔（讀取 conf/config.ini [GUNICORN]）
-├── requirements.txt
-├── docker-compose.yml.default
-├── .env.default
-│
-├── app/                                # Flask 應用程式（Blueprint 模組）
-│   ├── __init__.py                     # 初始化、JWT / Swagger、藍圖註冊、速率限制
-│   ├── extensions.py                   # Flask 擴充套件單例（Limiter）避免循環引用
-│   ├── auth/view.py                    # POST /auth/login（10/min 速率限制）  GET /auth/me
-│   ├── user/view.py                    # 使用者 CRUD（admin；locked 系統帳號受保護）
-│   ├── admin/view.py                   # GET /admin/ → 後台 UI
-│   ├── log/view.py                     # 操作紀錄（查詢/匯出/匯入/清除）
-│   ├── settings/view.py                # 系統設定 CRUD
-│   ├── product/view.py                 # 產品分類 + 產品 CRUD + 條碼查詢
-│   ├── warehouse/view.py               # 倉庫 + 倉庫位置 CRUD
-│   ├── inventory/view.py               # 庫存查詢、盤點調整、移動紀錄
-│   ├── inbound/view.py                 # 入庫單管理
-│   ├── outbound/view.py                # 出庫單管理
-│   ├── analytics/view.py               # 分析報表 + 庫存警示
-│   ├── pos/view.py                     # POS 收銀（銷售、退款、CSV 匯出入、銷售報表）
-│   ├── menu/view.py                    # 菜單管理（菜單/分類/品項/選項組 CRUD + JSON 匯出入）
-│   ├── customer_order/
-│   │   ├── page.py                     # GET /order/ → 顧客點餐前端頁面
-│   │   └── view.py                     # 公開：取得菜單 / 建立訂單；登入：查詢 / 狀態更新
-│   ├── kitchen/view.py                 # GET /kitchen/ → 廚房看板頁面（免登入）
-│   ├── quick_io/view.py                # GET /quick-io/ → 快速出入庫頁面
-│   ├── delivery/                       # 外送平台整合
-│   │   ├── view.py                     # Webhook + 訂單 + 菜單同步 + 設定端點
-│   │   └── adapters/
-│   │       ├── ubereats.py             # UberEats Marketplace API client（含選項群組解析）
-│   │       └── foodpanda.py            # foodpanda Vendor API client（含選項群組解析）
-│   └── templates/
-│       ├── admin/index.html            # 後台管理 SPA（Bootstrap 5）
-│       └── pos/index.html              # POS 收銀 PWA（橫向鎖定）
-│
-├── conf/
-│   ├── config.py                       # Flask Config 類別
-│   ├── config.ini.default              # 設定範本 ← 複製為 config.ini
-│   ├── flask.json.default              # SECRET_KEY 範本 ← 複製為 flask.json
-│   └── nginx/
-│       ├── nginx.conf                  # nginx 主設定（worker、gzip、log 格式）
-│       ├── certs/cloudflare/           # Cloudflare 憑證放置目錄（http 模式不需要）
-│       ├── conf.d/                     # Docker nginx envsubst template（依 NGINX_MODE 選用）
-│       │   ├── default.conf.http.template              # HTTP 模式
-│       │   ├── default.conf.cloudflare.template        # Cloudflare Origin CA SSL 模式
-│       │   └── default.conf.https-letsencrypt.template # Let's Encrypt SSL 模式
-│       └── host/                       # 主機 nginx 設定範本（後台 + QR 點餐雙域名）
-│           ├── http.conf               # 純 HTTP
-│           ├── cloudflare.conf         # Cloudflare Origin CA SSL
-│           └── https-letsencrypt.conf  # Let's Encrypt SSL
-│
-└── src/
-    ├── __init__.py                     # 全域設定參數（含外送平台設定讀取）
-    ├── mongo.py                        # MongoDB singleton
-    ├── permissions.py                  # @require_role 裝飾器
-    └── models/
-        ├── user.py                     # 使用者（bcrypt）
-        ├── log.py                      # 操作紀錄（含 bulk_insert / cleanup_old）
-        ├── settings.py                 # 系統設定（key-value 儲存）
-        ├── product.py                  # ProductCategory、Product
-        ├── warehouse.py                # Warehouse、WarehouseLocation
-        ├── inventory.py                # Inventory、StockMovement
-        ├── inbound.py                  # InboundOrder（含 embedded items）
-        ├── outbound.py                 # OutboundOrder（含 embedded items）
-        ├── pos.py                      # PosOrder（POS 銷售單 + bulk_import）
-        ├── menu.py                     # Menu（菜單/分類/品項/選項組，全 embedded）
-        ├── customer_order.py           # CustomerOrder（顧客點餐訂單）
-        ├── table_session.py            # TableSession（Redis 桌號共享 Session，結帳 / 取消時自動關閉）
-        ├── user_template.py            # UserTemplate（頁面權限模板）
-        └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
-```
+- [專案結構](#專案結構)
 
 ---
 
@@ -195,10 +175,12 @@ python run.py
 
 | 變數 | 說明 | 預設值 |
 |---|---|---|
+| `FLASK_ENV` | 執行環境（`production` / `development` / `testing`），控制載入哪個 Config 類別 | `production` |
 | `FLASK_PORT` | Flask 內部埠號（本機直接存取用） | `5000` |
 | `JWT_ACCESS_TOKEN_EXPIRES_HOURS` | Token 有效時數 | `8` |
 
 > macOS 的 AirPlay Receiver 預設佔用 port 5000，本機開發建議改為 `FLASK_PORT=5001`。
+> `FLASK_ENV=development` 會啟用 Flask debug 模式；正式環境請保持預設 `production`（debug 關閉）。
 
 ---
 
@@ -214,10 +196,15 @@ python run.py
 
 ```bash
 cp docker-compose.yml.default docker-compose.yml
+cp docker-compose.db.yml.default docker-compose.db.yml
+cp docker-compose.api.yml.default docker-compose.api.yml
+cp docker-compose.nginx.yml.default docker-compose.nginx.yml
 cp .env.default .env
 cp conf/config.ini.default conf/config.ini
 cp conf/flask.json.default conf/flask.json
 ```
+
+> 主檔 `docker-compose.yml` 透過 `include:` 引入另外三個檔案，執行 `docker compose up -d` 即可一次啟動全部服務。各服務設定獨立維護，不需修改主檔。
 
 ### 步驟二：調整 .env
 
@@ -252,15 +239,31 @@ MONGO_DB=wms
 docker compose up -d --build
 ```
 
-> 首次啟動需要 `--build` 以建置 Flask image。之後若只修改 Python / HTML 程式碼，**不需重新 build**，直接重啟即可：
+> `--build` 會同時建置兩個自訂 image：
+> - **`wms-api`**（`docker/Dockerfile`）：Flask API
+> - **`wms-nginx`**（`docker/Dockerfile.nginx`）：Vue 3 前端 multi-stage build → nginx
+>
+> 前端在 `Dockerfile.nginx` 內部由 Node.js 自動編譯，**不需在本機安裝 Node.js**，也不需手動執行 `npm run build`。
+
+> 之後若只修改 Python 程式碼，**不需重新 build**：
 >
 > ```bash
-> docker compose restart app
+> docker compose restart api
 > ```
 >
-> 只有異動 `requirements.txt` 或 `Dockerfile` 時，才需要再加 `--build`。
+> 若修改前端原始碼（`frontend/`），需重新 build nginx image：
+>
+> ```bash
+> docker compose build nginx && docker compose up -d nginx
+> ```
+>
+> 只有異動 `requirements.txt` 或 `docker/Dockerfile` 時，才需重新 build api：
+>
+> ```bash
+> docker compose build api && docker compose up -d api
+> ```
 
-> **Gunicorn 參數調整**（Worker 數、Timeout 等）：編輯 `conf/config.ini` 的 `[GUNICORN]` 區塊後，`docker compose restart app` 即生效，不需 rebuild。
+> **Gunicorn 參數調整**（Worker 數、Timeout 等）：編輯 `conf/config.ini` 的 `[GUNICORN]` 區塊後，`docker compose restart api` 即生效，不需 rebuild。
 
 ### 服務一覽
 
@@ -357,18 +360,134 @@ docker compose up -d
 
 > Cloudflare SSL/TLS 模式記得設為 **Full (Strict)**，確保 Cloudflare ↔ 伺服器端對端加密。
 
+### 更新前端
+
+前端原始碼（`frontend/`）修改後，需重新 build nginx image：
+
+```bash
+docker compose build nginx
+docker compose up -d nginx
+```
+
+> 無需重啟 api 或 db。build 過程由 `docker/Dockerfile.nginx` 自動執行 `npm ci && npm run build`，**不需在本機安裝 Node.js**。
+>
+> 若 build 使用了 Docker layer cache 而沒有重新編譯前端，可加 `--no-cache`：
+> ```bash
+> docker compose build --no-cache nginx && docker compose up -d nginx
+> ```
+
 ### 常用指令
 
 ```bash
-docker compose ps                    # 查看運行狀態
-docker compose logs -f app           # 即時查看 Flask 日誌
-docker compose logs -f nginx         # 即時查看 nginx 日誌
-docker compose exec app bash         # 進入 Flask 容器
-docker compose restart nginx         # 重載 nginx 設定
-docker compose restart app           # 重啟應用
-docker compose down                  # 停止所有服務
-docker compose down -v               # 停止並清除資料（不可逆）
-docker compose build --no-cache app  # 重新建置 Flask 映像
+docker compose ps                       # 查看運行狀態
+docker compose logs -f api              # 即時查看 Flask 日誌
+docker compose logs -f nginx            # 即時查看 nginx 日誌
+docker compose exec api bash            # 進入 Flask 容器
+docker compose restart nginx            # 重載 nginx 設定
+docker compose restart api              # 重啟應用
+docker compose down                     # 停止所有服務
+docker compose down -v                  # 停止並清除資料（不可逆）
+docker compose build --no-cache api     # 重新建置 Flask 映像
+docker compose build --no-cache nginx   # 重新建置 nginx + 前端映像
+```
+
+### 開發模式（快速前端迭代）
+
+前端每次修改不需跑完整 Docker build（約 2-3 分鐘），可用 **Dev 覆寫模式**：
+
+```bash
+# 1. 啟動（使用 docker-compose.dev.yml 覆寫）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# 2. 之後每次改完前端原始碼
+nvm use 18
+cd frontend && npm run build   # ~30s
+cd .. && docker compose -f docker-compose.yml -f docker-compose.dev.yml restart nginx  # 瞬間
+```
+
+> `docker-compose.dev.yml` 將 nginx 改為掛載本機 `frontend-dist/`，restart nginx 即立即生效，不需重 build image。
+
+或使用 **Vite 熱更新**（最快，適合純前端開發）：
+
+```bash
+# 終端 1：Flask
+python run.py
+
+# 終端 2：Vite dev server（port 3000，自動 proxy 到 Flask:5000）
+cd frontend && nvm use 18 && npm install && npm run dev
+```
+
+瀏覽器開 `http://localhost:3000/admin/`，存檔即時更新，無需重啟任何服務。
+
+> Vite dev server 預設 port 3000（`vite.config.ts` 設定），API 請求透過 proxy 自動轉發至 Flask:5000，無 CORS 問題。
+
+---
+
+## 測試資料（Seed）
+
+首次部署後資料庫為空，可執行 Seed 腳本自動建立範例資料：
+
+```bash
+# 安裝依賴（若尚未安裝）
+pip install requests
+
+# Docker 環境（預設 http://localhost）
+python scripts/seed.py
+
+# 本機直連 Flask
+python scripts/seed.py --base http://localhost:5000
+
+# admin 密碼非預設時
+python scripts/seed.py --admin-pass <密碼>
+```
+
+Seed 會建立：
+- 倉庫：台北倉、台中倉
+- 產品分類：飲料、食品、生活用品、電子配件
+- 產品：10 種（含 SKU / EAN-13 條碼自動生成）
+- 初始庫存：每個產品在每個倉庫各 200 件（透過入庫單完成）
+- POS 測試菜單：含 5 個品項
+
+---
+
+## 自動化測試（k6）
+
+使用 k6 進行 API 整合測試與負載測試，腳本位於 `tests/k6/`：
+
+### 安裝 k6
+
+```bash
+# macOS
+brew install k6
+
+# Docker
+docker run --rm -i grafana/k6 run - < tests/k6/smoke.js
+```
+
+### 執行測試
+
+```bash
+# Smoke Test（基本健康檢查，1 VU × 1 次）
+k6 run tests/k6/smoke.js
+
+# 入庫流程壓力測試（2 VU，30 秒）
+k6 run tests/k6/flows/inbound_flow.js
+
+# 出庫流程壓力測試
+k6 run tests/k6/flows/outbound_flow.js
+
+# 讀取端點負載測試（預設 10 VU，ramp-up / 穩定 / ramp-down）
+k6 run tests/k6/load.js
+
+# 自訂參數
+k6 run --env BASE_URL=http://your-server --env VUS=20 --env DURATION=60s tests/k6/flows/inbound_flow.js
+```
+
+### 搭配 Grafana + InfluxDB 視覺化
+
+```bash
+# 啟動 InfluxDB + Grafana（見 k6 官方文件）
+k6 run --out influxdb=http://localhost:8086/k6 tests/k6/load.js
 ```
 
 ---
@@ -413,19 +532,26 @@ rsync -av --delete frontend-dist/ user@server:/opt/wms/frontend-dist/
 
 ---
 
-### Step 1：調整 docker-compose.yml
+### Step 1：調整 compose 設定
 
-移除 `nginx` 服務，並讓 `app` 容器將 port 暴露至主機 localhost：
+不使用 Docker nginx 時，直接**不複製** `docker-compose.nginx.yml.default`，並在 `docker-compose.api.yml` 中將 `expose` 改為 `ports`，讓 `app` 容器將 port 暴露至主機 localhost：
 
 ```yaml
+# docker-compose.api.yml
 services:
-  # nginx:          ← 整段刪除或 comment out
-  #   image: ...
-
   app:
     # ... 其他設定不變 ...
     ports:
       - "127.0.0.1:5000:5000"   # 只綁 localhost，不直接對外暴露
+```
+
+同時編輯 `docker-compose.yml`，移除 `include:` 中的 `docker-compose.nginx.yml` 那行：
+
+```yaml
+include:
+  - docker-compose.db.yml
+  - docker-compose.api.yml
+  # docker-compose.nginx.yml  ← 不使用 Docker nginx 時移除此行
 ```
 
 ### Step 2：安裝 nginx（Ubuntu / Debian）
@@ -1090,6 +1216,8 @@ curl -X POST http://127.0.0.1/pos/sales/import \
 | `pos_default_menu_id` | POS 收銀台預設載入的菜單 ID | _(空)_ |
 | `log_retention_days` | 操作紀錄保留天數（0 = 不自動清除） | `0` |
 | `log_last_cleanup_at` | 上次清除操作紀錄的 UTC 時間（ISO 格式） | _(空)_ |
+| `movements_retention_days` | 庫存移動紀錄保留天數（0 = 不自動清除；開啟「庫存移動」頁時懶觸發） | `0` |
+| `movements_last_cleanup_at` | 上次清除庫存移動紀錄的 UTC 時間（ISO 格式） | _(空)_ |
 | `pos_payment_methods` | POS 付款方式清單（JSON） | 見 POS 端點說明 |
 | `table_tokens` | 各桌號 Token 資料（`{table_no: {token, code, label, enabled, expires_at}}`），由 QR 碼管理頁維護；`code` 為 SKU 式識別碼（`T-001`，自動生成可手動改） | _(空)_ |
 | `qr_token_ttl_hours` | QR Token 有效時數；`0` = 禁用（不自動刷新、Token 永不過期） | `0（禁用）` |
@@ -1571,3 +1699,85 @@ from src.permissions import require_role
 | `__guest__` 帳號 | 啟動時自動建立，`locked=True` 防止誤刪；為系統保留帳號，不提供正常登入能力 |
 | TableSession | 顧客點餐 Session 存於 Redis（非 MongoDB）；桌號共享，同桌多支裝置使用同一 Token；結帳 / 取消後自動刪除並設置 5 分鐘關閉旗標供 SSE 推播 |
 | QR 點餐域名隔離 | 點餐域名（`order.example.com`）的 nginx 設定在 API 層封鎖所有後台路由（403），掃碼顧客無從得知後台入口 |
+
+---
+
+## 專案結構
+
+```
+Python-ERP_WMS/
+├── run.py                              # 啟動入口（自動產生 SECRET_KEY、建立預設 admin）
+├── gunicorn.py                         # Gunicorn 設定檔（讀取 conf/config.ini [GUNICORN]）
+├── requirements.txt
+├── docker-compose.yml.default          # 主檔（include 引入下列三個服務檔）
+├── docker-compose.db.yml.default       # MongoDB + Redis
+├── docker-compose.api.yml.default      # Flask app
+├── docker-compose.nginx.yml.default    # nginx
+├── .env.default
+│
+├── app/                                # Flask 應用程式（Blueprint 模組）
+│   ├── __init__.py                     # 初始化、JWT / Swagger、藍圖註冊、速率限制
+│   ├── extensions.py                   # Flask 擴充套件單例（Limiter）避免循環引用
+│   ├── auth/view.py                    # POST /auth/login（10/min 速率限制）  GET /auth/me
+│   ├── user/view.py                    # 使用者 CRUD（admin；locked 系統帳號受保護）
+│   ├── admin/view.py                   # GET /admin/ → 後台 UI
+│   ├── log/view.py                     # 操作紀錄（查詢/匯出/匯入/清除）
+│   ├── settings/view.py                # 系統設定 CRUD
+│   ├── product/view.py                 # 產品分類 + 產品 CRUD + 條碼查詢
+│   ├── warehouse/view.py               # 倉庫 + 倉庫位置 CRUD
+│   ├── inventory/view.py               # 庫存查詢、盤點調整、移動紀錄
+│   ├── inbound/view.py                 # 入庫單管理
+│   ├── outbound/view.py                # 出庫單管理
+│   ├── analytics/view.py               # 分析報表 + 庫存警示
+│   ├── pos/view.py                     # POS 收銀（銷售、退款、CSV 匯出入、銷售報表）
+│   ├── menu/view.py                    # 菜單管理（菜單/分類/品項/選項組 CRUD + JSON 匯出入）
+│   ├── customer_order/
+│   │   ├── page.py                     # GET /order/ → 顧客點餐前端頁面
+│   │   └── view.py                     # 公開：取得菜單 / 建立訂單；登入：查詢 / 狀態更新
+│   ├── kitchen/view.py                 # GET /kitchen/ → 廚房看板頁面（免登入）
+│   ├── quick_io/view.py                # GET /quick-io/ → 快速出入庫頁面
+│   ├── delivery/                       # 外送平台整合
+│   │   ├── view.py                     # Webhook + 訂單 + 菜單同步 + 設定端點
+│   │   └── adapters/
+│   │       ├── ubereats.py             # UberEats Marketplace API client（含選項群組解析）
+│   │       └── foodpanda.py            # foodpanda Vendor API client（含選項群組解析）
+│   └── templates/
+│       ├── admin/index.html            # 後台管理 SPA（Bootstrap 5）
+│       └── pos/index.html              # POS 收銀 PWA（橫向鎖定）
+│
+├── conf/
+│   ├── config.py                       # Flask Config 類別
+│   ├── config.ini.default              # 設定範本 ← 複製為 config.ini
+│   ├── flask.json.default              # SECRET_KEY 範本 ← 複製為 flask.json
+│   └── nginx/
+│       ├── nginx.conf                  # nginx 主設定（worker、gzip、log 格式）
+│       ├── certs/cloudflare/           # Cloudflare 憑證放置目錄（http 模式不需要）
+│       ├── conf.d/                     # Docker nginx envsubst template（依 NGINX_MODE 選用）
+│       │   ├── default.conf.http.template              # HTTP 模式
+│       │   ├── default.conf.cloudflare.template        # Cloudflare Origin CA SSL 模式
+│       │   └── default.conf.https-letsencrypt.template # Let's Encrypt SSL 模式
+│       └── host/                       # 主機 nginx 設定範本（後台 + QR 點餐雙域名）
+│           ├── http.conf               # 純 HTTP
+│           ├── cloudflare.conf         # Cloudflare Origin CA SSL
+│           └── https-letsencrypt.conf  # Let's Encrypt SSL
+│
+└── src/
+    ├── __init__.py                     # 全域設定參數（含外送平台設定讀取）
+    ├── mongo.py                        # MongoDB singleton
+    ├── permissions.py                  # @require_role 裝飾器
+    └── models/
+        ├── user.py                     # 使用者（bcrypt）
+        ├── log.py                      # 操作紀錄（含 bulk_insert / cleanup_old）
+        ├── settings.py                 # 系統設定（key-value 儲存）
+        ├── product.py                  # ProductCategory、Product
+        ├── warehouse.py                # Warehouse、WarehouseLocation
+        ├── inventory.py                # Inventory、StockMovement
+        ├── inbound.py                  # InboundOrder（含 embedded items）
+        ├── outbound.py                 # OutboundOrder（含 embedded items）
+        ├── pos.py                      # PosOrder（POS 銷售單 + bulk_import）
+        ├── menu.py                     # Menu（菜單/分類/品項/選項組，全 embedded）
+        ├── customer_order.py           # CustomerOrder（顧客點餐訂單）
+        ├── table_session.py            # TableSession（Redis 桌號共享 Session，結帳 / 取消時自動關閉）
+        ├── user_template.py            # UserTemplate（頁面權限模板）
+        └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
+```

@@ -9,6 +9,14 @@ from src.permissions import require_role
 
 app_settings = Blueprint('app_settings', __name__)
 
+ALLOWED_SETTINGS_KEYS = {
+    'pos_default_menu_id', 'log_retention_days', 'log_last_cleanup_at',
+    'movements_retention_days', 'movements_last_cleanup_at',
+    'pos_payment_methods', 'table_tokens', 'qr_token_ttl_hours',
+    'qr_token_last_refresh', 'qr_order_base_url',
+    'admin_theme', 'admin_dark', 'admin_custom_theme',
+}
+
 
 @app_settings.route('/', methods=['GET'])
 @jwt_required()
@@ -57,6 +65,10 @@ def update_settings():
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'success': False, 'message': '無設定內容'}), 400
+
+    data = {k: v for k, v in data.items() if k in ALLOWED_SETTINGS_KEYS}
+    if not data:
+        return jsonify({'success': False, 'message': '無有效的設定鍵值'}), 400
 
     SystemSettings.set_many(data)
     Log.create(get_jwt_identity(), '更新系統設定',

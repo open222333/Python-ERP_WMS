@@ -56,6 +56,44 @@ def _completed_stats(collection: str, start: datetime) -> dict:
     return {'qty': 0, 'amount': 0.0}
 
 
+def _outbound_gross_profit(start: datetime) -> float:
+    """
+    計算毛利：sum of (sell_price - cost_price) * shipped_qty
+    sell_price  = outbound_orders.items.unit_price（出庫時填入的銷售單價）
+    cost_price  = products.cost_price（產品主檔的成本價）
+    僅計算該期間內 status='completed' 的出庫單。
+    """
+    pipeline = [
+        {'$match': {'completed_at': {'$gte': start}, 'status': 'completed'}},
+        {'$unwind': '$items'},
+        {'$lookup': {
+            'from': 'products',
+            'localField': 'items.product_id',
+            'foreignField': '_id',
+            'as': 'product',
+        }},
+        {'$unwind': {'path': '$product', 'preserveNullAndEmptyArrays': True}},
+        {'$group': {
+            '_id': None,
+            'gross_profit': {
+                '$sum': {
+                    '$multiply': [
+                        '$items.shipped_qty',
+                        {'$subtract': [
+                            '$items.unit_price',
+                            {'$ifNull': ['$product.cost_price', 0]},
+                        ]},
+                    ]
+                }
+            },
+        }},
+    ]
+    result = list(get_db()['outbound_orders'].aggregate(pipeline))
+    if result:
+        return round(result[0]['gross_profit'], 2)
+    return 0.0
+
+
 def _stock_alerts() -> list:
     """
     回傳庫存異常清單（低庫存 / 超量）。
@@ -108,6 +146,7 @@ def _stock_alerts() -> list:
             'alert':         {'$cond': ['$low', 'low', 'high']},
         }},
         {'$sort': {'alert': 1, 'product_sku': 1}},
+        {'$limit': 200},
     ]
     return list(db['inventory'].aggregate(pipeline))
 
@@ -179,7 +218,7 @@ def summary():
         ib_stats = _completed_stats('inbound_orders',  start)
         ob_stats = _completed_stats('outbound_orders', start)
 
-        gross_profit = round(ob_stats['amount'] - ib_stats['amount'], 2)
+        gross_profit = _outbound_gross_profit(start)
 
         result[period] = {
             'inbound': {

@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson import ObjectId
+from bson.errors import InvalidId
 from src.models.user import User, ROLES
 from src.models.user_template import UserTemplate
 from src.permissions import require_role
@@ -30,6 +31,8 @@ def create_user():
     username    = data.get('username', '').strip()
     password    = data.get('password', '')
     template_id = data.get('template_id', '') or None
+    raw_sids    = data.get('store_ids', [])
+    store_ids   = [s for s in (raw_sids if isinstance(raw_sids, list) else []) if s]
 
     if not username or not password:
         return jsonify({'success': False, 'message': 'username 或 password 不得為空'}), 400
@@ -46,7 +49,13 @@ def create_user():
     if User.find_by_username(username):
         return jsonify({'success': False, 'message': '使用者已存在'}), 409
 
-    user_id = User.create(username, password, role=role, template_id=template_id)
+    for sid in store_ids:
+        try:
+            ObjectId(sid)
+        except (InvalidId, Exception):
+            return jsonify({'success': False, 'message': f'store_id 格式無效: {sid}'}), 400
+
+    user_id = User.create(username, password, role=role, template_id=template_id, store_ids=store_ids)
     return jsonify({'success': True, 'id': user_id}), 201
 
 
@@ -59,7 +68,11 @@ def update_user(user_id):
         return jsonify({'success': False, 'message': '缺少請求參數'}), 400
 
     # 系統鎖定帳號不可修改
-    target = User._col().find_one({'_id': ObjectId(user_id)}, {'username': 1, 'locked': 1})
+    try:
+        oid = ObjectId(user_id)
+    except (InvalidId, Exception):
+        return jsonify({'success': False, 'message': '無效的使用者 ID 格式'}), 400
+    target = User._col().find_one({'_id': oid}, {'username': 1, 'locked': 1})
     if target and target.get('locked'):
         return jsonify({'success': False, 'message': f'系統帳號「{target["username"]}」不可修改'}), 403
 
@@ -73,6 +86,12 @@ def update_user(user_id):
     else:
         template_id = _UNSET
 
+    if 'store_ids' in data:
+        raw = data['store_ids']
+        store_ids = [s for s in (raw if isinstance(raw, list) else []) if s]
+    else:
+        store_ids = _UNSET
+
     # 若指定了新模板，同步角色
     if template_id is not _UNSET and template_id:
         tmpl = UserTemplate.find_by_id(str(template_id))
@@ -80,10 +99,10 @@ def update_user(user_id):
             return jsonify({'success': False, 'message': '使用者模板不存在'}), 404
         role = tmpl.get('role')
 
-    if not password and template_id is _UNSET:
-        return jsonify({'success': False, 'message': '請提供 password 或 template_id'}), 400
+    if not password and template_id is _UNSET and store_ids is _UNSET:
+        return jsonify({'success': False, 'message': '請提供至少一個更新欄位'}), 400
 
-    if not User.update(user_id, password=password, role=role, template_id=template_id):
+    if not User.update(user_id, password=password, role=role, template_id=template_id, store_ids=store_ids):
         return jsonify({'success': False, 'message': '使用者不存在'}), 404
 
     return jsonify({'success': True})
@@ -99,7 +118,11 @@ def delete_user(user_id):
         return jsonify({'success': False, 'message': '無法刪除自己的帳號'}), 400
 
     # 系統鎖定帳號不可刪除
-    target = User._col().find_one({'_id': ObjectId(user_id)}, {'username': 1, 'locked': 1})
+    try:
+        oid = ObjectId(user_id)
+    except (InvalidId, Exception):
+        return jsonify({'success': False, 'message': '無效的使用者 ID 格式'}), 400
+    target = User._col().find_one({'_id': oid}, {'username': 1, 'locked': 1})
     if target and target.get('locked'):
         return jsonify({'success': False, 'message': f'系統帳號「{target["username"]}」不可刪除'}), 403
 
@@ -162,6 +185,9 @@ def update_template(tid):
 
     if role is not None and role not in ROLES:
         return jsonify({'success': False, 'message': f'無效的角色，可用值：{", ".join(ROLES)}'}), 400
+
+    if name is None and description is None and role is None and pages_enabled is None:
+        return jsonify({'success': False, 'message': '請提供至少一個更新欄位'}), 400
 
     if not UserTemplate.update(tid, name=name, description=description,
                                role=role, pages_enabled=pages_enabled):

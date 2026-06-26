@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from urllib.parse import quote
 from flask import Blueprint, request, jsonify, Response
@@ -28,10 +29,17 @@ def create_category():
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'success': False, 'message': '分類名稱不得為空'}), 400
+    sort_order = data.get('sort_order')
+    if sort_order is not None:
+        try:
+            sort_order = int(sort_order)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': 'sort_order 必須為整數'}), 400
     cid = ProductCategory.create(
         name=name,
         parent_id=data.get('parent_id'),
-        description=data.get('description', '')
+        description=data.get('description', ''),
+        sort_order=sort_order,
     )
     Log.create(get_jwt_identity(), '新增產品分類', f'name={name}')
     return jsonify({'success': True, 'id': cid}), 201
@@ -66,10 +74,12 @@ def delete_category(cid):
 @jwt_required()
 def list_products():
     keyword = request.args.get('keyword', '')
+    keyword = re.escape(keyword)
     category_id = request.args.get('category_id', '')
     status_str = request.args.get('status', '')
     status = int(status_str) if status_str.isdigit() else None
-    data = Product.find_all(keyword=keyword, category_id=category_id, status=status)
+    limit = min(int(request.args.get('limit', 200)), 1000)
+    data = Product.find_all(keyword=keyword, category_id=category_id, status=status, limit=limit)
     return jsonify({'success': True, 'data': data})
 
 
@@ -80,6 +90,40 @@ def get_by_barcode(code):
     if not p:
         return jsonify({'success': False, 'message': '找不到對應產品'}), 404
     return jsonify({'success': True, 'data': p})
+
+
+@app_product.route('/batch', methods=['PUT'])
+@jwt_required()
+@require_role('admin', 'operator')
+def batch_update_products():
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': '未選擇任何產品'}), 400
+    ALLOWED_UPDATE_FIELDS = {'name', 'description', 'category_id', 'cost_price', 'sell_price', 'min_stock', 'max_stock', 'status', 'sort_order'}
+    update_data = {k: v for k, v in data.items() if k != 'ids'}
+    updates = {k: v for k, v in update_data.items() if k in ALLOWED_UPDATE_FIELDS}
+    if not updates:
+        return jsonify({'success': False, 'message': '無更新欄位'}), 400
+    try:
+        count = Product.batch_update(ids, updates)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    Log.create(get_jwt_identity(), '批量更新產品', f'{len(ids)} 筆，欄位 {list(updates.keys())}')
+    return jsonify({'success': True, 'updated': count})
+
+
+@app_product.route('/batch', methods=['DELETE'])
+@jwt_required()
+@require_role('admin')
+def batch_delete_products():
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': '未選擇任何產品'}), 400
+    count = Product.batch_delete(ids)
+    Log.create(get_jwt_identity(), '批量刪除產品', f'{count}/{len(ids)} 筆')
+    return jsonify({'success': True, 'deleted': count})
 
 
 @app_product.route('/<pid>', methods=['GET'])

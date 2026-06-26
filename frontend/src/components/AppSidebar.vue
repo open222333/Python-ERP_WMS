@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRoute }     from 'vue-router'
 
@@ -8,6 +9,15 @@ const route = useRoute()
 const isActive = (path) => route.path.startsWith(path)
 
 defineEmits(['close'])
+
+// ── 店家切換 ───────────────────────────────────────────
+const showStorePicker = ref(false)
+
+async function switchStore(id) {
+  if (id === auth.activeStoreId) { showStorePicker.value = false; return }
+  await auth.setActiveStore(id)
+  showStorePicker.value = false
+}
 </script>
 
 <template>
@@ -40,13 +50,11 @@ defineEmits(['close'])
       <RouterLink class="nav-link" to="/admin/inventory" :class="{ active: isActive('/admin/inventory') }">
         <i class="bi bi-archive"></i> 庫存查詢
       </RouterLink>
-
-      <!-- 出入庫 -->
-      <div class="nav-section">出入庫</div>
-      <RouterLink class="nav-link" to="/admin/inbound" :class="{ active: isActive('/admin/inbound') }">
+      <div class="nav-subsection">出入庫</div>
+      <RouterLink class="nav-link nav-link-sub" to="/admin/inbound" :class="{ active: isActive('/admin/inbound') }">
         <i class="bi bi-box-arrow-in-down"></i> 入庫管理
       </RouterLink>
-      <RouterLink class="nav-link" to="/admin/outbound" :class="{ active: isActive('/admin/outbound') }">
+      <RouterLink class="nav-link nav-link-sub" to="/admin/outbound" :class="{ active: isActive('/admin/outbound') }">
         <i class="bi bi-box-arrow-up"></i> 出庫管理
       </RouterLink>
       <RouterLink class="nav-link" to="/admin/movements" :class="{ active: isActive('/admin/movements') }">
@@ -98,6 +106,9 @@ defineEmits(['close'])
 
       <!-- 系統 -->
       <div class="nav-section">系統</div>
+      <RouterLink v-if="auth.isAdmin" class="nav-link" to="/admin/stores" :class="{ active: isActive('/admin/stores') }">
+        <i class="bi bi-shop"></i> 分店管理
+      </RouterLink>
       <RouterLink v-if="auth.isAdmin" class="nav-link" to="/admin/users" :class="{ active: isActive('/admin/users') }">
         <i class="bi bi-people"></i> 使用者管理
       </RouterLink>
@@ -114,9 +125,45 @@ defineEmits(['close'])
     </div>
 
     <div id="sidebar-footer">
-      <i class="bi bi-person-circle me-1"></i>
-      <span>{{ auth.displayName || auth.username }}</span>
-      <span class="badge bg-secondary ms-1 float-end">{{ auth.role }}</span>
+      <!-- 使用者資訊 -->
+      <div class="footer-user">
+        <i class="bi bi-person-circle"></i>
+        <span class="footer-username">{{ auth.username }}</span>
+        <span class="badge bg-secondary ms-auto">{{ auth.role }}</span>
+      </div>
+
+      <!-- 作業店家 -->
+      <div v-if="auth.activeStoreName" class="footer-store" @click.stop>
+        <i class="bi bi-shop"></i>
+        <span class="footer-store-name">{{ auth.activeStoreName }}</span>
+
+        <!-- 多店家管理員：顯示切換鈕 -->
+        <button
+          v-if="auth.isAdmin && auth.storeList.length > 1"
+          class="store-switch-btn"
+          :class="{ active: showStorePicker }"
+          @click="showStorePicker = !showStorePicker"
+          title="切換店家"
+        >
+          <i class="bi bi-chevron-up" v-if="showStorePicker"></i>
+          <i class="bi bi-chevron-down" v-else></i>
+        </button>
+
+        <!-- 店家選單 -->
+        <div v-if="showStorePicker" class="store-picker" @click.stop>
+          <button
+            v-for="s in auth.storeList"
+            :key="s._id"
+            class="store-picker-item"
+            :class="{ active: s._id === auth.activeStoreId }"
+            @click="switchStore(s._id)"
+          >
+            <i class="bi bi-check2 me-1" v-if="s._id === auth.activeStoreId"></i>
+            <span>{{ s.name }}</span>
+            <small class="ms-auto opacity-50">{{ s.code }}</small>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -146,13 +193,52 @@ defineEmits(['close'])
   transition: all .15s; cursor: pointer; text-decoration: none;
 }
 .nav-link i { width: 18px; text-align: center; font-size: 1rem; }
+.nav-subsection {
+  font-size: .68rem; color: rgba(255,255,255,.25);
+  padding: 8px 18px 2px 28px; letter-spacing: .5px;
+}
+.nav-link-sub { margin-left: 12px; }
 .nav-link:hover, .nav-link.active { background: var(--sidebar-hover); color: #fff; }
 .nav-link.active { background: var(--accent); }
 #sidebar-footer {
-  margin-top: auto; padding: 12px 18px;
+  margin-top: auto;
   border-top: 1px solid rgba(255,255,255,.08);
   color: rgba(255,255,255,.5); font-size: .8rem;
 }
+.footer-user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px 6px;
+}
+.footer-username { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer-store {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 18px 10px;
+  color: rgba(255,255,255,.4); font-size: .75rem;
+}
+.footer-store-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-switch-btn {
+  background: none; border: none; color: rgba(255,255,255,.4);
+  padding: 2px 4px; cursor: pointer; border-radius: 4px; line-height: 1;
+  transition: background .15s;
+}
+.store-switch-btn:hover, .store-switch-btn.active {
+  background: rgba(255,255,255,.1); color: rgba(255,255,255,.8);
+}
+.store-picker {
+  position: absolute; bottom: 100%; left: 0; right: 0;
+  background: #1e293b; border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px; overflow: hidden; z-index: 100;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.4);
+}
+.store-picker-item {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; background: none; border: none;
+  color: rgba(255,255,255,.7); padding: 9px 14px; cursor: pointer;
+  font-size: .8rem; text-align: left; transition: background .12s;
+}
+.store-picker-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+.store-picker-item.active { color: #fff; background: rgba(var(--accent-rgb, 59,130,246),.25); }
 @media(max-width:768px) {
   #sidebar { transform: translateX(-100%); }
   #sidebar.open { transform: translateX(0); }

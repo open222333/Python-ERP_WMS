@@ -165,7 +165,7 @@ onMounted(load)
                 type="text"
                 class="form-control"
                 placeholder="分類名稱"
-                @keydown.enter="save"
+                @keydown.enter="(e) => !e.isComposing && save()"
               />
             </div>
             <div class="mb-3">

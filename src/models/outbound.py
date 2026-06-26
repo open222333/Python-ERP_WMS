@@ -161,13 +161,23 @@ class OutboundOrder:
 
     @classmethod
     def confirm(cls, oid: str, confirmed_by: str) -> bool:
+        """Atomically transition status pending → confirmed.
+
+        Uses find_one_and_update so the filter {status: 'pending'} and the
+        write happen in a single server-side operation.  A concurrent request
+        that races past the caller's stock check will find the document already
+        flipped to 'confirmed' and receive None here, preventing oversell.
+
+        Returns True if the transition succeeded, False if the document was
+        not found or was already in a non-pending state.
+        """
         now = datetime.utcnow()
-        r = cls._col().update_one(
+        doc = cls._col().find_one_and_update(
             {'_id': ObjectId(oid), 'status': 'pending'},
             {'$set': {'status': 'confirmed', 'confirmed_by': confirmed_by,
                       'confirmed_at': now, 'updated_at': now}}
         )
-        return r.matched_count > 0
+        return doc is not None
 
     @classmethod
     def complete(cls, oid: str, completed_by: str, shipped_qtys: dict = None) -> dict:

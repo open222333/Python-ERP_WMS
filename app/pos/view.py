@@ -28,7 +28,7 @@ from bson import ObjectId
 from src.mongo import get_db
 from src.models.pos import PosOrder
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, get_store_filter, get_current_store_id
 
 logger  = logging.getLogger(__name__)
 app_pos = Blueprint('app_pos', __name__)
@@ -117,7 +117,12 @@ def create_sale():
     warehouse_id = data.get('warehouse_id', '').strip()
     items        = data.get('items', [])
     payment      = data.get('payment', {})
-    discount     = float(data.get('discount', 0))
+    try:
+        discount = float(data.get('discount', 0))
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'message': '折扣格式錯誤'}), 400
+    if discount < 0:
+        return jsonify({'success': False, 'message': '折扣不得為負數'}), 400
     remark       = data.get('remark', '')
 
     if not warehouse_id:
@@ -158,7 +163,7 @@ def create_sale():
 
     # ── 全支付：先向 API 扣款，成功才記帳 ──────────────────────────
     if payment.get('type') == 'zpay':
-        zpay_code = str(payment.get('linepay_key', '')).strip()
+        zpay_code = str(payment.get('zpay_code', '')).strip()
         if not zpay_code:
             return jsonify({'success': False, 'message': '請掃描顧客全支付付款條碼'}), 400
         subtotal_zp   = sum(float(i.get('unit_price', 0)) * int(i.get('quantity', 1)) for i in items)
@@ -177,9 +182,26 @@ def create_sale():
             return jsonify({'success': False, 'message': f'全支付：{msg}'}), 400
         payment['linepay_transaction_id'] = str(zp_resp.get('transactionId', ''))
 
+    # 優先使用前端明確指定的 store_id（多店家帳號依 POS 設定切換）
+    request_store_id = data.get('store_id', '').strip()
+    if request_store_id:
+        from flask_jwt_extended import get_jwt
+        jwt_claims   = get_jwt()
+        jwt_store_ids = jwt_claims.get('store_ids', [])
+        if jwt_claims.get('role') == 'super_admin' or not jwt_store_ids or request_store_id in jwt_store_ids:
+            store_id = request_store_id
+        else:
+            store_id = get_current_store_id()
+    else:
+        store_id = get_current_store_id()
+        if not store_id:
+            from src.models.settings import SystemSettings
+            store_id = SystemSettings.get('pos_default_store_id') or None
+
     result = PosOrder.create_sale(
         warehouse_id=warehouse_id, items=items, payment=payment,
         discount=discount, cashier=get_jwt_identity(), remark=remark,
+        store_id=store_id,
     )
     if not result['success']:
         return jsonify({'success': False, 'message': result['error']}), 400
@@ -216,15 +238,22 @@ def list_sales():
     cashier       = request.args.get('cashier',    '')
     status        = request.args.get('status',     '')
     source        = request.args.get('source',     '')
-    limit         = int(request.args.get('limit', 200))
+    try:
+        limit = min(int(request.args.get('limit', 50)), 500)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'limit 必須為整數'}), 400
 
-    date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
-    date_to   = datetime.strptime(date_to_str + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if date_to_str else None
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
+        date_to   = datetime.strptime(date_to_str + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if date_to_str else None
+    except ValueError:
+        return jsonify({'success': False, 'message': '日期格式錯誤，請使用 YYYY-MM-DD'}), 400
 
     data = PosOrder.find_all(
         date_from=date_from, date_to=date_to,
         cashier=cashier or None, status=status or None,
         source=source or None, limit=limit,
+        store_filter=get_store_filter(),
     )
     return jsonify({'success': True, 'data': data})
 
@@ -257,13 +286,17 @@ def export_sales():
     status        = request.args.get('status',     '')
     source        = request.args.get('source',     '')
 
-    date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
-    date_to   = datetime.strptime(date_to_str + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if date_to_str else None
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
+        date_to   = datetime.strptime(date_to_str + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if date_to_str else None
+    except ValueError:
+        return jsonify({'success': False, 'message': '日期格式錯誤，請使用 YYYY-MM-DD'}), 400
 
     rows = PosOrder.find_all(
         date_from=date_from, date_to=date_to,
         cashier=cashier or None, status=status or None,
         source=source or None, limit=0,   # 0 = 無上限
+        store_filter=get_store_filter(),
     )
 
     HEADERS = [
@@ -381,7 +414,7 @@ def get_sale(sid):
       200: {description: 成功}
       404: {description: 不存在}
     """
-    order = PosOrder.find_by_id(sid)
+    order = PosOrder.find_by_id(sid, store_filter=get_store_filter())
     if not order:
         return jsonify({'success': False, 'message': '銷售單不存在'}), 404
     return jsonify({'success': True, 'data': order})
@@ -412,10 +445,15 @@ def refund_sale(sid):
     data   = request.get_json(silent=True) or {}
     reason = data.get('reason', '').strip()
 
+    try:
+        sid_oid = ObjectId(sid)
+    except Exception:
+        return jsonify({'success': False, 'message': '無效的銷售單 ID'}), 400
+
     # ── 原子搶佔退款名額（completed → refunding），防止並發雙重退款 ──
     _orders_col = get_db()['pos_orders']
     order = _orders_col.find_one_and_update(
-        {'_id': ObjectId(sid), 'status': 'completed'},
+        {'_id': sid_oid, 'status': 'completed'},
         {'$set': {'status': 'refunding'}},
         return_document=True,
     )
@@ -436,24 +474,24 @@ def refund_sale(sid):
                 ref_resp = provider.refund(txn_id, round(order['total_amount']))
                 if ref_resp.get('returnCode') != '0000':
                     msg = ref_resp.get('returnMessage', '退款失敗')
-                    _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+                    _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
                     return jsonify({'success': False, 'message': f'{name} 退款失敗：{msg}'}), 400
             except ValueError as ve:
-                _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+                _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
                 return jsonify({'success': False, 'message': str(ve)}), 400
             except Exception as e:
                 logger.exception('%s refund failed', pay_type)
-                _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+                _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
                 return jsonify({'success': False, 'message': f'{name} 退款連線失敗：{e}'}), 500
 
     try:
         result = PosOrder.refund(sid, reason, operator=get_jwt_identity())
     except Exception as e:
         logger.exception('PosOrder.refund failed for sid=%s', sid)
-        _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+        _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
         return jsonify({'success': False, 'message': f'退款處理失敗：{e}'}), 500
     if not result['success']:
-        _orders_col.update_one({'_id': ObjectId(sid)}, {'$set': {'status': 'completed'}})
+        _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
         return jsonify({'success': False, 'message': result['error']}), 400
     Log.create(get_jwt_identity(), 'POS 退款', f'sale_id={sid} reason={reason}')
     return jsonify({'success': True})
@@ -616,6 +654,7 @@ def update_linepay_settings():
 
 @app_pos.route('/zpay-settings', methods=['GET'])
 @jwt_required()
+@require_role('admin')
 def get_zpay_settings():
     """取得全支付設定（merchant_secret 遮蔽）"""
     from src.models.settings import SystemSettings
@@ -734,10 +773,11 @@ def sales_summary():
 
     # ── 查詢已完成訂單 ─────────────────────────────
     orders = PosOrder.find_all(date_from=date_from, date_to=date_to,
-                               status='completed', limit=0)
+                               status='completed', limit=0,
+                               store_filter=get_store_filter())
 
     total_orders   = len(orders)
-    total_amount   = sum(o['total_amount']          for o in orders)
+    total_amount   = sum(o.get('total_amount', 0)    for o in orders)
     total_discount = sum(o.get('discount', 0)       for o in orders)
     cash_total     = sum(o.get('cash_amount', 0)    for o in orders
                         if o.get('payment_type') in ('cash', 'mixed'))
@@ -762,14 +802,14 @@ def sales_summary():
         summary['orders'] = orders
     else:
         # 週/月模式：依日彙總；年模式：依月彙總
-        key_fn = (lambda o: o['created_at'][:7]) if period == 'year' \
-                 else (lambda o: o['created_at'][:10])
+        key_fn = (lambda o: (o.get('created_at') or '')[:7]) if period == 'year' \
+                 else (lambda o: (o.get('created_at') or '')[:10])
 
         grp: dict = defaultdict(lambda: {'orders': 0, 'amount': 0.0, 'discount': 0.0})
         for o in orders:
             k = key_fn(o)
             grp[k]['orders']   += 1
-            grp[k]['amount']   += o['total_amount']
+            grp[k]['amount']   += o.get('total_amount', 0)
             grp[k]['discount'] += o.get('discount', 0)
 
         summary['breakdown'] = [

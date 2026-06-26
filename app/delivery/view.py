@@ -13,6 +13,8 @@
 """
 import logging
 from datetime import datetime
+from bson import ObjectId
+from bson.errors import InvalidId
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.delivery import DeliveryOrder, DeliveryMapping, DeliverySettings
@@ -92,22 +94,24 @@ def webhook_ubereats():
             settings = DeliverySettings.get('ubereats')
             if is_new and event == 'eats.order.placed' and settings.get('auto_confirm'):
                 try:
-                    client.accept_order(normalized.get('external_order_id', ''))
+                    ok = client.accept_order(normalized.get('external_order_id', ''))
+                    if ok:
+                        DeliveryOrder.update_status(oid, 'confirmed', operator='system')
+                        wid = settings.get('default_warehouse_id', '')
+                        if wid:
+                            try:
+                                from src.models.pos import PosOrder
+                                confirmed_order = DeliveryOrder.find_by_id(oid)
+                                if confirmed_order:
+                                    PosOrder.create_from_delivery(confirmed_order, wid, 'system')
+                            except Exception as _e:
+                                logger.warning('auto create_from_delivery (ubereats): %s', _e)
                 except Exception as _ae:
                     logger.error('UberEats accept_order failed: %s', _ae)
-                DeliveryOrder.update_status(oid, 'confirmed', operator='system')
-                wid = settings.get('default_warehouse_id', '')
-                if wid:
-                    try:
-                        from src.models.pos import PosOrder
-                        confirmed_order = DeliveryOrder.find_by_id(oid)
-                        if confirmed_order:
-                            PosOrder.create_from_delivery(confirmed_order, wid, 'system')
-                    except Exception as _e:
-                        logger.warning('auto create_from_delivery (ubereats): %s', _e)
 
     except Exception as e:
         logger.exception('UberEats webhook processing error: %s', e)
+        return jsonify({'success': False, 'message': 'internal error'}), 500
 
     return jsonify({'success': True}), 200
 
@@ -144,22 +148,24 @@ def webhook_foodpanda():
             settings = DeliverySettings.get('foodpanda')
             if is_new and event == 'order.placed' and settings.get('auto_confirm'):
                 try:
-                    client.confirm_order(normalized.get('external_order_id', ''))
+                    ok = client.confirm_order(normalized.get('external_order_id', ''))
+                    if ok:
+                        DeliveryOrder.update_status(oid, 'confirmed', operator='system')
+                        wid = settings.get('default_warehouse_id', '')
+                        if wid:
+                            try:
+                                from src.models.pos import PosOrder
+                                confirmed_order = DeliveryOrder.find_by_id(oid)
+                                if confirmed_order:
+                                    PosOrder.create_from_delivery(confirmed_order, wid, 'system')
+                            except Exception as _e:
+                                logger.warning('auto create_from_delivery (foodpanda): %s', _e)
                 except Exception as _ce:
                     logger.error('foodpanda confirm_order failed: %s', _ce)
-                DeliveryOrder.update_status(oid, 'confirmed', operator='system')
-                wid = settings.get('default_warehouse_id', '')
-                if wid:
-                    try:
-                        from src.models.pos import PosOrder
-                        confirmed_order = DeliveryOrder.find_by_id(oid)
-                        if confirmed_order:
-                            PosOrder.create_from_delivery(confirmed_order, wid, 'system')
-                    except Exception as _e:
-                        logger.warning('auto create_from_delivery (foodpanda): %s', _e)
 
     except Exception as e:
         logger.exception('foodpanda webhook processing error: %s', e)
+        return jsonify({'success': False, 'message': 'internal error'}), 500
 
     return jsonify({'success': True}), 200
 
@@ -226,6 +232,10 @@ def get_order(oid):
       404:
         description: 不存在
     """
+    try:
+        oid = ObjectId(oid)
+    except (InvalidId, Exception):
+        return jsonify({'success': False, 'message': 'ID 格式無效'}), 400
     order = DeliveryOrder.find_by_id(oid)
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
@@ -257,6 +267,11 @@ def update_order_status(oid):
       400:
         description: 失敗
     """
+    try:
+        oid = ObjectId(oid)
+    except (InvalidId, Exception):
+        return jsonify({'success': False, 'message': 'ID 格式無效'}), 400
+
     data   = request.get_json(silent=True) or {}
     status = data.get('status', '').strip()
     if not status:
@@ -370,11 +385,11 @@ def sync_orders(platform):
 
     DeliverySettings.upsert(platform, last_sync=datetime.utcnow().isoformat())
     Log.create(get_jwt_identity(), '外送訂單同步',
-               f'platform={platform} new={new_count}')
+               f'platform={platform} new={new_count} errors={len(errors)}')
     return jsonify({
-        'success': len(errors) == 0,
+        'success':   True,
         'new_count': new_count,
-        'errors': errors,
+        'errors':    errors,
     })
 
 
@@ -471,15 +486,20 @@ def sync_menu(platform):
         og_name = (og.get('name') or '').strip()
         if not og_name:
             continue
-        choices = [
-            {
-                'name':        (ch.get('name') or '').strip(),
-                'extra_price': float(ch.get('extra_price', 0)),
+        choices = []
+        for ch in (og.get('choices') or []):
+            ch_name = (ch.get('name') or '').strip()
+            if not ch_name:
+                continue
+            try:
+                extra_price = float(ch.get('extra_price', 0))
+            except (ValueError, TypeError):
+                extra_price = 0.0
+            choices.append({
+                'name':        ch_name,
+                'extra_price': extra_price,
                 'is_default':  bool(ch.get('is_default', False)),
-            }
-            for ch in (og.get('choices') or [])
-            if (ch.get('name') or '').strip()
-        ]
+            })
         og_payload = {
             'name':     og_name,
             'type':     og.get('type', 'single'),
@@ -518,7 +538,10 @@ def sync_menu(platform):
             skipped += 1
             continue
 
-        price    = float(item.get('price', 0))
+        try:
+            price = float(item.get('price', 0))
+        except (ValueError, TypeError):
+            price = 0.0
         desc     = item.get('description', '').strip()
         category = item.get('category', '').strip()
 
@@ -654,4 +677,56 @@ def update_settings(platform):
 
     result = DeliverySettings.upsert(platform, **kwargs)
     Log.create(get_jwt_identity(), '外送平台設定', f'platform={platform}')
+    return jsonify({'success': True, 'data': result})
+
+
+# ─────────────────────────────────────────────────────────────
+#  Per-Store 外送平台設定
+# ─────────────────────────────────────────────────────────────
+
+DELIVERY_PLATFORMS = ('ubereats', 'foodpanda')
+
+
+@app_delivery.route('/store/', methods=['GET'])
+@jwt_required()
+@require_role('admin')
+def list_store_delivery_settings():
+    from src.models.store import Store
+    stores = Store.find_all()
+    result = []
+    for s in stores:
+        platforms = DeliverySettings.get_store_platforms(s['_id'])
+        result.append({
+            'store_id':   s['_id'],
+            'store_name': s['name'],
+            'store_code': s.get('code', ''),
+            'platforms':  platforms,
+        })
+    return jsonify({'success': True, 'data': result})
+
+
+@app_delivery.route('/store/<store_id>/settings/<platform>', methods=['GET'])
+@jwt_required()
+@require_role('admin')
+def get_store_delivery_settings(store_id, platform):
+    if platform not in DELIVERY_PLATFORMS:
+        return jsonify({'success': False, 'message': '不支援的平台'}), 400
+    data = DeliverySettings.get(platform, store_ref=store_id)
+    return jsonify({'success': True, 'data': data})
+
+
+@app_delivery.route('/store/<store_id>/settings/<platform>', methods=['PUT'])
+@jwt_required()
+@require_role('admin')
+def update_store_delivery_settings(store_id, platform):
+    if platform not in DELIVERY_PLATFORMS:
+        return jsonify({'success': False, 'message': '不支援的平台'}), 400
+    data = request.get_json(silent=True) or {}
+    kwargs = {}
+    for k in ('enabled', 'auto_confirm', 'default_warehouse_id'):
+        if k in data:
+            kwargs[k] = data[k]
+    result = DeliverySettings.upsert(platform, store_ref=store_id, **kwargs)
+    Log.create(get_jwt_identity(), '店家外送平台設定',
+               f'store={store_id} platform={platform}')
     return jsonify({'success': True, 'data': result})

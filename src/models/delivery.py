@@ -26,6 +26,8 @@ def _fmt(doc) -> dict:
     for key in ('created_at', 'updated_at', 'synced_at'):
         if key in d and d[key]:
             d[key] = d[key].isoformat() + 'Z'
+    if 'product_id' in d and d['product_id']:
+        d['product_id'] = str(d['product_id'])
     return d
 
 
@@ -113,7 +115,12 @@ class DeliveryOrder:
                       operator: str = 'system') -> bool:
         if status not in cls.VALID_STATUSES:
             return False
-        r = cls._col().update_one(
+        TERMINAL_STATES = {'delivered', 'cancelled'}
+        col = cls._col()
+        current = col.find_one({'_id': ObjectId(oid)}, {'status': 1})
+        if current and current.get('status') in TERMINAL_STATES:
+            return False  # cannot transition from terminal state
+        r = col.update_one(
             {'_id': ObjectId(oid)},
             {'$set': {'status': status, 'updated_at': datetime.utcnow(),
                       'last_operator': operator}},
@@ -190,34 +197,59 @@ class DeliverySettings:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def get(cls, platform: str) -> dict:
-        doc = cls._col().find_one({'platform': platform})
-        if doc is None:
-            return {'platform': platform, 'enabled': False, 'auto_confirm': False,
-                    'default_warehouse_id': '', 'webhook_url': '', 'last_sync': None}
+    def _default(cls, platform: str) -> dict:
+        return {'platform': platform, 'enabled': False, 'auto_confirm': False,
+                'default_warehouse_id': '', 'webhook_url': '', 'last_sync': None}
+
+    @classmethod
+    def _fmt_doc(cls, doc: dict) -> dict:
         d = _fmt(doc)
-        # ObjectId → str
         if d.get('default_warehouse_id'):
             d['default_warehouse_id'] = str(d['default_warehouse_id'])
+        if 'store_ref' in d and d['store_ref']:
+            d['store_ref'] = str(d['store_ref'])
         return d
 
     @classmethod
-    def upsert(cls, platform: str, **kwargs) -> dict:
+    def get(cls, platform: str, store_ref: str = None) -> dict:
+        from bson import ObjectId as ObjId
+        q = {'platform': platform,
+             'store_ref': ObjId(store_ref) if store_ref else None}
+        doc = cls._col().find_one(q)
+        if doc is None:
+            return cls._default(platform)
+        return cls._fmt_doc(doc)
+
+    @classmethod
+    def get_store_platforms(cls, store_ref: str) -> dict:
+        """回傳指定 store 的所有平台設定摘要 {platform: {enabled, auto_confirm}}"""
+        from bson import ObjectId as ObjId
+        docs = cls._col().find({'store_ref': ObjId(store_ref)})
+        result = {}
+        for doc in docs:
+            d = cls._fmt_doc(doc)
+            result[d['platform']] = {'enabled': d.get('enabled', False),
+                                     'auto_confirm': d.get('auto_confirm', False)}
+        return result
+
+    @classmethod
+    def upsert(cls, platform: str, store_ref: str = None, **kwargs) -> dict:
         from bson import ObjectId as ObjId
         now = datetime.utcnow()
+        store_ref_oid = ObjId(store_ref) if store_ref else None
         update_fields = {'updated_at': now}
         for k in ('enabled', 'auto_confirm', 'webhook_url', 'store_id',
                   'vendor_code', 'last_sync'):
             if k in kwargs:
                 update_fields[k] = kwargs[k]
-        # warehouse_id 轉為 ObjectId 儲存
         if 'default_warehouse_id' in kwargs:
             wid = kwargs['default_warehouse_id']
             update_fields['default_warehouse_id'] = ObjId(wid) if wid else None
         cls._col().update_one(
-            {'platform': platform},
+            {'platform': platform, 'store_ref': store_ref_oid},
             {'$set': update_fields,
-             '$setOnInsert': {'platform': platform, 'created_at': now}},
+             '$setOnInsert': {'platform': platform, 'store_ref': store_ref_oid,
+                              'created_at': now}},
             upsert=True,
         )
-        return cls.get(platform)
+        return cls.get(platform, store_ref)

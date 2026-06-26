@@ -1,0 +1,22 @@
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nginx
+    image: wms-nginx
+    hostname: wms-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # NGINX_MODE=http                → conf/nginx/conf.d/default.conf.http.template
+      # NGINX_MODE=cloudflare          → conf/nginx/conf.d/default.conf.cloudflare.template
+      # NGINX_MODE=https-letsencrypt   → conf/nginx/conf.d/default.conf.https-letsencrypt.template
+      - ./conf/nginx/conf.d/default.conf.${NGINX_MODE:-http}.template:/etc/nginx/templates/default.conf.template:ro
+      # CF_CERT_DIR：http 模式掛空目錄；cloudflare 模式改指向憑證路徑
+      - ${CF_CERT_DIR:-./conf/nginx/certs/cloudflare}:/etc/ssl/cloudflare:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - api
+    restart: unless-stopped

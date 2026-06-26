@@ -55,13 +55,25 @@ def login():
     if not user or not User.check_password(password, user['password']):
         return jsonify({'success': False, 'message': '帳號或密碼錯誤'}), 401
 
+    if user.get('locked'):
+        return jsonify({'success': False, 'message': '帳號已停用'}), 403
+
+    store_ids_str = [str(oid) for oid in user.get('store_ids', []) if oid]
+    additional_claims = {
+        'role':      user.get('role', 'viewer'),
+        'store_ids': store_ids_str,
+    }
+
     resp = {
-        'success': True,
-        'token':   create_access_token(identity=username),
-        'role':    user.get('role', 'viewer'),
+        'success':   True,
+        'token':     create_access_token(identity=username,
+                                         additional_claims=additional_claims),
+        'role':      user.get('role', 'viewer'),
+        'store_ids': store_ids_str,
     }
     if data.get('remember_me'):
-        resp['refresh_token'] = create_refresh_token(identity=username)
+        resp['refresh_token'] = create_refresh_token(identity=username,
+                                                     additional_claims=additional_claims)
 
     return jsonify(resp)
 
@@ -93,10 +105,18 @@ def refresh():
     user = User.find_by_username(username)
     if not user:
         return jsonify({'success': False, 'message': '使用者不存在'}), 401
+    if user.get('locked'):
+        return jsonify({'success': False, 'message': '帳號已停用'}), 403
+    store_ids_str = [str(oid) for oid in user.get('store_ids', []) if oid]
+    additional_claims = {
+        'role':      user.get('role', 'viewer'),
+        'store_ids': store_ids_str,
+    }
     return jsonify({
-        'success': True,
-        'token':   create_access_token(identity=username),
-        'role':    user.get('role', 'viewer'),
+        'success':   True,
+        'token':     create_access_token(identity=username, additional_claims=additional_claims),
+        'role':      user.get('role', 'viewer'),
+        'store_ids': store_ids_str,
     })
 
 
@@ -139,11 +159,13 @@ def me():
             template_name = tmpl.get('name')
             pages_enabled = tmpl.get('pages_enabled')
 
+    store_ids_str = [str(oid) for oid in user.get('store_ids', []) if oid]
     return jsonify({
         'success':       True,
         'username':      username,
         'role':          user.get('role', 'viewer'),
+        'store_ids':     store_ids_str,
         'template_id':   str(template_id) if template_id else None,
         'template_name': template_name,
-        'pages_enabled': pages_enabled,   # None 表示無模板（顯示全部）
+        'pages_enabled': pages_enabled,
     })

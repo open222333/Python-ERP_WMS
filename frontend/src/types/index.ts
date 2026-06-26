@@ -1,10 +1,11 @@
 // ─── Auth ────────────────────────────────────────────────
-export type Role = 'admin' | 'operator' | 'viewer'
+export type Role = 'super_admin' | 'admin' | 'operator' | 'cashier' | 'viewer'
 
 export interface MeResponse {
   success:       boolean
   username:      string
   role:          Role
+  store_ids:     string[]
   template_id:   string | null
   template_name: string | null
   pages_enabled: Record<string, boolean> | null
@@ -15,8 +16,29 @@ export interface User {
   _id:         string
   username:    string
   role:        Role
+  store_ids:   string[]
   template_id: string | null
   created_at?: string
+  locked?:     boolean
+}
+
+// ─── Store ───────────────────────────────────────────────
+export interface Store {
+  _id:           string
+  name:          string
+  code:          string
+  status:        string
+  store_role_id: string | null
+  created_at:    string
+}
+
+// ─── StoreRole ───────────────────────────────────────────
+export interface StoreRole {
+  _id:         string
+  name:        string
+  description: string
+  is_system:   boolean
+  created_at:  string
 }
 
 // ─── UserTemplate ────────────────────────────────────────
@@ -41,13 +63,16 @@ export interface Product {
   _id:         string
   name:        string
   sku:         string
+  barcode?:    string
   category_id: string | null
   unit:        string
-  price:       number
-  cost:        number
+  sell_price?: number
+  cost_price?: number
+  price?:      number
+  cost?:       number
   min_stock:   number
   description: string
-  enabled:     boolean
+  status:      number   // 1=啟用 0=停用
 }
 
 // ─── Warehouse ───────────────────────────────────────────
@@ -59,6 +84,7 @@ export interface Warehouse {
   manager?:    string
   phone?:      string
   description: string
+  store_id?:   string | null
 }
 
 // ─── Inventory ───────────────────────────────────────────

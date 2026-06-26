@@ -17,14 +17,18 @@ export function fmtMoney(n: number | null | undefined, symbol = 'NT$'): string {
 
 /** Role 標籤與顏色 */
 export const ROLE_COLOR: Record<string, string> = {
-  admin:    'danger',
-  operator: 'primary',
-  viewer:   'secondary',
+  super_admin: 'dark',
+  admin:       'danger',
+  operator:    'primary',
+  cashier:     'warning',
+  viewer:      'secondary',
 }
 export const ROLE_LABEL: Record<string, string> = {
-  admin:    'Admin（管理員）',
-  operator: 'Operator（操作員）',
-  viewer:   'Viewer（唯讀）',
+  super_admin: 'Super Admin（超級管理員）',
+  admin:       'Admin（管理員）',
+  operator:    'Operator（操作員）',
+  cashier:     'Cashier（收銀員）',
+  viewer:      'Viewer（唯讀）',
 }
 
 /** 訂單狀態顏色 */

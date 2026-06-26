@@ -1,0 +1,14 @@
+# Dev 覆寫：nginx 改用 volume 掛載 frontend-dist，不需重新 build image
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# 更新前端（只需 ~30s，而非 docker build 的 2-3 分鐘）：
+#   cd frontend && npm run build
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml restart nginx
+
+services:
+  nginx:
+    image: nginx:1.26-alpine
+    volumes:
+      - ./frontend-dist:/usr/share/nginx/html:ro

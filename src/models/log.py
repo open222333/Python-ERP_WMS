@@ -42,21 +42,21 @@ class Log:
                 try:
                     dt_q['$gte'] = datetime.fromisoformat(start_date)
                 except ValueError:
-                    pass
+                    raise ValueError(f'start_date 格式無效: {start_date!r}')
             if end_date:
                 try:
                     # end_date 當天含入：加一天
                     dt_q['$lt'] = datetime.fromisoformat(end_date) + timedelta(days=1)
                 except ValueError:
-                    pass
+                    raise ValueError(f'end_date 格式無效: {end_date!r}')
             if dt_q:
                 q['created_at'] = dt_q
 
         cursor = cls._col().find(q, {'_id': 1, 'username': 1, 'action': 1,
                                      'detail': 1, 'success': 1, 'created_at': 1}) \
                             .sort('created_at', -1)
-        if limit and limit > 0:
-            cursor = cursor.limit(limit)
+        limit = max(1, min(int(limit), 10000))
+        cursor = cursor.limit(limit)
 
         result = []
         for log in cursor:

@@ -91,6 +91,8 @@ def _fmt_menu(doc) -> dict:
         return None
     d = {k: v for k, v in doc.items() if k != '_id'}
     d['_id'] = str(doc['_id'])
+    if d.get('store_id'):
+        d['store_id'] = str(d['store_id'])
     for key in ('created_at', 'updated_at'):
         if key in d and d[key]:
             d[key] = d[key].isoformat() + 'Z'
@@ -147,24 +149,28 @@ class Menu:
 
     # ── 查詢 ──────────────────────────────────────
     @classmethod
-    def find_all(cls, status: int = None) -> list:
-        q = {}
+    def find_all(cls, status: int = None, store_filter: dict = None) -> list:
+        q = dict(store_filter or {})
         if status is not None:
             q['status'] = status
         docs = cls._col().find(q).sort('sort_order', 1)
         return [_fmt_menu(d) for d in docs]
 
     @classmethod
-    def find_by_id(cls, mid: str) -> dict:
+    def find_by_id(cls, mid: str, store_filter: dict = None) -> dict:
         try:
-            return _fmt_menu(cls._col().find_one({'_id': ObjectId(mid)}))
+            q = {'_id': ObjectId(mid)}
+            if store_filter:
+                q.update(store_filter)
+            return _fmt_menu(cls._col().find_one(q))
         except Exception:
             return None
 
     # ── 菜單 CRUD ─────────────────────────────────
     @classmethod
     def create(cls, name: str, description: str = '',
-               sort_order: int = 0) -> str:
+               sort_order: int = 0, store_id: str = None) -> str:
+        from bson import ObjectId as _ObjId
         now = datetime.utcnow()
         doc = {
             'name':          name,
@@ -177,6 +183,8 @@ class Menu:
             'created_at':    now,
             'updated_at':    now,
         }
+        if store_id:
+            doc['store_id'] = _ObjId(store_id)
         return str(cls._col().insert_one(doc).inserted_id)
 
     @classmethod
