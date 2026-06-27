@@ -131,11 +131,9 @@
   <a class="nav-link" href="#urls">系統網址</a>
   <a class="nav-link" href="#login">登入 / 帳號</a>
 
-  <div class="nav-section">商品管理</div>
+  <div class="nav-section">倉儲管理</div>
   <a class="nav-link" href="#category">產品分類</a>
   <a class="nav-link" href="#product">產品資料</a>
-
-  <div class="nav-section">倉儲管理</div>
   <a class="nav-link" href="#warehouse">倉庫管理</a>
   <a class="nav-link" href="#inventory">庫存查詢</a>
   <a class="nav-link" href="#inbound">入庫管理</a>
@@ -143,24 +141,23 @@
   <a class="nav-link" href="#movements">庫存移動紀錄</a>
   <a class="nav-link" href="#quick-io">快速出入庫</a>
 
-  <div class="nav-section">POS 收銀</div>
+  <div class="nav-section">前台</div>
   <a class="nav-link" href="#menus">菜單管理</a>
   <a class="nav-link" href="#pos">收銀台操作</a>
+  <a class="nav-link" href="#cust-order-page">顧客點單頁面</a>
+  <a class="nav-link" href="#qr-codes">QR 碼管理</a>
+  <a class="nav-link" href="#cust-order-mgmt">訂單管理</a>
+  <a class="nav-link" href="#kitchen">廚房顯示</a>
 
   <div class="nav-section">財務</div>
   <a class="nav-link" href="#pos-sales">銷售記錄</a>
   <a class="nav-link" href="#pos-report">銷售報表</a>
   <a class="nav-link" href="#invoices">電子發票</a>
 
-  <div class="nav-section">顧客點單</div>
-  <a class="nav-link" href="#cust-order-page">顧客點單頁面</a>
-  <a class="nav-link" href="#qr-codes">QR 碼管理</a>
-  <a class="nav-link" href="#cust-order-mgmt">訂單管理</a>
-  <a class="nav-link" href="#kitchen">廚房顯示</a>
-
   <div class="nav-section">外送平台</div>
   <a class="nav-link" href="#delivery">外送訂單</a>
-  <a class="nav-link" href="#delivery-settings">平台設定</a>
+  <a class="nav-link" href="#delivery-settings">外送平台設定</a>
+  <a class="nav-link" href="#delivery-templates" style="padding-left:2rem">品項對應模板</a>
 
   <div class="nav-section">系統</div>
   <a class="nav-link" href="#settings">系統設定</a>
@@ -182,10 +179,8 @@
     <i class="bi bi-grid-1x2 me-2 text-primary"></i>系統概覽
   </h2>
   <div class="fc-grid">
-    <div class="fc"><div class="fc-title"><i class="bi bi-tags me-1 text-primary"></i>商品管理</div>
-      <div class="fc-desc">產品分類、產品資料、匯入 / 匯出 JSON</div></div>
-    <div class="fc"><div class="fc-title"><i class="bi bi-building me-1 text-success"></i>倉儲管理</div>
-      <div class="fc-desc">多倉庫、庫存查詢、盤點調整、進出庫單</div></div>
+    <div class="fc"><div class="fc-title"><i class="bi bi-box-seam me-1 text-primary"></i>倉儲管理</div>
+      <div class="fc-desc">產品資料、多倉庫、庫存查詢、盤點調整、進出庫單、匯入 / 匯出 JSON</div></div>
     <div class="fc"><div class="fc-title"><i class="bi bi-lightning-charge me-1 text-warning"></i>快速出入庫</div>
       <div class="fc-desc">批次入庫 / 出庫 / 消耗，免建正式單據</div></div>
     <div class="fc"><div class="fc-title"><i class="bi bi-cash-register me-1 text-danger"></i>POS 收銀台</div>
@@ -194,8 +189,8 @@
       <div class="fc-desc">菜單、分類、品項、客製化選項、產品庫存連動</div></div>
     <div class="fc"><div class="fc-title"><i class="bi bi-qr-code-scan me-1 text-primary"></i>顧客點單</div>
       <div class="fc-desc">顧客掃碼自助點餐、廚房顯示與訂單處理</div></div>
-    <div class="fc"><div class="fc-title"><i class="bi bi-truck me-1 text-secondary"></i>外送平台</div>
-      <div class="fc-desc">外送訂單追蹤、第三方平台同步</div></div>
+    <div class="fc"><div class="fc-title"><i class="bi bi-scooter me-1 text-secondary"></i>外送平台</div>
+      <div class="fc-desc">外送訂單追蹤、品項對應模板、第三方平台同步</div></div>
   </div>
 
   <!-- ────────────────── 系統網址 ────────────────── -->
@@ -237,7 +232,7 @@
   <h2 class="section-title" id="category">
     <i class="bi bi-tags me-2 text-primary"></i>產品分類
   </h2>
-  <p>後台側欄 → <strong>產品分類</strong>。用於將產品歸類，可在產品查詢時篩選。</p>
+  <p>後台側欄 → <strong>產品資料</strong> 頁面內可管理產品分類。用於將產品歸類，可在產品查詢時篩選。</p>
   <ol class="step-list">
     <li>點擊「＋ 新增分類」，輸入分類名稱。</li>
     <li>可修改名稱或刪除（刪除前需確認無產品使用此分類）。</li>
@@ -708,18 +703,100 @@
   <h2 class="section-title" id="delivery-settings">
     <i class="bi bi-gear me-2 text-primary"></i>外送平台設定
   </h2>
-  <p>後台側欄 → <strong>平台設定</strong>。設定各外送平台的 API 金鑰與 Webhook。</p>
+  <p>後台側欄 → <strong>外送平台設定</strong>。頁面分為兩個 Tab：<strong>店家設定</strong> 與 <strong>品項對應模板</strong>。</p>
+
+  <h3 class="sub-title">Tab 1：店家設定</h3>
+  <p>設定各分店對外送平台的連線參數。</p>
   <ol class="step-list">
-    <li>選擇平台，填入 API 金鑰後儲存。</li>
+    <li>選擇分店，展開各平台（UberEats / Foodpanda）的設定面板。</li>
+    <li>填入預設倉庫、勾選「啟用」與「自動確認」，並選擇品項對應模板。</li>
     <li>複製「Webhook 接收網址」填入外送平台後台，即可接收即時訂單推送。</li>
-    <li>設定完成後可點擊「同步菜單至平台」，將 WMS 菜單同步到外送平台。</li>
   </ol>
+
+  <!-- ────────────────── 品項對應模板 ────────────────── -->
+  <h2 class="section-title" id="delivery-templates">
+    <i class="bi bi-list-check me-2 text-primary"></i>品項對應模板
+  </h2>
+  <p>外送平台設定 → Tab <strong>品項對應模板</strong>。建立可重複使用的「平台品項 → 系統產品」對應規則，再由各店家的平台設定選擇套用。</p>
+
+  <h3 class="sub-title">為什麼需要模板？</h3>
+  <p>外送平台使用自己的品項 ID 或代碼傳入訂單，系統需要將其對應到 WMS 內的產品才能正確扣庫或計算。模板讓多個分店或平台可以共用同一份對應，不需要每間店重複設定。</p>
+
+  <h3 class="sub-title">建立模板</h3>
+  <ol class="step-list">
+    <li>點擊「＋ 新增模板」，輸入模板名稱、選擇平台。</li>
+    <li>在品項對應列表中逐筆填入：外送平台品項名稱 / 代碼、對應的系統產品。</li>
+    <li>儲存後，前往「店家設定」Tab，在各分店平台設定中選擇此模板。</li>
+  </ol>
+  <table class="table doc-table table-bordered">
+    <thead><tr><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>外送平台品項名稱</td><td>外送平台傳入訂單時使用的品項代碼或名稱</td></tr>
+      <tr><td>對應系統產品</td><td>WMS 內的產品；用於扣庫或報表歸類</td></tr>
+    </tbody>
+  </table>
+  <div class="tip-box">
+    <i class="bi bi-lightbulb me-1"></i>
+    同一份模板可被多個分店的同一平台設定共用，修改模板後，所有套用此模板的店家即時生效。
+  </div>
 
   <!-- ────────────────── 系統設定 ────────────────── -->
   <h2 class="section-title" id="settings">
     <i class="bi bi-sliders me-2 text-primary"></i>系統設定
   </h2>
   <p>後台側欄 → <strong>系統設定</strong>（需 <code>admin</code> 角色）。</p>
+
+  <h3 class="sub-title">設定項目一覽</h3>
+  <table class="table doc-table table-bordered">
+    <thead class="table-light">
+      <tr><th style="width:9rem">設定項目</th><th style="width:11rem">影響功能</th><th>說明</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>預設倉庫</strong></td>
+        <td>
+          <span class="badge bg-primary me-1">POS 收銀台</span>
+          <span class="badge bg-warning text-dark">快速出入庫</span>
+        </td>
+        <td>開啟頁面後自動選取此倉庫，仍可手動切換。若帳號有所屬店家，建議選該店家的倉庫。</td>
+      </tr>
+      <tr>
+        <td><strong>POS 預設菜單</strong></td>
+        <td><span class="badge bg-primary">POS 收銀台</span></td>
+        <td>開啟 POS 後自動切換至指定菜單，方便快速點餐；仍可手動切換至其他菜單或全商品模式。</td>
+      </tr>
+      <tr>
+        <td><strong>POS 預設店家</strong></td>
+        <td><span class="badge bg-primary">POS 收銀台</span></td>
+        <td>銷售記錄自動歸屬指定店家；若帳號已設定所屬店家，則以帳號設定為優先。</td>
+      </tr>
+      <tr>
+        <td><strong>付款方式</strong></td>
+        <td><span class="badge bg-primary">POS 收銀台</span></td>
+        <td>設定結帳時顯示的付款選項；可自訂名稱與排序。勾選「現金找零」才會在 POS 顯示找零計算欄位。</td>
+      </tr>
+      <tr>
+        <td><strong>POS 折扣快捷</strong></td>
+        <td><span class="badge bg-primary">POS 收銀台</span></td>
+        <td>設定收銀台一鍵折扣按鈕，支援折扣%（如 90 = 九折）與固定折抵金額（如 50 = 折抵 $50）。</td>
+      </tr>
+      <tr>
+        <td><strong>使用者模板</strong></td>
+        <td><span class="badge bg-secondary">使用者管理</span></td>
+        <td>在「使用者管理 → 使用者模板」Tab 設定，決定帳號角色與側欄各頁面是否顯示。詳見 <a href="#page-visibility">頁面顯示管理</a>。</td>
+      </tr>
+      <tr>
+        <td><strong>店家管理</strong></td>
+        <td><span class="badge bg-secondary">使用者管理</span></td>
+        <td>在「使用者管理 → 店家管理」Tab 設定店家基本資料與帳號歸屬；各店家可獨立設定菜單、倉庫與外送平台。</td>
+      </tr>
+      <tr>
+        <td><strong>操作紀錄保留</strong></td>
+        <td><span class="badge bg-secondary">系統</span></td>
+        <td>設定操作紀錄自動清除週期（天數）；超過期限的紀錄在下次查詢時懶觸發清除，也可手動立即清除。</td>
+      </tr>
+    </tbody>
+  </table>
 
   <h3 class="sub-title">倉庫設定</h3>
   <table class="table doc-table table-bordered">
@@ -815,15 +892,17 @@
   <table class="table doc-table table-bordered">
     <thead><tr><th>功能群組</th><th>可管理頁面</th></tr></thead>
     <tbody>
-      <tr><td>商品管理</td><td>產品分類、產品資料</td></tr>
-      <tr><td>倉儲管理</td><td>倉庫管理、庫存查詢、入庫管理、出庫管理、庫存移動</td></tr>
-      <tr><td>POS 收銀</td><td>菜單管理、開啟收銀台</td></tr>
-      <tr><td>財務</td><td>銷售記錄、銷售報表、電子發票、發票設定</td></tr>
-      <tr><td>顧客點單</td><td>訂單管理、廚房顯示連結、顧客點單頁連結、QR 碼管理</td></tr>
-      <tr><td>外送平台</td><td>外送訂單、平台設定</td></tr>
-      <tr><td>系統</td><td>使用者管理、操作紀錄、使用說明</td></tr>
+      <tr><td>總覽</td><td>儀表板</td></tr>
+      <tr><td>倉儲管理</td><td>產品資料、倉庫管理、庫存查詢、庫存移動、快速出入庫</td></tr>
+      <tr><td>前台</td><td>開啟收銀台、顧客點單頁、備餐顯示、訂單管理、外送訂單管理</td></tr>
+      <tr><td>財務</td><td>銷售記錄、日結報表、電子發票</td></tr>
+      <tr><td>系統</td><td>菜單管理、發票設定、外送平台設定、操作紀錄、系統設定</td></tr>
     </tbody>
   </table>
+  <div class="tip-box">
+    <i class="bi bi-info-circle me-1"></i>
+    入出庫管理（入庫、出庫）的顯示狀態隨「庫存查詢」頁設定連動，不單獨列出。<code>admin</code> 帳號固定顯示分店管理，一般帳號的使用者管理由系統 role 控制，兩者均不進入模板設定。
+  </div>
 
   <!-- ────────────────── 角色與權限 ────────────────── -->
   <h2 class="section-title" id="roles">

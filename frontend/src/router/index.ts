@@ -17,7 +17,7 @@ const router = createRouter({
       children: [
         { path: '',          redirect: '/admin/dashboard' },
         { path: 'dashboard',         component: () => import('@/views/admin/DashboardView.vue'),       meta: { title: '總覽' } },
-        { path: 'categories',        component: () => import('@/views/admin/CategoriesView.vue'),      meta: { title: '分類管理' } },
+        { path: 'categories',        redirect: '/admin/products' },
         { path: 'products',          component: () => import('@/views/admin/ProductsView.vue'),        meta: { title: '商品管理' } },
         { path: 'warehouses',        component: () => import('@/views/admin/WarehousesView.vue'),      meta: { title: '倉庫管理' } },
         { path: 'inventory',         component: () => import('@/views/admin/InventoryView.vue'),       meta: { title: '庫存管理' } },

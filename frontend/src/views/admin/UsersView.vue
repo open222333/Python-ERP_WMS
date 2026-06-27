@@ -52,37 +52,12 @@ const tplForm = ref({
   pages_enabled: {} as Record<string, boolean>,
 })
 
-// ── Nav pages definition ─────────────────────────────────
-interface NavPage { key: string; label: string; group: string; system?: boolean }
-const NAV_PAGES: NavPage[] = [
-  { key: 'cust-orders',       label: '訂單管理',   group: '顧客點單' },
-  { key: 'kitchen-link',      label: '備餐顯示',   group: '顧客點單' },
-  { key: 'order-link',        label: '顧客點單頁', group: '顧客點單' },
-  { key: 'qr-codes',          label: 'QR 碼管理',  group: '顧客點單' },
-  { key: 'categories',        label: '產品分類',   group: '商品管理' },
-  { key: 'products',          label: '產品資料',   group: '商品管理' },
-  { key: 'warehouses',        label: '倉庫管理',   group: '倉儲管理' },
-  { key: 'inventory',         label: '庫存查詢',   group: '倉儲管理' },
-  { key: 'inbound',           label: '入庫管理',   group: '出入庫' },
-  { key: 'outbound',          label: '出庫管理',   group: '出入庫' },
-  { key: 'movements',         label: '庫存移動',   group: '出入庫' },
-  { key: 'quick-io',          label: '快速出入庫', group: '出入庫' },
-  { key: 'pos-sales',         label: '銷售記錄',   group: '財務' },
-  { key: 'pos-report',        label: '銷售報表',   group: '財務' },
-  { key: 'menus',             label: '菜單管理',   group: 'POS 收銀' },
-  { key: 'pos-link',          label: '開啟收銀台', group: 'POS 收銀' },
-  { key: 'delivery-orders',   label: '外送訂單',   group: '外送平台' },
-  { key: 'invoices',          label: '電子發票',   group: '財務' },
-  { key: 'delivery-settings', label: '平台設定',   group: '系統', system: true },
-  { key: 'invoice-settings',  label: '發票設定',   group: '系統', system: true },
-  { key: 'users',    label: '使用者管理', group: '系統', system: true },
-  { key: 'logs',     label: '操作紀錄',   group: '系統', system: true },
-  { key: 'settings', label: '系統設定',   group: '系統' },
-]
+// ── Nav pages — 從 nav.ts 取得，與側欄同步 ──────────────────
+import { CONFIGURABLE_PAGES } from '@/config/nav'
 
 const pageGroups = computed(() => {
-  const map: Record<string, NavPage[]> = {}
-  for (const p of NAV_PAGES) {
+  const map: Record<string, typeof CONFIGURABLE_PAGES> = {}
+  for (const p of CONFIGURABLE_PAGES) {
     if (!map[p.group]) map[p.group] = []
     map[p.group].push(p)
   }
@@ -293,7 +268,7 @@ function openTplModal(t?: UserTemplate) {
   } else {
     const defaultRole = 'operator'
     const pages: Record<string, boolean> = {}
-    NAV_PAGES.forEach(p => {
+    CONFIGURABLE_PAGES.forEach(p => {
       pages[p.key] = p.system ? defaultRole === 'admin' : true
     })
     tplForm.value = {
@@ -314,8 +289,9 @@ async function saveTpl() {
   saving.value = true
   try {
     const pages: Record<string, boolean> = {}
-    NAV_PAGES.forEach(p => {
-      if (p.system && f.role === 'admin') {
+    CONFIGURABLE_PAGES.forEach(p => {
+      // 使用者管理對 admin role 永遠鎖定開啟
+      if (p.key === 'users' && f.role === 'admin') {
         pages[p.key] = true
       } else {
         pages[p.key] = f.pages_enabled[p.key] !== false
@@ -824,17 +800,17 @@ onMounted(load)
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-1">
                     <div v-for="p in pages" :key="p.key" class="form-check form-check-inline"
-                         :title="p.system && tplForm.role === 'admin' ? '系統頁面，Admin 模板固定開啟' : ''">
+                         :title="p.key === 'users' && tplForm.role === 'admin' ? '使用者管理對管理員模板固定開啟' : ''">
                       <input :id="`tpl-chk-${p.key}`" class="form-check-input" type="checkbox"
-                             :checked="(p.system && tplForm.role === 'admin') ? true : tplForm.pages_enabled[p.key] !== false"
-                             :disabled="p.system && tplForm.role === 'admin'"
+                             :checked="(p.key === 'users' && tplForm.role === 'admin') ? true : tplForm.pages_enabled[p.key] !== false"
+                             :disabled="p.key === 'users' && tplForm.role === 'admin'"
                              @change="(e) => {
-                               if (!(p.system && tplForm.role === 'admin')) {
+                               if (!(p.key === 'users' && tplForm.role === 'admin')) {
                                  tplForm.pages_enabled[p.key] = (e.target as HTMLInputElement).checked
                                }
                              }" />
                       <label class="form-check-label small" :for="`tpl-chk-${p.key}`">
-                        <i v-if="p.system && tplForm.role === 'admin'" class="bi bi-lock-fill me-1"
+                        <i v-if="p.key === 'users' && tplForm.role === 'admin'" class="bi bi-lock-fill me-1"
                            style="font-size:.7rem"></i>
                         {{ p.label }}
                       </label>

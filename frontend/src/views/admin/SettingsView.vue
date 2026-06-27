@@ -106,7 +106,7 @@ async function load() {
       http.get('/menu/?status=1'),
       http.get('/pos/linepay-settings'),
       http.get('/pos/zpay-settings'),
-      http.get('/store/'),
+      http.get('/store/').catch(() => ({ data: { data: [] } })),
     ])
 
     warehouses.value         = whR.data?.data || []
@@ -443,45 +443,13 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ── 設定用途說明 ──────────────────────────────── -->
-    <div class="col-12 col-xl-6">
-      <div class="table-card">
-        <div class="table-header">
-          <h6><i class="bi bi-info-circle me-1 text-info"></i>設定用途說明</h6>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm mb-0">
-            <thead class="table-light">
-              <tr><th>設定項目</th><th>功能</th><th>說明</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="fw-semibold text-nowrap">預設倉庫</td>
-                <td>
-                  <span class="badge bg-primary me-1">POS 收銀台</span>
-                  <span class="badge bg-warning text-dark">快速出入庫</span>
-                </td>
-                <td class="text-muted small">開啟頁面後自動選取此倉庫，仍可手動切換</td>
-              </tr>
-              <tr>
-                <td class="fw-semibold text-nowrap">POS 預設菜單</td>
-                <td><span class="badge bg-primary">POS 收銀台</span></td>
-                <td class="text-muted small">開啟 POS 後自動切換至指定菜單，方便快速點餐</td>
-              </tr>
-              <tr>
-                <td class="fw-semibold text-nowrap">POS 預設店家</td>
-                <td><span class="badge bg-primary">POS 收銀台</span></td>
-                <td class="text-muted small">銷售記錄自動歸屬指定店家；帳號有所屬店家時以帳號為優先</td>
-              </tr>
-              <tr>
-                <td class="fw-semibold text-nowrap">使用者模板</td>
-                <td><span class="badge bg-secondary">使用者管理</span></td>
-                <td class="text-muted small">在「使用者管理 → 使用者模板」Tab 設定，決定帳號的系統角色與登入後的側欄頁面顯示</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <!-- 設定用途說明已移至使用說明文件 -->
+    <div class="col-12 col-xl-6 d-flex align-items-start">
+      <a href="/docs/#settings" target="_blank"
+         class="d-inline-flex align-items-center gap-2 text-primary text-decoration-none small mt-1">
+        <i class="bi bi-book"></i>
+        各設定項目的詳細說明請參閱使用說明文件 →
+      </a>
     </div>
 
     <!-- ── POS 折扣快捷 ──────────────────────────────── -->

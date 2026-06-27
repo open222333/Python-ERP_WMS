@@ -226,6 +226,18 @@ def _seed_defaults():
                               'address': '', 'manager': '', 'phone': '', 'description': ''},
                              store_id=store_id)
             _log.info('已建立預設總代理及預設角色模板')
+            # ── 遷移舊版全域 delivery_settings（store_ref: null）到新店家 ──
+            try:
+                from bson import ObjectId as BsonObjId
+                migrated = db['delivery_settings'].update_many(
+                    {'$or': [{'store_ref': None}, {'store_ref': {'$exists': False}}]},
+                    {'$set': {'store_ref': BsonObjId(store_id)}},
+                )
+                if migrated.modified_count:
+                    _log.info('delivery_settings 遷移：%d 筆全域設定 → store=%s',
+                              migrated.modified_count, store_id)
+            except Exception as _me:
+                _log.warning('delivery_settings 遷移失敗：%s', _me)
     except Exception as e:
         _log.error('_seed_defaults 失敗：%s', e)
 

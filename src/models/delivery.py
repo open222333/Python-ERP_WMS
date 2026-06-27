@@ -199,7 +199,8 @@ class DeliverySettings:
     @classmethod
     def _default(cls, platform: str) -> dict:
         return {'platform': platform, 'enabled': False, 'auto_confirm': False,
-                'default_warehouse_id': '', 'webhook_url': '', 'last_sync': None}
+                'default_warehouse_id': '', 'webhook_url': '', 'last_sync': None,
+                'item_mappings': [], 'mapping_template_id': None}
 
     @classmethod
     def _fmt_doc(cls, doc: dict) -> dict:
@@ -245,6 +246,11 @@ class DeliverySettings:
         if 'default_warehouse_id' in kwargs:
             wid = kwargs['default_warehouse_id']
             update_fields['default_warehouse_id'] = ObjId(wid) if wid else None
+        if 'item_mappings' in kwargs:
+            update_fields['item_mappings'] = kwargs['item_mappings']
+        if 'mapping_template_id' in kwargs:
+            tid = kwargs['mapping_template_id']
+            update_fields['mapping_template_id'] = tid if tid else None
         cls._col().update_one(
             {'platform': platform, 'store_ref': store_ref_oid},
             {'$set': update_fields,
@@ -253,3 +259,51 @@ class DeliverySettings:
             upsert=True,
         )
         return cls.get(platform, store_ref)
+
+
+# ─────────────────────────────────────────────────────────────
+#  DeliveryMappingTemplate  (品項對應模板)
+# ─────────────────────────────────────────────────────────────
+class DeliveryMappingTemplate:
+    COLLECTION = 'delivery_mapping_templates'
+
+    @classmethod
+    def _col(cls):
+        return get_db()[cls.COLLECTION]
+
+    @classmethod
+    def find_all(cls) -> list:
+        return [_fmt(d) for d in cls._col().find().sort('name', 1)]
+
+    @classmethod
+    def find_by_id(cls, oid: str) -> dict:
+        try:
+            return _fmt(cls._col().find_one({'_id': ObjectId(oid)}))
+        except Exception:
+            return None
+
+    @classmethod
+    def create(cls, name: str, platform: str, items: list) -> str:
+        now = datetime.utcnow()
+        doc = {
+            'name':       name,
+            'platform':   platform,
+            'items':      items,
+            'created_at': now,
+            'updated_at': now,
+        }
+        return str(cls._col().insert_one(doc).inserted_id)
+
+    @classmethod
+    def update(cls, oid: str, **kwargs) -> bool:
+        fields = {'updated_at': datetime.utcnow()}
+        for k in ('name', 'platform', 'items'):
+            if k in kwargs:
+                fields[k] = kwargs[k]
+        r = cls._col().update_one({'_id': ObjectId(oid)}, {'$set': fields})
+        return r.matched_count > 0
+
+    @classmethod
+    def delete(cls, oid: str) -> bool:
+        r = cls._col().delete_one({'_id': ObjectId(oid)})
+        return r.deleted_count > 0

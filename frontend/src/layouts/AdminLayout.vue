@@ -10,119 +10,32 @@
       </div>
 
       <div class="sidebar-scroll">
-        <!-- 儀表板 -->
-        <RouterLink to="/admin/dashboard" class="nav-link" @click="closeMobile">
-          <i class="bi bi-grid-1x2"></i><span>儀表板</span>
-        </RouterLink>
-
-        <!-- 商品管理 -->
-        <template v-if="auth.pageVisible('categories') || auth.pageVisible('products')">
-          <div class="nav-section">商品管理</div>
-          <RouterLink v-if="auth.pageVisible('categories')" to="/admin/categories" class="nav-link" @click="closeMobile">
-            <i class="bi bi-tags"></i><span>產品分類</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('products')" to="/admin/products" class="nav-link" @click="closeMobile">
-            <i class="bi bi-box-seam"></i><span>產品資料</span>
-          </RouterLink>
-        </template>
-
-        <!-- 倉儲管理 -->
-        <template v-if="auth.pageVisible('warehouses') || auth.pageVisible('inventory') || auth.pageVisible('inbound') || auth.pageVisible('outbound') || auth.pageVisible('movements') || auth.pageVisible('quick-io')">
-          <div class="nav-section">倉儲管理</div>
-          <RouterLink v-if="auth.pageVisible('warehouses')" to="/admin/warehouses" class="nav-link" @click="closeMobile">
-            <i class="bi bi-building"></i><span>倉庫管理</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('inventory')" to="/admin/inventory" class="nav-link" @click="closeMobile">
-            <i class="bi bi-archive"></i><span>庫存查詢</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('inbound') || auth.pageVisible('outbound')" to="/admin/inbound" class="nav-link" @click="closeMobile">
-            <i class="bi bi-arrow-down-up"></i><span>出入庫管理</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('movements')" to="/admin/movements" class="nav-link" @click="closeMobile">
-            <i class="bi bi-arrow-left-right"></i><span>庫存移動</span>
-          </RouterLink>
-          <a v-if="auth.pageVisible('quick-io')" href="/quick-io" target="_blank" class="nav-link external">
-            <i class="bi bi-lightning-charge"></i><span>快速出入庫</span>
-            <i class="bi bi-box-arrow-up-right ext-icon"></i>
-          </a>
-        </template>
-
-        <!-- 顧客點單 -->
-        <template v-if="auth.pageVisible('cust-orders') || auth.pageVisible('kitchen-link') || auth.pageVisible('order-link')">
-          <div class="nav-section">顧客點單</div>
-          <RouterLink v-if="auth.pageVisible('cust-orders')" to="/admin/cust-orders" class="nav-link" @click="closeMobile">
-            <i class="bi bi-receipt"></i><span>訂單管理</span>
-          </RouterLink>
-          <a v-if="auth.pageVisible('kitchen-link')" href="/kitchen" target="_blank" class="nav-link external">
-            <i class="bi bi-grid-3x3-gap"></i><span>備餐顯示</span>
-            <i class="bi bi-box-arrow-up-right ext-icon"></i>
-          </a>
-          <a v-if="auth.pageVisible('order-link')" href="/order" target="_blank" class="nav-link external">
-            <i class="bi bi-qr-code"></i><span>顧客點單頁</span>
-            <i class="bi bi-box-arrow-up-right ext-icon"></i>
-          </a>
-          <!-- QR 碼管理暫時關閉 -->
-          <!-- <RouterLink v-if="auth.pageVisible('qr-codes')" to="/admin/qr-codes" class="nav-link" @click="closeMobile">
-            <i class="bi bi-qr-code-scan"></i><span>QR 碼管理</span>
-          </RouterLink> -->
-        </template>
-
-        <!-- 財務 -->
-        <template v-if="auth.pageVisible('pos-sales') || auth.pageVisible('pos-report') || auth.pageVisible('invoices')">
-          <div class="nav-section">財務</div>
-          <RouterLink v-if="auth.pageVisible('pos-sales')" to="/admin/pos-sales" class="nav-link" @click="closeMobile">
-            <i class="bi bi-receipt"></i><span>銷售記錄</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('pos-report')" to="/admin/pos-report" class="nav-link" @click="closeMobile">
-            <i class="bi bi-bar-chart-line"></i><span>銷售報表</span>
-          </RouterLink>
-          <RouterLink v-if="auth.pageVisible('invoices')" to="/admin/invoices" class="nav-link" @click="closeMobile">
-            <i class="bi bi-receipt-cutoff"></i><span>電子發票</span>
-          </RouterLink>
-        </template>
-
-        <!-- POS 收銀 -->
-        <template v-if="auth.pageVisible('menus') || auth.pageVisible('pos-link')">
-          <div class="nav-section">POS 收銀</div>
-          <RouterLink v-if="auth.pageVisible('menus')" to="/admin/menus" class="nav-link" @click="closeMobile">
-            <i class="bi bi-menu-button-wide"></i><span>菜單管理</span>
-          </RouterLink>
-          <a v-if="auth.pageVisible('pos-link')" href="/pos" target="_blank" class="nav-link external">
-            <i class="bi bi-display"></i><span>開啟收銀台</span>
-            <i class="bi bi-box-arrow-up-right ext-icon"></i>
-          </a>
-        </template>
-
-        <!-- 外送平台 -->
-        <template v-if="auth.pageVisible('delivery-orders')">
-          <div class="nav-section">外送平台</div>
-          <RouterLink v-if="auth.pageVisible('delivery-orders')" to="/admin/delivery-orders" class="nav-link" @click="closeMobile">
-            <i class="bi bi-scooter"></i><span>外送訂單</span>
-          </RouterLink>
-        </template>
-
-        <!-- 系統（依角色 / 模板設定顯示） -->
-        <template v-if="auth.isAdmin || auth.pageVisible('users') || auth.pageVisible('logs') || auth.pageVisible('settings') || auth.pageVisible('delivery-settings') || auth.pageVisible('invoice-settings')">
-          <div class="nav-section">系統</div>
-          <RouterLink v-if="auth.isAdmin || auth.pageVisible('users')" to="/admin/users" class="nav-link" @click="closeMobile">
-            <i class="bi bi-people"></i><span>使用者管理</span>
-          </RouterLink>
-          <RouterLink v-if="auth.isAdmin || auth.pageVisible('logs')" to="/admin/logs" class="nav-link" @click="closeMobile">
-            <i class="bi bi-journal-text"></i><span>操作紀錄</span>
-          </RouterLink>
-          <RouterLink v-if="auth.isAdmin || auth.pageVisible('settings')" to="/admin/settings" class="nav-link" @click="closeMobile">
-            <i class="bi bi-sliders"></i><span>系統設定</span>
-          </RouterLink>
-          <RouterLink v-if="auth.isAdmin || auth.pageVisible('delivery-settings')" to="/admin/delivery-settings" class="nav-link" @click="closeMobile">
-            <i class="bi bi-scooter"></i><span>平台設定</span>
-          </RouterLink>
-          <RouterLink v-if="auth.isAdmin || auth.pageVisible('invoice-settings')" to="/admin/invoice-settings" class="nav-link" @click="closeMobile">
-            <i class="bi bi-receipt-cutoff"></i><span>發票設定</span>
-          </RouterLink>
-          <a v-if="auth.isAdmin" href="/docs/" target="_blank" class="nav-link external">
-            <i class="bi bi-book"></i><span>使用說明</span>
-            <i class="bi bi-box-arrow-up-right ext-icon"></i>
-          </a>
+        <!-- 動態渲染：從 src/config/nav.ts 讀取，新增頁面只需改 nav.ts -->
+        <template v-for="section in visibleSections" :key="section.label">
+          <div class="nav-section">{{ section.label }}</div>
+          <template v-for="group in section.groups" :key="group.sub || '__main__'">
+            <div v-if="group.sub" class="nav-subsection">{{ group.sub }}</div>
+            <template v-for="item in group.items" :key="item.key">
+              <RouterLink
+                v-if="item.to"
+                class="nav-link"
+                :to="item.to"
+                @click="closeMobile"
+              >
+                <i :class="['bi', item.icon]"></i><span>{{ item.label }}</span>
+              </RouterLink>
+              <a
+                v-else-if="item.href"
+                class="nav-link external"
+                :href="item.href"
+                target="_blank"
+                @click="closeMobile"
+              >
+                <i :class="['bi', item.icon]"></i><span>{{ item.label }}</span>
+                <i class="bi bi-box-arrow-up-right ext-icon"></i>
+              </a>
+            </template>
+          </template>
         </template>
       </div>
 
@@ -178,6 +91,7 @@ import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCacheStore } from '@/stores/cache'
 import { useThemeStore } from '@/stores/theme'
+import { NAV_CONFIG } from '@/config/nav'
 import AppToast from '@/components/AppToast.vue'
 
 const auth   = useAuthStore()
@@ -187,6 +101,36 @@ const router = useRouter()
 const route  = useRoute()
 
 const sidebarCollapsed = ref(false)
+
+function isVisible(item: any) {
+  if (item.adminOnly)  return auth.isAdmin
+  if (item.alwaysShow) return true
+  return auth.pageVisible(item.key)
+}
+
+function buildGroups(items: any[]) {
+  const result: { sub: string | null; items: any[] }[] = []
+  let current: { sub: string | null; items: any[] } | null = null
+  for (const item of items) {
+    const sub = item.sub ?? null
+    if (!current || current.sub !== sub) {
+      current = { sub, items: [] }
+      result.push(current)
+    }
+    current.items.push(item)
+  }
+  return result
+}
+
+const visibleSections = computed(() =>
+  NAV_CONFIG
+    .map(section => {
+      const items = section.items.filter(isVisible)
+      if (!items.length) return null
+      return { label: section.label, groups: buildGroups(items) }
+    })
+    .filter(Boolean)
+)
 
 // ── 監聽 401 未授權事件（由 api/index.ts 發出）────────
 function _onUnauthorized() {
@@ -210,29 +154,12 @@ function closeMobile() {
   if (window.innerWidth < 992) sidebarCollapsed.value = true
 }
 
-// 頁面標題對映
-const PAGE_TITLES: Record<string, string> = {
-  '/admin/dashboard':         '儀表板',
-  '/admin/categories':        '產品分類',
-  '/admin/products':          '產品資料',
-  '/admin/warehouses':        '倉庫管理',
-  '/admin/inventory':         '庫存查詢',
-  '/admin/inbound':           '入庫管理',
-  '/admin/outbound':          '出庫管理',
-  '/admin/movements':         '庫存移動',
-  '/admin/cust-orders':       '訂單管理',
-  '/admin/pos-sales':         '銷售記錄',
-  '/admin/pos-report':        '銷售報表',
-  '/admin/menus':             '菜單管理',
-  '/admin/delivery-orders':   '外送訂單',
-  '/admin/delivery-settings': '平台設定',
-  '/admin/stores':            '店家管理',
-  '/admin/users':             '使用者管理',
-  '/admin/logs':              '操作紀錄',
-  '/admin/settings':          '系統設定',
-  '/admin/invoices':          '電子發票',
-  '/admin/invoice-settings':  '發票設定',
-}
+// 頁面標題從 nav.ts 自動產生，避免與 nav.ts 不一致
+const PAGE_TITLES: Record<string, string> = Object.fromEntries(
+  NAV_CONFIG.flatMap(s => s.items)
+    .filter(item => item.to)
+    .map(item => [item.to, item.label])
+)
 const pageTitle = computed(() => PAGE_TITLES[route.path] ?? 'WMS')
 
 const roleColor = computed(() => ({

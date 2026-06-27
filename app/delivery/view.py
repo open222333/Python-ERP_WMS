@@ -17,7 +17,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from src.models.delivery import DeliveryOrder, DeliveryMapping, DeliverySettings
+from src.models.delivery import DeliveryOrder, DeliveryMapping, DeliverySettings, DeliveryMappingTemplate
 from src.models.log import Log
 from src.permissions import require_role
 
@@ -723,10 +723,70 @@ def update_store_delivery_settings(store_id, platform):
         return jsonify({'success': False, 'message': '不支援的平台'}), 400
     data = request.get_json(silent=True) or {}
     kwargs = {}
-    for k in ('enabled', 'auto_confirm', 'default_warehouse_id'):
+    for k in ('enabled', 'auto_confirm', 'default_warehouse_id', 'item_mappings',
+              'mapping_template_id'):
         if k in data:
             kwargs[k] = data[k]
     result = DeliverySettings.upsert(platform, store_ref=store_id, **kwargs)
     Log.create(get_jwt_identity(), '店家外送平台設定',
                f'store={store_id} platform={platform}')
     return jsonify({'success': True, 'data': result})
+
+
+# ─────────────────────────────────────────────────────────────
+#  品項對應模板
+# ─────────────────────────────────────────────────────────────
+
+@app_delivery.route('/mapping-templates/', methods=['GET'])
+@jwt_required()
+@require_role('admin')
+def list_mapping_templates():
+    return jsonify({'success': True, 'data': DeliveryMappingTemplate.find_all()})
+
+
+@app_delivery.route('/mapping-templates/', methods=['POST'])
+@jwt_required()
+@require_role('admin')
+def create_mapping_template():
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': '請填寫模板名稱'}), 400
+    tid = DeliveryMappingTemplate.create(
+        name=name,
+        platform=body.get('platform', ''),
+        items=body.get('items', []),
+    )
+    Log.create(get_jwt_identity(), '品項對應模板', f'create name={name}')
+    return jsonify({'success': True, 'data': DeliveryMappingTemplate.find_by_id(tid)}), 201
+
+
+@app_delivery.route('/mapping-templates/<tid>/', methods=['PUT'])
+@jwt_required()
+@require_role('admin')
+def update_mapping_template(tid):
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': '請填寫模板名稱'}), 400
+    ok = DeliveryMappingTemplate.update(
+        tid,
+        name=name,
+        platform=body.get('platform', ''),
+        items=body.get('items', []),
+    )
+    if not ok:
+        return jsonify({'success': False, 'message': '找不到模板'}), 404
+    Log.create(get_jwt_identity(), '品項對應模板', f'update tid={tid}')
+    return jsonify({'success': True, 'data': DeliveryMappingTemplate.find_by_id(tid)})
+
+
+@app_delivery.route('/mapping-templates/<tid>/', methods=['DELETE'])
+@jwt_required()
+@require_role('admin')
+def delete_mapping_template(tid):
+    ok = DeliveryMappingTemplate.delete(tid)
+    if not ok:
+        return jsonify({'success': False, 'message': '找不到模板'}), 404
+    Log.create(get_jwt_identity(), '品項對應模板', f'delete tid={tid}')
+    return jsonify({'success': True, 'message': '已刪除'})

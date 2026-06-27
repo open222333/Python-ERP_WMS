@@ -25,13 +25,14 @@ class Inventory:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def find_all(cls, warehouse_id: str = None, product_id: str = None) -> list:
+    def find_all(cls, warehouse_id: str = None, product_id: str = None,
+                 limit: int = 2000) -> list:
         q = {}
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
         if product_id:
             q['product_id'] = ObjectId(product_id)
-        docs = cls._col().find(q)
+        docs = cls._col().find(q).limit(limit)
         return [_fmt(d) for d in docs]
 
     @classmethod

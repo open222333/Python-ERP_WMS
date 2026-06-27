@@ -77,8 +77,10 @@ delivery_orders        (UberEats / foodpanda webhook)
 delivery_mappings
   │ product_id → products
 delivery_settings
-  │ store_ref          → stores
-  │ default_warehouse_id → warehouses
+  │ store_ref              → stores
+  │ default_warehouse_id   → warehouses
+  │ mapping_template_id    → delivery_mapping_templates
+delivery_mapping_templates   (品項對應模板，可跨分店共用)
 
 invoices
   │ order_id → pos_orders
@@ -122,7 +124,7 @@ Redis:
 | `/admin/pos-report` | `PosReportView.vue` | POS 銷售報表，日/週/月/年圖表 |
 | `/admin/menus` | `MenusView.vue` | 菜單全功能編輯：菜單/分類/選項組/品項，庫存聯動設定，JSON 匯出/匯入 |
 | `/admin/delivery-orders` | `DeliveryOrdersView.vue` | 外送平台訂單（UberEats / foodpanda），狀態管理 |
-| `/admin/delivery-settings` | `DeliverySettingsView.vue` | 外送平台設定（各店家，啟停、自動確認、預設倉庫） |
+| `/admin/delivery-settings` | `DeliverySettingsView.vue` | 外送平台設定（兩個 Tab：店家設定、品項對應模板 CRUD） |
 | `/admin/stores` | `StoresView.vue` | 分店 CRUD 及分店帳號管理 |
 | `/admin/users` | `UsersView.vue` | 使用者/範本/分店/店家角色，四個 tab |
 | `/admin/logs` | `LogsView.vue` | 操作紀錄查詢，CSV 匯出/匯入，定期清理 |
@@ -333,7 +335,11 @@ Redis:
 | PUT | `/delivery/settings/<platform>` | 更新平台設定 | admin |
 | GET | `/delivery/store/` | 列出所有店家的外送設定 | admin |
 | GET | `/delivery/store/<store_id>/settings/<platform>` | 取得指定店家平台設定 | admin |
-| PUT | `/delivery/store/<store_id>/settings/<platform>` | 更新指定店家平台設定 | admin |
+| PUT | `/delivery/store/<store_id>/settings/<platform>` | 更新指定店家平台設定（含 mapping_template_id） | admin |
+| GET | `/delivery/mapping-templates/` | 列出所有品項對應模板 | admin |
+| POST | `/delivery/mapping-templates/` | 新增品項對應模板 | admin |
+| PUT | `/delivery/mapping-templates/<tid>` | 更新品項對應模板 | admin |
+| DELETE | `/delivery/mapping-templates/<tid>` | 刪除品項對應模板 | admin |
 
 ### `/invoice` — 電子發票
 
@@ -448,7 +454,7 @@ python run.py                         # 正式環境（預設）
 - **Vue Set 響應性**：`Set` 需重新賦值才觸發更新：`selectedIds.value = new Set(selectedIds.value)`
 - **Docker Volume**：`docker-compose up -d --force-recreate <service>` 才會套用新掛載
 - **Vite Build Cache**：build 不更新時執行 `rm -rf node_modules/.vite` 後重 build
-- **AdminLayout**：sidebar 直接寫在 `frontend/src/layouts/AdminLayout.vue`，`AppSidebar.vue` 為舊版廢棄檔案
+- **NAV_CONFIG**：`frontend/src/config/nav.ts` 是側欄與模板設定頁面的唯一資料來源。`AdminLayout.vue` 從 NAV_CONFIG 動態產生側欄，`AppSidebar.vue` 為廢棄空殼。新增頁面只需在 nav.ts 新增一筆，側欄與使用者模板自動同步
 - **出入庫頁面**：`/admin/inbound` 使用 `InOutboundView.vue`（tab 切換），`/admin/outbound` redirect 至 `/admin/inbound`。舊版 `InboundView.vue` / `OutboundView.vue` 已停用（router 不再引用）
 - **docker compose build nginx**：`docker-compose.nginx.yml` 已設 `build: docker/Dockerfile.nginx`，此指令會在 Docker 內部執行 npm build，不需本機安裝 Node.js
 - **Docker Dev 模式**：`docker-compose.dev.yml` 覆寫 nginx 為 volume mount，搭配本機 `npm run build` + `restart nginx`，比完整 image build 快很多

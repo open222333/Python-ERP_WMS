@@ -139,7 +139,8 @@ class Product:
         return d
 
     @classmethod
-    def find_all(cls, keyword: str = '', category_id: str = '', status: int = None) -> list:
+    def find_all(cls, keyword: str = '', category_id: str = '', status: int = None,
+                 limit: int = 1000) -> list:
         q = {}
         if keyword:
             q['$or'] = [
@@ -155,7 +156,7 @@ class Product:
         if status is not None:
             q['status'] = status
         try:
-            docs = cls._col().find(q).sort('created_at', -1)
+            docs = cls._col().find(q).sort('created_at', -1).limit(limit)
             return [cls._fmt(d) for d in docs]
         except Exception:
             logger.error(

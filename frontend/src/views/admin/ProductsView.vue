@@ -6,12 +6,59 @@ import type { Category, Product } from '@/types'
 
 const toast = useToastStore()
 
+// ── Tab ────────────────────────────────────────────────────
+const activeTab = ref<'products' | 'categories'>('products')
+
 // ── State ──────────────────────────────────────────────────
 const products   = ref<Product[]>([])
 const categories = ref<Category[]>([])
 const loading    = ref(false)
 const saving     = ref(false)
 const showModal  = ref(false)
+
+// ── Category CRUD ──────────────────────────────────────────
+interface CategoryForm { _id: string; name: string; sort_order: number }
+const catForm     = ref<CategoryForm>({ _id: '', name: '', sort_order: 0 })
+const showCatModal = ref(false)
+const catSaving    = ref(false)
+
+function openCatModal(cat?: Category) {
+  catForm.value = cat
+    ? { _id: cat._id, name: cat.name, sort_order: cat.sort_order ?? 0 }
+    : { _id: '', name: '', sort_order: 0 }
+  showCatModal.value = true
+}
+
+async function saveCat() {
+  if (!catForm.value.name.trim()) { toast.show('請填寫分類名稱', 'danger'); return }
+  catSaving.value = true
+  try {
+    const payload = { name: catForm.value.name.trim(), sort_order: Number(catForm.value.sort_order) }
+    if (catForm.value._id) {
+      await http.put(`/product/category/${catForm.value._id}`, payload)
+    } else {
+      await http.post('/product/category/', payload)
+    }
+    toast.show('儲存成功', 'success')
+    showCatModal.value = false
+    await loadCategories()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
+  } finally {
+    catSaving.value = false
+  }
+}
+
+async function delCat(id: string) {
+  if (!confirm('確定要刪除此分類？')) return
+  try {
+    await http.delete(`/product/category/${id}`)
+    toast.show('已刪除', 'success')
+    await loadCategories()
+  } catch (e: any) {
+    toast.show(e?.response?.data?.message ?? '刪除失敗', 'danger')
+  }
+}
 
 const filterCatId = ref('')
 const keyword     = ref('')
@@ -292,7 +339,24 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="table-card">
+  <!-- Tab 切換 -->
+  <ul class="nav nav-tabs mb-3" style="border-bottom:none">
+    <li class="nav-item">
+      <a class="nav-link" :class="{ active: activeTab === 'products' }"
+         href="#" @click.prevent="activeTab = 'products'">
+        <i class="bi bi-box-seam me-1"></i>產品資料
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" :class="{ active: activeTab === 'categories' }"
+         href="#" @click.prevent="activeTab = 'categories'">
+        <i class="bi bi-tags me-1"></i>產品分類
+      </a>
+    </li>
+  </ul>
+
+  <!-- ── 產品資料 Tab ─────────────────────────────────── -->
+  <div v-if="activeTab === 'products'" class="table-card">
     <div class="table-header">
       <h6><i class="bi bi-box-seam me-1"></i>產品資料</h6>
       <div class="toolbar">
@@ -489,7 +553,78 @@ onMounted(async () => {
         </tbody>
       </table>
     </div>
+  </div><!-- end 產品資料 tab -->
+
+  <!-- ── 產品分類 Tab ─────────────────────────────────── -->
+  <div v-if="activeTab === 'categories'" class="table-card">
+    <div class="table-header">
+      <h6><i class="bi bi-tags me-1"></i>產品分類</h6>
+      <button class="btn btn-sm btn-primary" @click="openCatModal()">
+        <i class="bi bi-plus-lg"></i> 新增分類
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table mb-0">
+        <thead>
+          <tr><th>名稱</th><th>排序</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-if="!categories.length">
+            <td colspan="3" class="text-center text-muted py-3">尚無分類</td>
+          </tr>
+          <tr v-for="c in categories" :key="c._id">
+            <td class="fw-semibold">{{ c.name }}</td>
+            <td class="text-muted">{{ c.sort_order ?? 0 }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary me-1" @click="openCatModal(c)">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" @click="delCat(c._id)">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
+
+  <!-- Category Modal -->
+  <Teleport to="body">
+    <div v-if="showCatModal" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055"
+         @click.self="showCatModal = false">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-tags me-1"></i>
+              {{ catForm._id ? '編輯分類' : '新增分類' }}
+            </h5>
+            <button type="button" class="btn-close" @click="showCatModal = false"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">名稱 <span class="text-danger">*</span></label>
+              <input v-model="catForm.name" type="text" class="form-control" placeholder="分類名稱"
+                     @keydown.enter="(e) => !e.isComposing && saveCat()" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">排序</label>
+              <input v-model.number="catForm.sort_order" type="number" class="form-control" min="0" placeholder="0" />
+              <div class="form-text">數字越小越靠前，預設 0</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showCatModal = false">取消</button>
+            <button class="btn btn-primary" :disabled="catSaving" @click="saveCat">
+              <span v-if="catSaving" class="spinner-border spinner-border-sm me-1"></span>
+              儲存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Add / Edit Modal -->
   <Teleport to="body">
