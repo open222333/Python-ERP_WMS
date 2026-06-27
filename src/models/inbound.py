@@ -50,13 +50,13 @@ class InboundOrder:
 
     @classmethod
     def find_all(cls, status: str = None, warehouse_id: str = None,
-                 limit: int = 100) -> list:
+                 limit: int = 100, offset: int = 0) -> list:
         q = {}
         if status:
             q['status'] = status
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
+        docs = cls._col().find(q).sort('created_at', -1).skip(offset).limit(limit)
         return [_fmt_order(d) for d in docs]
 
     @classmethod
