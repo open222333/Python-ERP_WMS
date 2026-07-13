@@ -2,6 +2,8 @@ from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
 from src.mongo import get_db
+# [REFACTOR] 狀態字串改由 src/constants.py 統一管理
+from src.constants import PosOrderStatus
 import random, string
 
 
@@ -102,6 +104,55 @@ class PosOrder:
             q['source'] = source
         docs = cls._col().find(q).sort('created_at', -1).limit(limit)
         return [_fmt(d) for d in docs]
+
+    # [OPT] 銷售報表改用 MongoDB aggregation 統計，取代撈全部訂單再 Python groupby
+    @classmethod
+    def summary(cls, date_from: datetime, date_to: datetime,
+                granularity: str = 'day', status: str = PosOrderStatus.COMPLETED,
+                store_filter: dict = None) -> dict:
+        """
+        以 aggregation 統計期間內訂單。
+        granularity: 'day' → 依日分組（YYYY-MM-DD）；'month' → 依月分組（YYYY-MM）
+        回傳 {'total_orders', 'total_amount', 'total_discount', 'cash_total',
+              'card_total', 'breakdown': [{'period','orders','amount','discount'}]}
+        """
+        match = dict(store_filter or {})
+        match['created_at'] = {'$gte': date_from, '$lte': date_to}
+        if status:
+            match['status'] = status
+        fmt = '%Y-%m' if granularity == 'month' else '%Y-%m-%d'
+        pipeline = [
+            {'$match': match},
+            {'$group': {
+                '_id': {'$dateToString': {'format': fmt, 'date': '$created_at',
+                                          'onNull': ''}},
+                'orders':   {'$sum': 1},
+                'amount':   {'$sum': {'$ifNull': ['$total_amount', 0]}},
+                'discount': {'$sum': {'$ifNull': ['$discount', 0]}},
+                'cash':     {'$sum': {'$cond': [
+                    {'$in': ['$payment_type', ['cash', 'mixed']]},
+                    {'$ifNull': ['$cash_amount', 0]}, 0]}},
+                'card':     {'$sum': {'$cond': [
+                    {'$in': ['$payment_type', ['card', 'mixed']]},
+                    {'$ifNull': ['$card_amount', 0]}, 0]}},
+            }},
+            {'$sort': {'_id': 1}},
+        ]
+        groups = list(cls._col().aggregate(pipeline))
+        return {
+            'total_orders':   sum(g['orders']   for g in groups),
+            'total_amount':   round(sum(g['amount']   for g in groups), 2),
+            'total_discount': round(sum(g['discount'] for g in groups), 2),
+            'cash_total':     round(sum(g['cash']     for g in groups), 2),
+            'card_total':     round(sum(g['card']     for g in groups), 2),
+            'breakdown': [
+                {'period':   g['_id'],
+                 'orders':   g['orders'],
+                 'amount':   round(g['amount'],   2),
+                 'discount': round(g['discount'], 2)}
+                for g in groups
+            ],
+        }
 
     @classmethod
     def find_by_id(cls, sid: str, store_filter: dict = None) -> dict:
@@ -234,7 +285,7 @@ class PosOrder:
             'linepay_transaction_id': str(payment.get('linepay_transaction_id', '')),
             'cashier':                cashier,
             'remark':                 remark,
-            'status':                 'completed',
+            'status':                 PosOrderStatus.COMPLETED,
             'created_at':             now,
         }
         if store_id:
@@ -405,7 +456,7 @@ class PosOrder:
             'change_amount': 0.0,
             'cashier':       operator,
             'remark':        delivery_order.get('note', ''),
-            'status':        'completed',
+            'status':        PosOrderStatus.COMPLETED,
             'created_at':    placed_at,
         }
         sid = str(db[cls.COLLECTION].insert_one(order_doc).inserted_id)
@@ -475,7 +526,7 @@ class PosOrder:
             'linepay_transaction_id': '',
             'cashier':                operator,
             'remark':                 f"顧客點單 桌號：{cust_order.get('table_no', '')}",
-            'status':                 'completed',
+            'status':                 PosOrderStatus.COMPLETED,
             'source':                 'cust_order',
             'cust_order_id':          co_id,
             'created_at':             now,
@@ -511,8 +562,8 @@ class PosOrder:
             except (ValueError, TypeError):
                 created_at = datetime.utcnow()
 
-            status_raw = str(r.get('status') or 'completed').strip()
-            status = status_raw if status_raw in ('completed', 'refunded') else 'completed'
+            status_raw = str(r.get('status') or PosOrderStatus.COMPLETED).strip()
+            status = status_raw if status_raw in PosOrderStatus.IMPORTABLE else PosOrderStatus.COMPLETED
 
             docs.append({
                 'order_no':      order_no,
@@ -546,7 +597,7 @@ class PosOrder:
         from src.models.inventory import Inventory, StockMovement
         from src.models.warehouse import Warehouse
 
-        order = cls._col().find_one({'_id': ObjectId(sid), 'status': {'$in': ['completed', 'refunding']}})
+        order = cls._col().find_one({'_id': ObjectId(sid), 'status': {'$in': list(PosOrderStatus.REFUNDABLE)}})
         if not order:
             return {'success': False, 'error': '銷售單不存在或已退款'}
 
@@ -588,7 +639,7 @@ class PosOrder:
 
         cls._col().update_one(
             {'_id': ObjectId(sid)},
-            {'$set': {'status': 'refunded', 'refund_reason': reason,
+            {'$set': {'status': PosOrderStatus.REFUNDED, 'refund_reason': reason,
                       'refunded_by': operator, 'refunded_at': now}},
         )
         return {'success': True}

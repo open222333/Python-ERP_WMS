@@ -32,7 +32,8 @@ class Warehouse:
         return [_fmt(d) for d in docs]
 
     @classmethod
-    def find_by_id(cls, wid: str, store_filter: dict = None) -> dict:
+    def find_by_id(cls, wid: str, store_filter: dict = None, session=None) -> dict:
+        # session: [OPT-N1] 可選 pymongo ClientSession（交易內讀取用，預設 None 行為不變）
         try:
             oid = ObjectId(wid)
         except InvalidId:
@@ -40,7 +41,22 @@ class Warehouse:
         q = {'_id': oid}
         if store_filter:
             q.update(store_filter)
-        return _fmt(cls._col().find_one(q))
+        return _fmt(cls._col().find_one(q, session=session))
+
+    # [OPT] 批次查詢多筆倉庫（$in 一次查回），供列表頁避免 N+1 查詢
+    @classmethod
+    def find_by_ids(cls, wids: list) -> dict:
+        """回傳 {wid_str: warehouse_dict}；無效 ID 直接略過"""
+        oids = []
+        for wid in wids or []:
+            try:
+                oids.append(ObjectId(wid))
+            except (InvalidId, TypeError):
+                pass
+        if not oids:
+            return {}
+        return {str(d['_id']): _fmt(d)
+                for d in cls._col().find({'_id': {'$in': oids}})}
 
     @classmethod
     def find_by_code(cls, code: str, store_filter: dict = None) -> dict:

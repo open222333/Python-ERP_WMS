@@ -50,6 +50,9 @@ def create_warehouse():
 def update_warehouse(wid):
     data = request.get_json(silent=True) or {}
     try:
+        # [OPT] IDOR 修復：先以 store_filter 驗證倉庫所有權，非本店倉庫回 404
+        if not Warehouse.find_by_id(wid, store_filter=get_store_filter()):
+            return jsonify({'success': False, 'message': '倉庫不存在'}), 404
         updated = Warehouse.update(wid, data)
     except ValueError:
         return jsonify({'success': False, 'message': 'ID 格式無效'}), 400
@@ -64,6 +67,9 @@ def update_warehouse(wid):
 @require_role('admin')
 def delete_warehouse(wid):
     try:
+        # [OPT] IDOR 修復：先以 store_filter 驗證倉庫所有權，非本店倉庫回 404
+        if not Warehouse.find_by_id(wid, store_filter=get_store_filter()):
+            return jsonify({'success': False, 'message': '倉庫不存在'}), 404
         deleted = Warehouse.delete(wid)
     except ValueError:
         return jsonify({'success': False, 'message': 'ID 格式無效'}), 400

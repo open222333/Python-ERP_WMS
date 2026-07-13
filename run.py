@@ -39,8 +39,14 @@ app = create_app(cfg)
 # ── 確保預設 admin 帳號存在 ──
 admin = User.find_by_username('admin')
 if not admin:
-    User.create('admin', 'admin', role='admin')
-    print('[init] 已建立預設帳號 admin / admin，請登入後立即修改密碼')
+    # [OPT] 安全修復：預設 admin 密碼改為隨機產生，不再使用 admin/admin 弱密碼
+    _admin_pw = secrets.token_urlsafe(12)
+    User.create('admin', _admin_pw, role='admin')
+    print('=' * 60)
+    print('[init] ⚠ 已建立預設帳號 admin，隨機密碼如下（僅顯示這一次）：')
+    print(f'[init]     admin / {_admin_pw}')
+    print('[init] ⚠ 請登入後立即修改密碼！')
+    print('=' * 60)
 elif not admin.get('role'):
     User.update(str(admin['_id']), role='admin')
     print('[init] 已修正 admin 帳號 role 為 admin')

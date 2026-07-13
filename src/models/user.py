@@ -136,4 +136,8 @@ class User:
 
     @staticmethod
     def check_password(plain: str, hashed: str) -> bool:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
+        # [OPT] 防止 None / 格式錯誤的 hash 造成 500，驗證失敗一律回 False
+        try:
+            return bcrypt.checkpw(plain.encode(), hashed.encode())
+        except (ValueError, TypeError, AttributeError):  # [OPT] AttributeError 涵蓋 hashed=None
+            return False

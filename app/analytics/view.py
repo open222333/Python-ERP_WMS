@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
 from datetime import datetime, timedelta
 from src.mongo import get_db
+# [REFACTOR] 狀態字串改由 src/constants.py 統一管理
+from src.constants import OrderStatus
 
 app_analytics = Blueprint('app_analytics', __name__)
 
@@ -30,7 +32,7 @@ def _count(collection: str, start: datetime, status: str = None) -> int:
 
 def _completed_count(collection: str, start: datetime) -> int:
     return get_db()[collection].count_documents(
-        {'completed_at': {'$gte': start}, 'status': 'completed'})
+        {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED})
 
 
 def _completed_stats(collection: str, start: datetime) -> dict:
@@ -42,7 +44,7 @@ def _completed_stats(collection: str, start: datetime) -> dict:
     """
     qty_field = 'received_qty' if collection == 'inbound_orders' else 'shipped_qty'
     pipeline = [
-        {'$match': {'completed_at': {'$gte': start}, 'status': 'completed'}},
+        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED}},
         {'$unwind': '$items'},
         {'$group': {
             '_id': None,
@@ -64,7 +66,7 @@ def _outbound_gross_profit(start: datetime) -> float:
     僅計算該期間內 status='completed' 的出庫單。
     """
     pipeline = [
-        {'$match': {'completed_at': {'$gte': start}, 'status': 'completed'}},
+        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED}},
         {'$unwind': '$items'},
         {'$lookup': {
             'from': 'products',

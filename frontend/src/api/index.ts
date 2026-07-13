@@ -10,10 +10,13 @@ http.interceptors.request.use(cfg => {
   const token = localStorage.getItem('token')
 
   // ── DEBUG（排錯用，確認 token 後可刪除）──────────────
-  console.debug(
-    `[http] ${(cfg.method ?? 'GET').toUpperCase()} ${cfg.url}`,
-    token ? `token=${token.slice(0, 20)}…` : '⚠️ NO TOKEN',
-  )
+  // [OPT] 僅在開發模式輸出，避免生產環境每個請求都 console 並外洩 token 前綴
+  if (import.meta.env.DEV) {
+    console.debug(
+      `[http] ${(cfg.method ?? 'GET').toUpperCase()} ${cfg.url}`,
+      token ? `token=${token.slice(0, 20)}…` : '⚠️ NO TOKEN',
+    )
+  }
   // ────────────────────────────────────────────────────
 
   if (token) cfg.headers.Authorization = `Bearer ${token}`

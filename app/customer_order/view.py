@@ -10,7 +10,8 @@
 - GET  /                  查詢訂單列表（需登入）
 - GET  /active            待處理 + 處理中訂單（廚房用，需登入）
 - GET  /stats             今日統計（需登入）
-- GET  /stream            SSE 廚房訂單推送（需登入，?token=JWT）
+- POST /stream-ticket     簽發 SSE 一次性 ticket（需登入，header JWT）  # [REFACTOR]
+- GET  /stream            SSE 廚房訂單推送（?ticket= 一次性 ticket；舊 ?token=JWT deprecated）
 - GET  /<oid>             取得單筆訂單（需登入）
 - PUT  /<oid>/status      更新訂單狀態（operator+；完成/取消時自動關閉桌況）
 - DELETE /session/<table_no>  手動關閉桌況 session（admin）
@@ -32,9 +33,17 @@ from flask_jwt_extended import (
     decode_token, get_jwt,
 )
 from src.models.customer_order import CustomerOrder, ORDER_STATUS_LABEL
+# [REFACTOR] 狀態常數與轉移表改由 src/constants.py 統一管理
+from src.constants import CustomerOrderStatus
+# [REFACTOR] pydantic 驗證層
+from src.schemas.base import validate_payload
+from src.schemas.domain import CustomerOrderCreate
 from src.models.table_session import TableSession
+# [REFACTOR] SSE 一次性 ticket（Redis），避免 JWT 進入 nginx access log
+from src.models.sse_ticket import SseTicket
 from src.models.menu import Menu
 from src.models.settings import SystemSettings
+from src.cache import cached_json  # [OPT-N3] 菜單 payload Redis 快取
 from src.models.log import Log
 from src.permissions import require_role, get_store_filter, get_current_store_id
 
@@ -99,6 +108,27 @@ def _maybe_auto_refresh_tokens():
 
 
 # ── 公開：取得點單菜單 ─────────────────────────────
+
+# [OPT-N3] 菜單 payload 快取 TTL（秒）。菜單寫入端點會主動失效（app/menu/view.py）
+CUST_MENU_CACHE_TTL = 60
+
+
+def _load_active_menu(menu_id):
+    """[OPT-N3] 快取 producer：讀取指定菜單，僅回傳啟用中菜單（否則 None，不快取）"""
+    m = Menu.find_by_id(menu_id)
+    if m and m.get('status', 1) == 1:
+        return m
+    return None
+
+
+def _load_default_menu():
+    """[OPT-N3] 快取 producer：fallback 第一個啟用菜單（無則 None，不快取）"""
+    menus = Menu.find_all(status=1)
+    if not menus:
+        return None
+    return Menu.find_by_id(menus[0]['_id'])
+
+
 @app_customer_order.route('/menu', methods=['GET'])
 def get_order_menu():
     """
@@ -128,23 +158,28 @@ def get_order_menu():
             table_label=resolved_label or resolved_table,
         )
 
+    # [OPT-N3] 以下菜單 payload 為所有掃碼顧客共用的重讀取（menu 文件 + 格式化），
+    #          以 Redis 快取 60 秒；上方 QR token 驗證與 session token 發放屬
+    #          每請求狀態邏輯，每次照跑、不得快取。
     menu_id = request.args.get('menu_id') or SystemSettings.get('order_menu_id', '')
+    m = None
     if menu_id:
-        m = Menu.find_by_id(menu_id)
-        if m and m.get('status', 1) == 1:
-            resp = jsonify({
-                'success': True, 'data': m,
-                'table_no': resolved_table, 'table_label': resolved_label,
-                'session_token': session_token,
-            })
-            resp.headers['Cache-Control'] = 'no-store'
-            return resp
+        m = cached_json(
+            f'cache:cust_menu:{menu_id}',
+            CUST_MENU_CACHE_TTL,
+            lambda: _load_active_menu(menu_id),
+        )
 
-    # fallback：第一個啟用菜單
-    menus = Menu.find_all(status=1)
-    if not menus:
+    if not m:
+        # fallback：第一個啟用菜單（同樣快取，key 固定為 default）
+        m = cached_json(
+            'cache:cust_menu:default',
+            CUST_MENU_CACHE_TTL,
+            _load_default_menu,
+        )
+    if not m:
         return jsonify({'success': False, 'message': '目前無可用菜單'}), 404
-    m = Menu.find_by_id(menus[0]['_id'])
+
     resp = jsonify({
         'success': True, 'data': m,
         'table_no': resolved_table, 'table_label': resolved_label,
@@ -171,7 +206,8 @@ def create_order():
         customer_id = get_jwt_identity()
         if customer_id:
             jwt_claims = get_jwt()
-    except Exception:
+    except Exception as e:
+        logger.debug('optional JWT 驗證失敗（忽略，以匿名處理）: %s', e)  # [OPT] 補記錄，不再無聲吞例外
         pass
 
     data          = request.get_json(silent=True) or {}
@@ -226,6 +262,10 @@ def create_order():
         if not isinstance(it.get('qty', 0), (int, float)) or it.get('qty', 0) <= 0:
             return jsonify({'success': False,
                             'message': f'第 {i+1} 筆品項數量無效'}), 400
+    # [REFACTOR] pydantic 型別/結構防線：非數字 price 原會在下方 float() 拋 ValueError → 500
+    _, _schema_err = validate_payload(CustomerOrderCreate, data, message='品項金額格式錯誤')
+    if _schema_err:
+        return _schema_err
     for item in items:
         if int(item.get('qty', 0)) <= 0:
             return jsonify({'success': False, 'message': '品項數量必須大於 0'}), 400
@@ -260,19 +300,48 @@ def create_order():
     }), 201
 
 
+# ── SSE：簽發一次性 ticket ────────────────────────
+# [REFACTOR] 新端點：以一般 header JWT 換取 30 秒 TTL 一次性 ticket，
+#            供 EventSource 以 ?ticket= 連 /stream，JWT 不再進入 query string
+@app_customer_order.route('/stream-ticket', methods=['POST'])
+@jwt_required()
+def create_stream_ticket():
+    """簽發 SSE 一次性短效 ticket（TTL 30 秒，GETDEL 用過即失效）"""
+    identity = get_jwt_identity()
+    claims = get_jwt()
+    ticket = SseTicket.issue(identity, claims={
+        'role':      claims.get('role'),
+        'store_ids': claims.get('store_ids', []),
+    })
+    return jsonify({'success': True, 'ticket': ticket})
+
+
 # ── SSE：即時訂單推送 ─────────────────────────────
 @app_customer_order.route('/stream', methods=['GET'])
 def stream_orders():
     """
     SSE 推送廚房訂單（每 2 秒檢查，有變更才推送）
-    JWT 以 ?token= query string 傳遞（EventSource 不支援自訂 header）
+    [REFACTOR] 認證改為一次性 ticket：先 POST /stream-ticket 取 ticket，
+    再以 ?ticket= 連線（EventSource 不支援自訂 header）。
+    舊 ?token=JWT 路徑保留向下相容（deprecated，避免部署期間新舊前端不匹配）。
     """
     # kitchen stream: intentionally open to all authenticated users
-    if not request.args.get('token', ''):
-        return jsonify({'success': False, 'message': '未授權'}), 401
-    try:
-        verify_jwt_in_request(locations=['query_string'])
-    except Exception:
+    ticket = request.args.get('ticket', '')
+    if ticket:
+        # [REFACTOR] 一次性 ticket：GETDEL 取出即失效；無效/過期/重複使用 → 401
+        ticket_data = SseTicket.consume(ticket)
+        if not ticket_data:
+            return jsonify({'success': False, 'message': '未授權'}), 401
+        # 原 JWT claims（identity / role / store_ids）由 ticket 內容還原；
+        # 目前 stream 不依 store 過濾（開放給所有已登入使用者），行為不變
+    elif request.args.get('token', ''):
+        # [REFACTOR] deprecated：舊版 JWT query string 相容路徑，前端已改用 ticket，日後移除
+        try:
+            verify_jwt_in_request(locations=['query_string'])
+        except Exception as e:
+            logger.warning('SSE /stream JWT 驗證失敗: %s', e)  # [OPT] 補記錄，不再無聲吞例外
+            return jsonify({'success': False, 'message': '未授權'}), 401
+    else:
         return jsonify({'success': False, 'message': '未授權'}), 401
 
     def generate():
@@ -291,7 +360,8 @@ def stream_orders():
                 time.sleep(2)
             except GeneratorExit:
                 break
-            except Exception:
+            except Exception as e:
+                logger.warning('廚房 SSE /stream 推播中斷: %s', e)  # [OPT] 補記錄，不再無聲吞例外
                 break
 
     return Response(
@@ -372,14 +442,11 @@ def update_order_status(oid):
         return jsonify({'success': False, 'message': '請提供 status'}), 400
 
     # Bug 1 fix: validate state-machine transition before persisting
-    VALID_TRANSITIONS = {
-        'pending':    ['processing', 'cancelled'],
-        'processing': ['completed', 'cancelled'],
-    }
+    # [REFACTOR] 轉移表遷移至 CustomerOrderStatus.VALID_TRANSITIONS，改用 is_valid_transition()
     order = CustomerOrder.find_by_id(oid, store_filter=get_store_filter())
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
-    if new_status not in VALID_TRANSITIONS.get(order['status'], []):
+    if not CustomerOrderStatus.is_valid_transition(order['status'], new_status):
         return jsonify({'success': False,
                         'message': f"不允許從 {order['status']} 轉換至 {new_status}"}), 400
 
@@ -394,7 +461,7 @@ def update_order_status(oid):
                f"order={order['order_no']} status={status}")
 
     # 訂單完成時自動建立 POS 銷售記錄
-    if status == 'completed':
+    if status == CustomerOrderStatus.COMPLETED:
         try:
             from src.models.pos import PosOrder
             PosOrder.create_from_cust_order(order, operator)
@@ -407,7 +474,7 @@ def update_order_status(oid):
             )
 
     # 結帳或取消 → 關閉桌況 session（通知顧客端 SSE）
-    if status in ('completed', 'cancelled') and order and order.get('table_no'):
+    if status in (CustomerOrderStatus.COMPLETED, CustomerOrderStatus.CANCELLED) and order and order.get('table_no'):
         table_no = order['table_no']
         try:
             TableSession.close(table_no)
@@ -471,7 +538,9 @@ def customer_stream():
                 time.sleep(2)
             except GeneratorExit:
                 break
-            except Exception:
+            except Exception as e:
+                logger.warning('顧客 SSE /customer-stream 推播中斷 table=%s: %s',
+                               table_no, e)  # [OPT] 補記錄，不再無聲吞例外
                 break
 
     return Response(

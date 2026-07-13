@@ -7,6 +7,8 @@ from src.models.inventory import Inventory, StockMovement, MOVEMENT_TYPES, MOVEM
 from src.models.product import Product
 from src.models.warehouse import Warehouse
 from src.models.log import Log
+from src.schemas.base import validate_payload, apply_coerced  # [REFACTOR] pydantic 驗證層
+from src.schemas.domain import InventoryAdjust, InventoryBatch
 from src.models.settings import SystemSettings
 from src.permissions import require_role
 
@@ -47,21 +49,18 @@ def list_inventory():
         limit=limit,
     )
     # 補充 product / warehouse 名稱
-    product_cache = {}
-    warehouse_cache = {}
+    # [OPT] 先收集所有 id 用 $in 批次查回，消除迴圈逐筆 find_by_id 的 N+1 查詢
+    pids = {row['product_id'] for row in rows if row.get('product_id')}
+    wids = {row['warehouse_id'] for row in rows if row.get('warehouse_id')}
+    product_map = Product.find_by_ids(list(pids))
+    warehouse_map = Warehouse.find_by_ids(list(wids))
     for row in rows:
-        pid = row.get('product_id')
-        wid = row.get('warehouse_id')
-        if pid and pid not in product_cache:
-            p = Product.find_by_id(pid)
-            product_cache[pid] = {'name': p['name'], 'sku': p['sku'], 'unit': p['unit']} if p else {}
-        if wid and wid not in warehouse_cache:
-            w = Warehouse.find_by_id(wid)
-            warehouse_cache[wid] = w['name'] if w else ''
-        row['product_name'] = product_cache.get(pid, {}).get('name', '')
-        row['product_sku'] = product_cache.get(pid, {}).get('sku', '')
-        row['product_unit'] = product_cache.get(pid, {}).get('unit', '')
-        row['warehouse_name'] = warehouse_cache.get(wid, '')
+        p = product_map.get(row.get('product_id')) or {}
+        w = warehouse_map.get(row.get('warehouse_id'))
+        row['product_name'] = p.get('name', '')
+        row['product_sku'] = p.get('sku', '')
+        row['product_unit'] = p.get('unit', '')
+        row['warehouse_name'] = w['name'] if w else ''
     return jsonify({'success': True, 'data': rows})
 
 
@@ -71,6 +70,11 @@ def list_inventory():
 def adjust_inventory():
     """手動調整庫存（盤點）"""
     data = request.get_json(silent=True) or {}
+    # [REFACTOR] pydantic 型別/結構驗證＋數值轉型寫回
+    _payload, _err = validate_payload(InventoryAdjust, data)
+    if _err:
+        return _err
+    apply_coerced(data, _payload, ('quantity',))
     product_id = data.get('product_id')
     warehouse_id = data.get('warehouse_id')
     quantity = data.get('quantity')
@@ -147,6 +151,10 @@ def batch_move():
         description: 參數錯誤
     """
     data = request.get_json(silent=True) or {}
+    # [REFACTOR] pydantic 型別/結構驗證（items 巢狀數值防呆）
+    _, _err = validate_payload(InventoryBatch, data)
+    if _err:
+        return _err
     mov_type     = data.get('type', '')
     warehouse_id = data.get('warehouse_id', '')
     remark       = data.get('remark', '')
@@ -245,7 +253,9 @@ def batch_move():
         })
 
     if errors and not results:
-        return jsonify({'success': False, 'message': '；'.join(errors)}), 400
+        # [OPT] 保留 message 相容前端，額外回傳 errors 陣列方便逐筆顯示
+        return jsonify({'success': False, 'message': '；'.join(errors),
+                        'errors': errors}), 400
 
     label = MOVEMENT_LABEL.get(mov_type, mov_type)
     Log.create(operator, f'快速{label}',

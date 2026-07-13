@@ -24,6 +24,8 @@ from src.models.pos import PosOrder
 from src.models.log import Log
 from src.models.settings import SystemSettings
 from src.permissions import require_role
+# [REFACTOR] 狀態字串改由 src/constants.py 統一管理
+from src.constants import InvoiceStatus, PosOrderStatus
 
 logger     = logging.getLogger(__name__)
 app_invoice = Blueprint('app_invoice', __name__)
@@ -410,7 +412,7 @@ def issue_invoice():
 
     # 檢查是否已開立
     existing = Invoice.find_by_order(order_id)
-    if existing and existing['status'] == 'issued':
+    if existing and existing['status'] == InvoiceStatus.ISSUED:
         return jsonify({'success': False,
                         'message': f"此訂單已開立發票 {existing['invoice_no']}"}), 400
 
@@ -418,7 +420,7 @@ def issue_invoice():
     order = PosOrder.find_by_id(order_id)
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
-    if order.get('status') != 'completed':
+    if order.get('status') != PosOrderStatus.COMPLETED:
         return jsonify({'success': False, 'message': '僅限已完成訂單'}), 400
 
     # 建立 Invoice 記錄（pending）
@@ -507,7 +509,7 @@ def void_invoice(inv_id):
     inv = Invoice.find_by_id(inv_id)
     if not inv:
         return jsonify({'success': False, 'message': '發票不存在'}), 404
-    if inv['status'] != 'issued':
+    if inv['status'] != InvoiceStatus.ISSUED:
         return jsonify({'success': False, 'message': '僅限已開立的發票'}), 400
 
     try:

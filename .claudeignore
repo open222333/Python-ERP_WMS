@@ -1,0 +1,25 @@
+# 依制度文件 A 痛點一：排除不需進入 AI context 的路徑，控 token
+.git/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+
+# 前端產物與相依（原始碼在 frontend/src/）
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend-dist/
+.vite/
+
+# Log 與備份/dump（依文件 F：備份檔不得讀入 context）
+logs/
+*.log
+*.bak
+*.dump
+*.sql
+*.sql.gz
+*.tar.gz
+
+# 金鑰與環境值（依文件 F 禁令 6：不得明文進入對話）
+.env

@@ -10,14 +10,17 @@ class Log:
         return get_db()[cls.COLLECTION]
 
     @classmethod
-    def create(cls, username: str, action: str, detail: str = '', success: bool = True) -> str:
+    def create(cls, username: str, action: str, detail: str = '', success: bool = True,
+               session=None) -> str:
+        # session: [OPT-N1] 可選 pymongo ClientSession（交易內呼叫時傳入，讓操作紀錄
+        # 與其協調的業務寫入同進退——例如出入庫完成失敗時，Log 也一併回滾）
         result = cls._col().insert_one({
             'username':   username,
             'action':     action,
             'detail':     detail,
             'success':    success,
             'created_at': datetime.utcnow(),
-        })
+        }, session=session)
         return str(result.inserted_id)
 
     @classmethod

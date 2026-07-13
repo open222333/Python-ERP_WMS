@@ -51,11 +51,13 @@ class Inventory:
 
     @classmethod
     def adjust(cls, product_id: str, warehouse_id: str, delta: int,
-               location_id: str = None) -> tuple[int, int]:
+               location_id: str = None, session=None) -> tuple[int, int]:
         """
         調整庫存，回傳 (before_qty, after_qty)
         delta 正數=增加，負數=減少
         使用 find_one_and_update + $inc 確保原子性，避免並發覆寫。
+        session: [OPT-N1] 可選 pymongo ClientSession（交易內呼叫時傳入；
+                 standalone/mongomock 環境傳 None 即可，行為不變）
         """
         q = {
             'product_id': ObjectId(product_id),
@@ -69,6 +71,7 @@ class Inventory:
              '$setOnInsert': {'created_at': now}},
             upsert=True,
             return_document=False,  # 回傳更新前的文件
+            session=session,
         )
         # before_doc is None when the document did not previously exist (upsert
         # created a new record).  In that case before_qty is 0 and after_qty
@@ -79,7 +82,9 @@ class Inventory:
         after_qty  = before_qty + delta
         if after_qty < 0:
             # Undo the $inc to leave the collection in a consistent state.
-            cls._col().update_one(q, {'$inc': {'quantity': -delta}})
+            # [OPT-N1] 若在交易內呼叫，此 raise 會使整個交易 abort，這筆手動回滾
+            # 屬多餘但無害（transaction 已保證整體回滾）；非交易呼叫時仍是必要的。
+            cls._col().update_one(q, {'$inc': {'quantity': -delta}}, session=session)
             raise ValueError(
                 f"Inventory adjustment would result in negative quantity "
                 f"(before={before_qty}, delta={delta})."
@@ -135,7 +140,8 @@ class StockMovement:
                product_name: str = '', product_sku: str = '',
                warehouse_name: str = '',
                reference_type: str = '', reference_id: str = '',
-               remark: str = '', operator: str = '') -> str:
+               remark: str = '', operator: str = '', session=None) -> str:
+        # session: [OPT-N1] 可選 pymongo ClientSession（交易內呼叫時傳入）
         doc = {
             'product_id': ObjectId(product_id),
             'product_name': product_name,
@@ -153,7 +159,7 @@ class StockMovement:
             'operator': operator,
             'created_at': datetime.utcnow(),
         }
-        return str(cls._col().insert_one(doc).inserted_id)
+        return str(cls._col().insert_one(doc, session=session).inserted_id)
 
     # reference_type 屬於菜單品項觸發（POS 銷售 / 退款 / 外送）的類型
     _MENU_REF_TYPES = {'pos_order', 'pos_refund', 'delivery_order'}

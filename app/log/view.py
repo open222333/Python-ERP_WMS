@@ -242,6 +242,16 @@ def import_logs():
     if len(rows) > MAX_IMPORT_ROWS:
         return jsonify({'success': False, 'message': f'匯入筆數上限 {MAX_IMPORT_ROWS} 筆'}), 400
 
+    # [OPT] 單欄位字串長度上限檢查，避免匯入超大字串撐爆資料庫
+    MAX_FIELD_LEN = 10000
+    for i, r in enumerate(rows):
+        if not isinstance(r, dict):
+            continue
+        for k, v in r.items():
+            if isinstance(v, str) and len(v) > MAX_FIELD_LEN:
+                return jsonify({'success': False,
+                                'message': f'第 {i+1} 筆欄位 {k} 長度超過上限 {MAX_FIELD_LEN} 字元'}), 400
+
     inserted = Log.bulk_insert(rows)
     operator = get_jwt_identity()
     Log.create(operator, '操作紀錄匯入', f'inserted={inserted}')

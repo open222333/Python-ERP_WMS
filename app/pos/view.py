@@ -18,46 +18,25 @@ import csv
 import io
 import json
 import logging
-from collections import defaultdict
+# [OPT] 報表 groupby 改由 MongoDB aggregation 處理，defaultdict 已不需要
 from datetime import datetime, timedelta
 
 from flask import Blueprint, request, jsonify, render_template, Response, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from bson import ObjectId
-from src.mongo import get_db
 from src.models.pos import PosOrder
 from src.models.log import Log
-from src.permissions import require_role, get_store_filter, get_current_store_id
+from src.schemas.base import validate_payload  # [REFACTOR] pydantic 驗證層
+from src.schemas.domain import PosCheckout
+from src.permissions import require_role, get_store_filter
+# [REFACTOR] 狀態字串改由 src/constants.py 統一管理
+from src.constants import PosOrderStatus
+# [REFACTOR] 結帳/退款業務邏輯（含 LINE Pay / 全支付 provider 工廠 _get_linepay/_get_zpay）
+#            移至 src/services/pos_service.py，view 僅負責 request 解析與 jsonify
+from src.services.pos_service import PosService
 
 logger  = logging.getLogger(__name__)
 app_pos = Blueprint('app_pos', __name__)
-
-
-# ── 第三方支付實例（依系統設定）────────────────────────────────
-def _get_linepay():
-    from src.payment_providers.linepay import LinePayCPM
-    from src.models.settings import SystemSettings
-    s = SystemSettings.get('linepay_settings') or {}
-    channel_id     = s.get('channel_id', '').strip()
-    channel_secret = s.get('channel_secret', '').strip()
-    sandbox        = s.get('sandbox', True)
-    if not channel_id or not channel_secret:
-        raise ValueError('尚未設定 LINE Pay Channel ID / Secret，請先至付款設定填寫')
-    return LinePayCPM(channel_id=channel_id, channel_secret=channel_secret, sandbox=sandbox)
-
-
-def _get_zpay():
-    from src.payment_providers.zpay import ZPayCPM
-    from src.models.settings import SystemSettings
-    s = SystemSettings.get('zpay_settings') or {}
-    merchant_id     = s.get('merchant_id', '').strip()
-    merchant_secret = s.get('merchant_secret', '').strip()
-    sandbox         = s.get('sandbox', True)
-    if not merchant_id or not merchant_secret:
-        raise ValueError('尚未設定全支付 Merchant ID / Secret，請先至付款設定填寫')
-    return ZPayCPM(merchant_id=merchant_id, merchant_secret=merchant_secret, sandbox=sandbox)
-
 
 
 @app_pos.route('/')
@@ -113,103 +92,16 @@ def create_sale():
       201: {description: 結帳成功}
       400: {description: 庫存不足或資料有誤}
     """
-    data         = request.get_json(silent=True) or {}
-    warehouse_id = data.get('warehouse_id', '').strip()
-    items        = data.get('items', [])
-    payment      = data.get('payment', {})
-    try:
-        discount = float(data.get('discount', 0))
-    except (ValueError, TypeError):
-        return jsonify({'success': False, 'message': '折扣格式錯誤'}), 400
-    if discount < 0:
-        return jsonify({'success': False, 'message': '折扣不得為負數'}), 400
-    remark       = data.get('remark', '')
-
-    if not warehouse_id:
-        return jsonify({'success': False, 'message': '請指定倉庫'}), 400
-    if not items:
-        return jsonify({'success': False, 'message': '購物車為空'}), 400
-    if not payment.get('type'):
-        return jsonify({'success': False, 'message': '請選擇付款方式'}), 400
-
-    # ── LINE Pay 全支付：先向 API 扣款，成功才記帳 ────────────────
-    if payment.get('type') == 'linepay':
-        linepay_key = str(payment.get('linepay_key', '')).strip()
-        if not linepay_key:
-            return jsonify({'success': False, 'message': '請掃描顧客 LINE Pay 付款條碼'}), 400
-        subtotal_for_lp = sum(
-            float(i.get('unit_price', 0)) * int(i.get('quantity', 1)) for i in items
-        )
-        charge_amount = max(0, int(round(subtotal_for_lp - discount, 0)))
-        # 用 cashier + timestamp 組成唯一 orderId 傳給 LINE Pay
-        lp_order_id = f"POS{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{get_jwt_identity()[:4].upper()}"
-        try:
-            lp = _get_linepay()
-            lp_resp = lp.charge(
-                one_time_key=linepay_key,
-                order_id=lp_order_id,
-                amount=charge_amount,
-            )
-        except ValueError as ve:
-            return jsonify({'success': False, 'message': str(ve)}), 400
-        except Exception as e:
-            logger.exception('LINE Pay charge failed')
-            return jsonify({'success': False, 'message': f'LINE Pay 連線失敗：{e}'}), 500
-        if lp_resp.get('returnCode') != '0000':
-            msg = lp_resp.get('returnMessage', 'LINE Pay 付款失敗')
-            return jsonify({'success': False, 'message': f'LINE Pay：{msg}', 'lp_code': lp_resp.get('returnCode')}), 400
-        # 將交易 ID 存入 payment dict，model 層會寫入訂單
-        payment['linepay_transaction_id'] = str(lp_resp.get('info', {}).get('transactionId', ''))
-
-    # ── 全支付：先向 API 扣款，成功才記帳 ──────────────────────────
-    if payment.get('type') == 'zpay':
-        zpay_code = str(payment.get('zpay_code', '')).strip()
-        if not zpay_code:
-            return jsonify({'success': False, 'message': '請掃描顧客全支付付款條碼'}), 400
-        subtotal_zp   = sum(float(i.get('unit_price', 0)) * int(i.get('quantity', 1)) for i in items)
-        charge_amount = max(0, int(round(subtotal_zp - discount, 0)))
-        zp_order_id   = f"POS{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{get_jwt_identity()[:4].upper()}"
-        try:
-            zp = _get_zpay()
-            zp_resp = zp.charge(qr_code=zpay_code, order_id=zp_order_id, amount=charge_amount)
-        except ValueError as ve:
-            return jsonify({'success': False, 'message': str(ve)}), 400
-        except Exception as e:
-            logger.exception('ZPay charge failed')
-            return jsonify({'success': False, 'message': f'全支付連線失敗：{e}'}), 500
-        if zp_resp.get('returnCode') != '0000':
-            msg = zp_resp.get('returnMessage', '全支付付款失敗')
-            return jsonify({'success': False, 'message': f'全支付：{msg}'}), 400
-        payment['linepay_transaction_id'] = str(zp_resp.get('transactionId', ''))
-
-    # 優先使用前端明確指定的 store_id（多店家帳號依 POS 設定切換）
-    request_store_id = data.get('store_id', '').strip()
-    if request_store_id:
-        from flask_jwt_extended import get_jwt
-        jwt_claims   = get_jwt()
-        jwt_store_ids = jwt_claims.get('store_ids', [])
-        if jwt_claims.get('role') == 'super_admin' or not jwt_store_ids or request_store_id in jwt_store_ids:
-            store_id = request_store_id
-        else:
-            store_id = get_current_store_id()
-    else:
-        store_id = get_current_store_id()
-        if not store_id:
-            from src.models.settings import SystemSettings
-            store_id = SystemSettings.get('pos_default_store_id') or None
-
-    result = PosOrder.create_sale(
-        warehouse_id=warehouse_id, items=items, payment=payment,
-        discount=discount, cashier=get_jwt_identity(), remark=remark,
-        store_id=store_id,
-    )
-    if not result['success']:
-        return jsonify({'success': False, 'message': result['error']}), 400
-
-    order = result['order']
-    Log.create(get_jwt_identity(), 'POS 結帳',
-               f"order_no={order['order_no']} total={order['total_amount']}")
-    return jsonify({'success': True, 'order': order}), 201
+    # [REFACTOR] 輸入驗證 / LINE Pay·全支付扣款 / store_id 解析 / 庫存原子扣減與訂單建立 /
+    #            Log 等業務邏輯移至 PosService.checkout（src/services/pos_service.py），
+    #            回傳 payload 與狀態碼與原實作完全一致
+    data = request.get_json(silent=True) or {}
+    # [REFACTOR] pydantic 頂層結構驗證（必填/業務檢查仍在 service 內，訊息不變）
+    _, _err = validate_payload(PosCheckout, data)
+    if _err:
+        return _err
+    body, status = PosService.checkout(data=data, operator=get_jwt_identity())
+    return jsonify(body), status
 
 
 @app_pos.route('/sales', methods=['GET'])
@@ -374,7 +266,8 @@ def import_sales():
                 rows = json.loads(raw)
                 if not isinstance(rows, list):
                     return jsonify({'success': False, 'message': 'JSON 必須為陣列'}), 400
-            except Exception:
+            except Exception as e:
+                logger.warning('POS 銷售匯入 JSON 解析失敗: %s', e)  # [OPT] 補記錄，不再無聲吞例外
                 return jsonify({'success': False, 'message': 'JSON 格式錯誤'}), 400
         else:
             reader = csv.DictReader(io.StringIO(raw))
@@ -445,56 +338,12 @@ def refund_sale(sid):
     data   = request.get_json(silent=True) or {}
     reason = data.get('reason', '').strip()
 
-    try:
-        sid_oid = ObjectId(sid)
-    except Exception:
-        return jsonify({'success': False, 'message': '無效的銷售單 ID'}), 400
-
-    # ── 原子搶佔退款名額（completed → refunding），防止並發雙重退款 ──
-    _orders_col = get_db()['pos_orders']
-    order = _orders_col.find_one_and_update(
-        {'_id': sid_oid, 'status': 'completed'},
-        {'$set': {'status': 'refunding'}},
-        return_document=True,
-    )
-    if not order:
-        return jsonify({'success': False, 'message': '銷售單不存在或已退款'}), 400
-
-    if order.get('payment_type') in ('linepay', 'zpay'):
-        txn_id  = order.get('linepay_transaction_id', '')
-        pay_type = order.get('payment_type')
-        if txn_id:
-            try:
-                if pay_type == 'linepay':
-                    provider   = _get_linepay()
-                    name       = 'LINE Pay'
-                else:
-                    provider   = _get_zpay()
-                    name       = '全支付'
-                ref_resp = provider.refund(txn_id, round(order['total_amount']))
-                if ref_resp.get('returnCode') != '0000':
-                    msg = ref_resp.get('returnMessage', '退款失敗')
-                    _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
-                    return jsonify({'success': False, 'message': f'{name} 退款失敗：{msg}'}), 400
-            except ValueError as ve:
-                _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
-                return jsonify({'success': False, 'message': str(ve)}), 400
-            except Exception as e:
-                logger.exception('%s refund failed', pay_type)
-                _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
-                return jsonify({'success': False, 'message': f'{name} 退款連線失敗：{e}'}), 500
-
-    try:
-        result = PosOrder.refund(sid, reason, operator=get_jwt_identity())
-    except Exception as e:
-        logger.exception('PosOrder.refund failed for sid=%s', sid)
-        _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
-        return jsonify({'success': False, 'message': f'退款處理失敗：{e}'}), 500
-    if not result['success']:
-        _orders_col.update_one({'_id': sid_oid}, {'$set': {'status': 'completed'}})
-        return jsonify({'success': False, 'message': result['error']}), 400
-    Log.create(get_jwt_identity(), 'POS 退款', f'sale_id={sid} reason={reason}')
-    return jsonify({'success': True})
+    # [REFACTOR] 原子搶佔退款名額（completed → refunding，防並發雙重退款）/
+    #            LINE Pay·全支付第三方退款（失敗回復 completed）/ 庫存回補 / Log
+    #            等業務邏輯移至 PosService.refund（src/services/pos_service.py），
+    #            回傳 payload 與狀態碼與原實作完全一致
+    body, status = PosService.refund(sid, reason, operator=get_jwt_identity())
+    return jsonify(body), status
 
 
 # ─────────────────────────────────────────────────────────────
@@ -771,52 +620,33 @@ def sales_summary():
 
     date_from, date_to = _period_range(period, ref)
 
-    # ── 查詢已完成訂單 ─────────────────────────────
-    orders = PosOrder.find_all(date_from=date_from, date_to=date_to,
-                               status='completed', limit=0,
-                               store_filter=get_store_filter())
-
-    total_orders   = len(orders)
-    total_amount   = sum(o.get('total_amount', 0)    for o in orders)
-    total_discount = sum(o.get('discount', 0)       for o in orders)
-    cash_total     = sum(o.get('cash_amount', 0)    for o in orders
-                        if o.get('payment_type') in ('cash', 'mixed'))
-    card_total     = sum(o.get('card_amount', 0)    for o in orders
-                        if o.get('payment_type') in ('card', 'mixed'))
+    # ── 查詢統計 ──────────────────────────────────
+    # [OPT] 改用 MongoDB aggregation（PosOrder.summary），不再撈全部訂單做 Python groupby
+    stats = PosOrder.summary(date_from, date_to,
+                             granularity='month' if period == 'year' else 'day',
+                             status=PosOrderStatus.COMPLETED,
+                             store_filter=get_store_filter())
 
     summary = {
         'period':         period,
         'date_from':      date_from.strftime('%Y-%m-%d'),
         'date_to':        date_to.strftime('%Y-%m-%d'),
-        'total_orders':   total_orders,
-        'total_amount':   round(total_amount,   2),
-        'total_discount': round(total_discount, 2),
-        'cash_total':     round(cash_total,     2),
-        'card_total':     round(card_total,     2),
+        'total_orders':   stats['total_orders'],
+        'total_amount':   stats['total_amount'],
+        'total_discount': stats['total_discount'],
+        'cash_total':     stats['cash_total'],
+        'card_total':     stats['card_total'],
     }
 
     # ── 依期間決定明細格式 ────────────────────────
     if period == 'day':
-        # 日模式：回傳個別訂單
+        # 日模式：回傳個別訂單（僅單日資料，量小）
         summary['date']   = ref.strftime('%Y-%m-%d')
-        summary['orders'] = orders
+        summary['orders'] = PosOrder.find_all(date_from=date_from, date_to=date_to,
+                                              status=PosOrderStatus.COMPLETED, limit=0,
+                                              store_filter=get_store_filter())
     else:
-        # 週/月模式：依日彙總；年模式：依月彙總
-        key_fn = (lambda o: (o.get('created_at') or '')[:7]) if period == 'year' \
-                 else (lambda o: (o.get('created_at') or '')[:10])
-
-        grp: dict = defaultdict(lambda: {'orders': 0, 'amount': 0.0, 'discount': 0.0})
-        for o in orders:
-            k = key_fn(o)
-            grp[k]['orders']   += 1
-            grp[k]['amount']   += o.get('total_amount', 0)
-            grp[k]['discount'] += o.get('discount', 0)
-
-        summary['breakdown'] = [
-            {'period': k, 'orders': v['orders'],
-             'amount': round(v['amount'], 2),
-             'discount': round(v['discount'], 2)}
-            for k, v in sorted(grp.items())
-        ]
+        # 週/月模式：依日彙總；年模式：依月彙總（由 aggregation 分組完成）
+        summary['breakdown'] = stats['breakdown']
 
     return jsonify({'success': True, 'data': summary})

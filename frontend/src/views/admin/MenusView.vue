@@ -124,10 +124,13 @@ const someItemsSelected = computed(() =>
   selectedItemIds.value.length > 0 && !allItemsSelected.value
 )
 
-watch([selectedItemIds, () => selectedMenuData.value?.items], async () => {
+// [OPT] 移除 deep watch：indeterminate 只依賴兩集合的數量。
+//       selectedItemIds 以 push/splice 就地變動，淺層 watch ref 不會觸發 → 改 watch length；
+//       selectedMenuData 每次都整體重新賦值，items 用淺層 getter 即可偵測切換/重載
+watch([() => selectedItemIds.value.length, () => selectedMenuData.value?.items], async () => {
   await nextTick()
   if (selectAllRef.value) selectAllRef.value.indeterminate = someItemsSelected.value
-}, { deep: true })
+})
 
 // 菜單 Modal
 const showMenuModal = ref(false)

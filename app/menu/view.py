@@ -9,8 +9,18 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.menu import Menu
 from src.models.log import Log
 from src.permissions import require_role, get_store_filter, get_current_store_id
+from src.cache import invalidate  # [OPT-N3]
 
 app_menu = Blueprint('app_menu', __name__)
+
+
+def _invalidate_cust_menu_cache():
+    """
+    [OPT-N3] 菜單寫入成功後，使顧客掃碼點餐菜單快取失效。
+    以 pattern 全清（含 fallback 的 cache:cust_menu:default，
+    該 key 可能快取任一菜單內容，無法以 mid 精準對應）。
+    """
+    invalidate('cache:cust_menu:*')
 
 
 # ─────────────────────────────────────────────
@@ -98,6 +108,7 @@ def create_menu():
         store_id=store_id or None,
     )
     Log.create(get_jwt_identity(), '建立菜單', f'name={name}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True, '_id': mid}), 201
 
 
@@ -120,6 +131,7 @@ def update_menu(mid):
     data = {k: v for k, v in body.items() if k in ALLOWED_MENU_FIELDS}
     Menu.update(mid, **data)
     Log.create(get_jwt_identity(), '更新菜單', f'id={mid}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -139,6 +151,7 @@ def delete_menu(mid):
         return jsonify({'success': False, 'message': '菜單不存在'}), 404
     Menu.delete(mid)
     Log.create(get_jwt_identity(), '刪除菜單', f'id={mid}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -332,6 +345,7 @@ def import_all_menus():
                f"分類+{total['created_categories']}；"
                f"選項組+{total['created_option_groups']}；"
                f"品項+{total['created_items']} 更新{total['updated_items']}")
+    _invalidate_cust_menu_cache()  # [OPT-N3]
 
     return jsonify({'success': True, 'result': total})
 
@@ -384,6 +398,7 @@ def add_item(mid):
     item = Menu.add_item(mid, data)
     Log.create(get_jwt_identity(), '新增菜單品項',
                f'menu={mid} name={item["name"]}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True, 'item': item}), 201
 
 
@@ -399,12 +414,16 @@ def update_item(mid, item_id):
     security:
       - Bearer: []
     """
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     data = request.get_json(silent=True) or {}
     ok = Menu.update_item(mid, item_id, data)
     if not ok:
         return jsonify({'success': False, 'message': '品項不存在'}), 404
     Log.create(get_jwt_identity(), '更新菜單品項',
                f'menu={mid} item={item_id}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -420,11 +439,15 @@ def delete_item(mid, item_id):
     security:
       - Bearer: []
     """
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     ok = Menu.delete_item(mid, item_id)
     if not ok:
         return jsonify({'success': False, 'message': '品項不存在'}), 404
     Log.create(get_jwt_identity(), '刪除菜單品項',
                f'menu={mid} item={item_id}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -469,6 +492,7 @@ def add_category(mid):
     cat = Menu.add_category(mid, data)
     Log.create(get_jwt_identity(), '新增菜單分類',
                f'menu={mid} name={name}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True, 'category': cat}), 201
 
 
@@ -484,12 +508,16 @@ def update_category(mid, cat_id):
     security:
       - Bearer: []
     """
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     data = request.get_json(silent=True) or {}
     ok = Menu.update_category(mid, cat_id, data)
     if not ok:
         return jsonify({'success': False, 'message': '分類不存在'}), 404
     Log.create(get_jwt_identity(), '更新菜單分類',
                f'menu={mid} cat={cat_id}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -505,11 +533,15 @@ def delete_category(mid, cat_id):
     security:
       - Bearer: []
     """
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     ok = Menu.delete_category(mid, cat_id)
     if not ok:
         return jsonify({'success': False, 'message': '分類不存在'}), 404
     Log.create(get_jwt_identity(), '刪除菜單分類',
                f'menu={mid} cat={cat_id}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -540,6 +572,7 @@ def add_option_group(mid):
         return jsonify({'success': False, 'message': '請填寫選項組名稱'}), 400
     og = Menu.add_option_group(mid, data)
     Log.create(get_jwt_identity(), '新增選項組', f'menu={mid} name={name}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True, 'option_group': og}), 201
 
 
@@ -548,11 +581,15 @@ def add_option_group(mid):
 @require_role('admin', 'operator')
 def update_option_group(mid, gid):
     """更新選項組"""
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     data = request.get_json(silent=True) or {}
     ok = Menu.update_option_group(mid, gid, data)
     if not ok:
         return jsonify({'success': False, 'message': '選項組不存在'}), 404
     Log.create(get_jwt_identity(), '更新選項組', f'menu={mid} gid={gid}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -561,10 +598,14 @@ def update_option_group(mid, gid):
 @require_role('admin', 'operator')
 def delete_option_group(mid, gid):
     """刪除選項組（同時從品項的 applied_group_ids 中移除）"""
+    # [OPT] IDOR 修復：先以 store_filter 驗證菜單所有權
+    if not Menu.find_by_id(mid, store_filter=get_store_filter()):
+        return jsonify({'success': False, 'message': '菜單不存在'}), 404
     ok = Menu.delete_option_group(mid, gid)
     if not ok:
         return jsonify({'success': False, 'message': '選項組不存在'}), 404
     Log.create(get_jwt_identity(), '刪除選項組', f'menu={mid} gid={gid}')
+    _invalidate_cust_menu_cache()  # [OPT-N3]
     return jsonify({'success': True})
 
 
@@ -747,5 +788,6 @@ def import_menu(mid):
                f"menu={mid} 分類+{result['created_categories']} "
                f"選項組+{result['created_option_groups']} "
                f"品項+{result['created_items']} 更新{result['updated_items']}")
+    _invalidate_cust_menu_cache()  # [OPT-N3]
 
     return jsonify({'success': True, 'result': result})

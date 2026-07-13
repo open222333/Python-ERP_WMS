@@ -8,8 +8,10 @@ pymongo==4.10.1
 bcrypt==4.2.1
 flask-jwt-extended==4.7.1
 PyMySQL==1.1.1
-cryptography>=41.0.0   # MySQL 8.0 caching_sha2_password 驗證必要
+cryptography==44.0.1   # MySQL 8.0 caching_sha2_password 驗證必要  # [OPT] 鎖定版本
 redis==5.2.1
-python-dotenv>=1.0.0
-flask-limiter[redis]>=3.5.0
-gunicorn>=21.0.0
+python-dotenv==1.0.1   # [OPT] 鎖定版本
+flask-limiter[redis]==3.9.2   # [OPT] 鎖定版本
+gunicorn==23.0.0   # [OPT] 鎖定版本
+pydantic==2.13.4          # [REFACTOR] 輸入驗證層
+sentry-sdk[flask]==2.64.0   # [OPT-N2] 選配：僅在設定 SENTRY_DSN 環境變數時才會初始化，未設定時不載入

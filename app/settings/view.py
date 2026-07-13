@@ -32,7 +32,7 @@ def get_settings():
       - Bearer: []
     responses:
       200:
-        description: 成功，回傳 {key: value} 字典
+        description: "成功，回傳 {key: value} 字典"  # [OPT] 加引號修復 flasgger YAML 解析（原致 /apispec_1.json 500）
     """
     data = SystemSettings.get_all()
     return jsonify({'success': True, 'data': data})

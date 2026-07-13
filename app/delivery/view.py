@@ -20,6 +20,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.delivery import DeliveryOrder, DeliveryMapping, DeliverySettings, DeliveryMappingTemplate
 from src.models.log import Log
 from src.permissions import require_role
+# [REFACTOR] 內部訂單狀態改由 src/constants.py 統一管理（傳給平台 API 的字串維持字面值）
+from src.constants import DeliveryOrderStatus
 
 logger = logging.getLogger(__name__)
 app_delivery = Blueprint('app_delivery', __name__)
@@ -96,7 +98,7 @@ def webhook_ubereats():
                 try:
                     ok = client.accept_order(normalized.get('external_order_id', ''))
                     if ok:
-                        DeliveryOrder.update_status(oid, 'confirmed', operator='system')
+                        DeliveryOrder.update_status(oid, DeliveryOrderStatus.CONFIRMED, operator='system')
                         wid = settings.get('default_warehouse_id', '')
                         if wid:
                             try:
@@ -150,7 +152,7 @@ def webhook_foodpanda():
                 try:
                     ok = client.confirm_order(normalized.get('external_order_id', ''))
                     if ok:
-                        DeliveryOrder.update_status(oid, 'confirmed', operator='system')
+                        DeliveryOrder.update_status(oid, DeliveryOrderStatus.CONFIRMED, operator='system')
                         wid = settings.get('default_warehouse_id', '')
                         if wid:
                             try:
@@ -286,16 +288,16 @@ def update_order_status(oid):
         if order['platform'] == 'ubereats':
             client = _get_ubereats_client()
             if client:
-                if status == 'confirmed':
+                if status == DeliveryOrderStatus.CONFIRMED:
                     client.accept_order(order['external_order_id'])
-                elif status == 'cancelled':
+                elif status == DeliveryOrderStatus.CANCELLED:
                     client.deny_order(order['external_order_id'])
         elif order['platform'] == 'foodpanda':
             client = _get_foodpanda_client()
             if client:
-                if status == 'confirmed':
+                if status == DeliveryOrderStatus.CONFIRMED:
                     client.confirm_order(order['external_order_id'])
-                elif status == 'cancelled':
+                elif status == DeliveryOrderStatus.CANCELLED:
                     client.cancel_order(order['external_order_id'])
     except Exception as e:
         logger.warning('Platform status sync error: %s', e)
@@ -306,7 +308,7 @@ def update_order_status(oid):
 
     # ── 確認接單時自動建立銷售紀錄 ────────────────────
     sale_info = {}
-    if status == 'confirmed':
+    if status == DeliveryOrderStatus.CONFIRMED:
         settings = DeliverySettings.get(order['platform'])
         wid = settings.get('default_warehouse_id', '')
         if wid:
@@ -368,6 +370,7 @@ def sync_orders(platform):
             client = _get_foodpanda_client()
             if not client or not client.api_key:
                 return jsonify({'success': False, 'message': 'foodpanda 尚未設定 API 金鑰'}), 400
+            # 傳給 foodpanda 平台 API 的查詢參數（非本系統內部狀態，維持字面值）
             for status in ('new', 'confirmed'):
                 raw_orders = client.list_orders(status=status)
                 for raw in raw_orders:

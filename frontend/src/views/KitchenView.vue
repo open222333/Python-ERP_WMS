@@ -66,11 +66,33 @@ async function loadOrders() {
 }
 
 // ── SSE 連線 ─────────────────────────────────────────────────
-function connectSSE() {
+// [REFACTOR] 認證改為 Redis 一次性短效 ticket：
+//   1. 先以 header JWT POST /customer-order/stream-ticket 取得 ticket
+//   2. 再以 ?ticket= 建立 EventSource（JWT 不再進入 query string / nginx log）
+// ticket 用過即失效，EventSource 內建自動重連會沿用舊 URL（舊 ticket）而 401，
+// 因此改為自行管理重連：onerror 關閉舊連線 → 延遲後重新取 ticket 重建。
+// 重連間隔 3 秒，與瀏覽器 EventSource 預設重連間隔一致。
+const SSE_RECONNECT_MS = 3000
+let sseReconnectTimer = null
+let sseStopped = false
+
+async function connectSSE() {
+  if (sseStopped) return
   const token = localStorage.getItem('token')
   if (!token) return
 
-  es = new EventSource(`/customer-order/stream?token=${encodeURIComponent(token)}`)
+  // [REFACTOR] 先取一次性 ticket，失敗則排程重試
+  let ticket = ''
+  try {
+    const res = await custOrderApi.getStreamTicket()
+    ticket = res.data?.ticket || ''
+  } catch { /* 取 ticket 失敗（網路/未授權），走排程重試 */ }
+  if (!ticket) {
+    scheduleSseReconnect()
+    return
+  }
+
+  es = new EventSource(`/customer-order/stream?ticket=${encodeURIComponent(ticket)}`)
 
   es.onmessage = (e) => {
     try {
@@ -81,8 +103,21 @@ function connectSSE() {
   }
 
   es.onerror = () => {
-    // EventSource 斷線後會自動重連，不需手動處理
+    // [REFACTOR] ticket 為一次性，不可沿用內建自動重連；
+    // 關閉舊連線後重新取 ticket 重建
+    es?.close()
+    es = null
+    scheduleSseReconnect()
   }
+}
+
+// [REFACTOR] 自行管理的重連排程（去重：同時間僅一個 timer）
+function scheduleSseReconnect() {
+  if (sseStopped || sseReconnectTimer) return
+  sseReconnectTimer = setTimeout(() => {
+    sseReconnectTimer = null
+    connectSSE()
+  }, SSE_RECONNECT_MS)
 }
 
 // ── 狀態更新 ─────────────────────────────────────────────────
@@ -93,6 +128,17 @@ async function updateStatus(id, status) {
   } catch (e) {
     toast.show(e?.response?.data?.message || '更新失敗', 'danger')
   }
+}
+
+// ── v-for 穩定 key ───────────────────────────────────────────
+// [OPT] 品項無 _id，改以「名稱 + 客製化序列化」組成穩定 key，
+//       避免排序後以 index 為 key 造成 SSE 更新時整列重建
+function itemKey(item) {
+  return item._id || `${item.name || item.item_name || ''}|${JSON.stringify(item.customizations || [])}`
+}
+// [OPT] 客製化 c 可能是字串或物件（含 choice_id/choice_name），以內容為 key
+function custKey(c) {
+  return typeof c === 'object' && c !== null ? (c.choice_id || c.choice_name || JSON.stringify(c)) : c
 }
 
 // ── 時間格式 ─────────────────────────────────────────────────
@@ -128,6 +174,12 @@ onMounted(() => {
   connectSSE()
 })
 onUnmounted(() => {
+  // [REFACTOR] 停止自行管理的重連迴圈，再關閉連線
+  sseStopped = true
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer)
+    sseReconnectTimer = null
+  }
   es?.close()
   clearInterval(clock)
 })
@@ -184,11 +236,12 @@ onUnmounted(() => {
 
         <!-- Items -->
         <ul class="item-list mt-2 mb-0">
-          <li v-for="(item, i) in [...(o.items || [])].sort((a,b) => (a.name||a.item_name||'').localeCompare(b.name||b.item_name||'', 'zh-Hant'))" :key="i" class="item-row">
+          <!-- [OPT] 改用內容穩定 key（itemKey/custKey），取代排序後不穩定的 index key -->
+          <li v-for="item in [...(o.items || [])].sort((a,b) => (a.name||a.item_name||'').localeCompare(b.name||b.item_name||'', 'zh-Hant'))" :key="itemKey(item)" class="item-row">
             <span class="item-qty">×{{ item.qty }}</span>
             <span class="item-name">{{ item.name || item.item_name }}</span>
             <div v-if="item.customizations?.length" class="cust-tags">
-              <span v-for="(c, ci) in item.customizations" :key="ci" class="cust-tag">
+              <span v-for="c in item.customizations" :key="custKey(c)" class="cust-tag">
                 {{ typeof c === 'object' ? c.choice_name : c }}
               </span>
             </div>

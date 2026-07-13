@@ -8,6 +8,8 @@ Collections:
 from datetime import datetime
 from bson import ObjectId
 from src.mongo import get_db
+# [REFACTOR] 狀態集合與 terminal state guard 遷移至 src/constants.py 統一管理
+from src.constants import DeliveryOrderStatus
 import random, string
 
 
@@ -37,8 +39,8 @@ def _fmt(doc) -> dict:
 class DeliveryOrder:
     COLLECTION = 'delivery_orders'
 
-    VALID_STATUSES = {'new', 'confirmed', 'preparing', 'ready',
-                      'picked_up', 'delivered', 'cancelled', 'refunded'}
+    # [REFACTOR] 引用常數模組，保留類別屬性名維持既有引用相容
+    VALID_STATUSES = DeliveryOrderStatus.ALL
 
     @classmethod
     def _col(cls):
@@ -92,7 +94,7 @@ class DeliveryOrder:
             'external_order_id': normalized.get('external_order_id', ''),
             'order_no':          _gen_order_no(normalized['platform']),
             'external_order_no': normalized.get('order_no', ''),
-            'status':            normalized.get('status', 'new'),
+            'status':            normalized.get('status', DeliveryOrderStatus.NEW),
             'customer_name':     normalized.get('customer_name', ''),
             'customer_phone':    normalized.get('customer_phone', ''),
             'items':             normalized.get('items', []),
@@ -115,10 +117,9 @@ class DeliveryOrder:
                       operator: str = 'system') -> bool:
         if status not in cls.VALID_STATUSES:
             return False
-        TERMINAL_STATES = {'delivered', 'cancelled'}
         col = cls._col()
         current = col.find_one({'_id': ObjectId(oid)}, {'status': 1})
-        if current and current.get('status') in TERMINAL_STATES:
+        if current and current.get('status') in DeliveryOrderStatus.TERMINAL_STATES:
             return False  # cannot transition from terminal state
         r = col.update_one(
             {'_id': ObjectId(oid)},

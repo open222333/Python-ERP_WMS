@@ -1,13 +1,28 @@
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+# [REFACTOR] 入庫 view 薄殼：端點邏輯移至 app/common/order_views.py 共用 handler、
+#            complete 的庫存協調移至 src/services/order_service.py。
+#            此處僅保留路由、權限裝飾器與 swagger docstring（原文逐字保留），
+#            路由 / endpoint 名稱 / 回應 / 狀態碼 / 錯誤訊息與原版完全一致。
+from flask import Blueprint
+from flask_jwt_extended import jwt_required
 from src.models.inbound import InboundOrder
-from src.models.inventory import Inventory, StockMovement
-from src.models.product import Product
-from src.models.warehouse import Warehouse
-from src.models.log import Log
 from src.permissions import require_role
+from src.services.order_service import complete_inbound_order
+from app.common import order_views as h
 
 app_inbound = Blueprint('app_inbound', __name__)
+
+_CFG = h.OrderViewConfig(
+    model=InboundOrder,
+    noun='入庫單',
+    short='入庫',
+    qtys_key='received_qtys',
+    validate_item_qty=True,
+    check_stock_on_confirm=False,
+    strict_complete=True,
+    confirm_fail_msg='確認失敗，請確認狀態',
+    complete_fail_msg=None,  # strict_complete 路徑帶目前狀態組錯誤訊息
+    complete_service=complete_inbound_order,
+)
 
 
 @app_inbound.route('/', methods=['GET'])
@@ -41,17 +56,7 @@ def list_orders():
               items:
                 $ref: '#/definitions/InboundOrder'
     """
-    status = request.args.get('status', '')
-    warehouse_id = request.args.get('warehouse_id', '')
-    limit = min(int(request.args.get('limit', 50)), 200)
-    offset = int(request.args.get('offset', 0))
-    data = InboundOrder.find_all(
-        status=status or None,
-        warehouse_id=warehouse_id or None,
-        limit=limit,
-        offset=offset
-    )
-    return jsonify({'success': True, 'data': data})
+    return h.list_orders(_CFG)
 
 
 @app_inbound.route('/<oid>', methods=['GET'])
@@ -81,10 +86,7 @@ def get_order(oid):
       404:
         description: 入庫單不存在
     """
-    order = InboundOrder.find_by_id(oid)
-    if not order:
-        return jsonify({'success': False, 'message': '入庫單不存在'}), 404
-    return jsonify({'success': True, 'data': order})
+    return h.get_order(_CFG, oid)
 
 
 @app_inbound.route('/', methods=['POST'])
@@ -126,16 +128,7 @@ def create_order():
       404:
         description: 倉庫不存在
     """
-    data = request.get_json(silent=True) or {}
-    if not data.get('warehouse_id'):
-        return jsonify({'success': False, 'message': '請指定倉庫'}), 400
-    w = Warehouse.find_by_id(data['warehouse_id'])
-    if not w:
-        return jsonify({'success': False, 'message': '倉庫不存在'}), 404
-    data['warehouse_name'] = w['name']
-    oid = InboundOrder.create(data, created_by=get_jwt_identity())
-    Log.create(get_jwt_identity(), '建立入庫單', f'warehouse={w["name"]}')
-    return jsonify({'success': True, 'id': oid}), 201
+    return h.create_order(_CFG)
 
 
 @app_inbound.route('/<oid>', methods=['PUT'])
@@ -168,15 +161,7 @@ def update_order(oid):
       400:
         description: 入庫單不存在或非 pending 狀態
     """
-    data = request.get_json(silent=True) or {}
-    if 'warehouse_id' in data:
-        w = Warehouse.find_by_id(data['warehouse_id'])
-        if not w:
-            return jsonify({'success': False, 'message': '倉庫不存在'}), 404
-        data['warehouse_name'] = w['name']
-    if not InboundOrder.update_basic(oid, data):
-        return jsonify({'success': False, 'message': '入庫單不存在或非待處理狀態'}), 400
-    return jsonify({'success': True})
+    return h.update_order(_CFG, oid)
 
 
 @app_inbound.route('/<oid>/item', methods=['POST'])
@@ -219,21 +204,7 @@ def add_item(oid):
       404:
         description: 產品不存在
     """
-    data = request.get_json(silent=True) or {}
-    if not data.get('product_id'):
-        return jsonify({'success': False, 'message': '請指定產品'}), 400
-    expected_qty = data.get('expected_qty', 0)
-    if expected_qty <= 0:
-        return jsonify({'success': False, 'message': '數量必須大於 0'}), 400
-    p = Product.find_by_id(data['product_id'])
-    if not p:
-        return jsonify({'success': False, 'message': '產品不存在'}), 404
-    data['product_name'] = p['name']
-    data['product_sku'] = p['sku']
-    data['unit'] = p['unit']
-    if not InboundOrder.add_item(oid, data):
-        return jsonify({'success': False, 'message': '入庫單不存在或非待處理狀態'}), 400
-    return jsonify({'success': True})
+    return h.add_item(_CFG, oid)
 
 
 @app_inbound.route('/<oid>/item/<item_id>', methods=['PUT'])
@@ -270,14 +241,7 @@ def update_item(oid, item_id):
       400:
         description: 更新失敗
     """
-    data = request.get_json(silent=True) or {}
-    if 'expected_qty' in data:
-        expected_qty = data['expected_qty']
-        if expected_qty <= 0:
-            return jsonify({'success': False, 'message': '數量必須大於 0'}), 400
-    if not InboundOrder.update_item(oid, item_id, data):
-        return jsonify({'success': False, 'message': '更新失敗'}), 400
-    return jsonify({'success': True})
+    return h.update_item(_CFG, oid, item_id)
 
 
 @app_inbound.route('/<oid>/item/<item_id>', methods=['DELETE'])
@@ -308,9 +272,7 @@ def remove_item(oid, item_id):
       400:
         description: 刪除失敗
     """
-    if not InboundOrder.remove_item(oid, item_id):
-        return jsonify({'success': False, 'message': '刪除失敗'}), 400
-    return jsonify({'success': True})
+    return h.remove_item(_CFG, oid, item_id)
 
 
 @app_inbound.route('/<oid>/confirm', methods=['POST'])
@@ -338,15 +300,7 @@ def confirm_order(oid):
       404:
         description: 入庫單不存在
     """
-    order = InboundOrder.find_by_id(oid)
-    if not order:
-        return jsonify({'success': False, 'message': '入庫單不存在'}), 404
-    if not order.get('items'):
-        return jsonify({'success': False, 'message': '請先新增入庫明細'}), 400
-    if not InboundOrder.confirm(oid, get_jwt_identity()):
-        return jsonify({'success': False, 'message': '確認失敗，請確認狀態'}), 400
-    Log.create(get_jwt_identity(), '確認入庫單', f"order_no={order['order_no']}")
-    return jsonify({'success': True})
+    return h.confirm_order(_CFG, oid)
 
 
 @app_inbound.route('/<oid>/complete', methods=['POST'])
@@ -385,56 +339,7 @@ def complete_order(oid):
       400:
         description: 入庫單不為 confirmed 狀態
     """
-    data = request.get_json(silent=True) or {}
-    received_qtys = data.get('received_qtys')  # {item_id: qty}
-    operator = get_jwt_identity()
-
-    order = InboundOrder.find_by_id(oid)
-    if order is None:
-        return jsonify({'success': False, 'message': '入庫單不存在'}), 404
-
-    if received_qtys is not None:
-        for item_id, qty in received_qtys.items():
-            if qty < 0:
-                return jsonify({'success': False, 'message': f'實收數量不可為負值（item_id={item_id}）'}), 400
-
-    completed = InboundOrder.complete(oid, operator, received_qtys)
-    if not completed:
-        current = order['status']
-        return jsonify({'success': False,
-                        'message': f'完成失敗，目前狀態為「{current}」，需為「confirmed」'}), 400
-
-    warehouse_id = completed['warehouse_id']
-    w = Warehouse.find_by_id(warehouse_id)
-
-    # 更新庫存 & 記錄移動
-    for item in completed.get('items', []):
-        qty = item.get('received_qty', 0)
-        if qty <= 0:
-            continue
-        before_qty, after_qty = Inventory.adjust(
-            product_id=item['product_id'],
-            warehouse_id=warehouse_id,
-            delta=qty
-        )
-        StockMovement.create(
-            product_id=item['product_id'],
-            warehouse_id=warehouse_id,
-            movement_type='inbound',
-            quantity=qty,
-            before_qty=before_qty,
-            after_qty=after_qty,
-            product_name=item.get('product_name', ''),
-            product_sku=item.get('product_sku', ''),
-            warehouse_name=w['name'] if w else '',
-            reference_type='inbound_order',
-            reference_id=oid,
-            remark=f"入庫單 {completed['order_no']}",
-            operator=operator
-        )
-
-    Log.create(operator, '完成入庫', f"order_no={completed['order_no']}")
-    return jsonify({'success': True, 'order_no': completed['order_no']})
+    return h.complete_order(_CFG, oid)
 
 
 @app_inbound.route('/<oid>/cancel', methods=['POST'])
@@ -462,10 +367,4 @@ def cancel_order(oid):
       404:
         description: 入庫單不存在
     """
-    order = InboundOrder.find_by_id(oid)
-    if not order:
-        return jsonify({'success': False, 'message': '入庫單不存在'}), 404
-    if not InboundOrder.cancel(oid, get_jwt_identity()):
-        return jsonify({'success': False, 'message': '取消失敗，已完成的單據無法取消'}), 400
-    Log.create(get_jwt_identity(), '取消入庫單', f"order_no={order['order_no']}")
-    return jsonify({'success': True})
+    return h.cancel_order(_CFG, oid)

@@ -1,213 +1,32 @@
-from datetime import datetime
+# [REFACTOR] OutboundOrder 改繼承 src/models/order_base.py 的 OrderBase，
+#            共用 CRUD / 明細操作 / 狀態轉移；此處僅保留 outbound 差異
+#            （OUT 單號前綴、customer 欄位、shipped_qty）。公開介面不變。
+#            complete() 隨基底改為原子轉移（原本 find_one → 逐項更新 → 改狀態
+#            存在並發雙重完成的競態窗口；對外回傳值語意完全相同）。
 from bson import ObjectId
-from src.mongo import get_db
+
+from src.models.order_base import OrderBase, _fmt_order  # noqa: F401  (相容舊 import)
 
 
-def _fmt_order(doc) -> dict:
-    if doc is None:
-        return None
-    d = {k: v for k, v in doc.items() if k != '_id'}
-    d['_id'] = str(doc['_id'])
-    if d.get('warehouse_id'):
-        d['warehouse_id'] = str(d['warehouse_id'])
-    items = []
-    for item in d.get('items', []):
-        item = dict(item)
-        item['_id'] = str(item['_id'])
-        if item.get('product_id'):
-            item['product_id'] = str(item['product_id'])
-        items.append(item)
-    d['items'] = items
-    for key in ('confirmed_at', 'completed_at', 'created_at', 'updated_at'):
-        if d.get(key) and isinstance(d[key], datetime):
-            d[key] = d[key].isoformat()
-    return d
-
-
-def _gen_order_no() -> str:
-    from datetime import datetime
-    from src.mongo import get_db
-    today = datetime.utcnow().strftime('%Y%m%d')
-    db = get_db()
-    counter = db['counters'].find_one_and_update(
-        {'_id': f'outbound_{today}'},
-        {'$inc': {'seq': 1}},
-        upsert=True,
-        return_document=True,
-    )
-    return f'OUT{today}{counter["seq"]:04d}'
-
-
-class OutboundOrder:
+class OutboundOrder(OrderBase):
     COLLECTION = 'outbound_orders'
-
-    @classmethod
-    def _col(cls):
-        return get_db()[cls.COLLECTION]
-
-    @classmethod
-    def find_all(cls, status: str = None, warehouse_id: str = None,
-                 limit: int = 100) -> list:
-        q = {}
-        if status:
-            q['status'] = status
-        if warehouse_id:
-            q['warehouse_id'] = ObjectId(warehouse_id)
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
-        return [_fmt_order(d) for d in docs]
+    ORDER_NO_PREFIX = 'OUT'
+    COUNTER_PREFIX = 'outbound'
+    PARTY_FIELD = 'customer'
+    DONE_QTY_FIELD = 'shipped_qty'
 
     @classmethod
     def find_by_id(cls, oid: str) -> dict:
+        # 保留原行為：不吞 InvalidId（與 InboundOrder 的防禦版不同），
+        # 非法 ObjectId 直接拋例外，避免改變 API 回應行為。
         return _fmt_order(cls._col().find_one({'_id': ObjectId(oid)}))
 
     @classmethod
-    def create(cls, data: dict, created_by: str = '') -> str:
-        now = datetime.utcnow()
-        doc = {
-            'order_no': _gen_order_no(),
-            'customer': data.get('customer', ''),
-            'warehouse_id': ObjectId(data['warehouse_id']),
-            'warehouse_name': data.get('warehouse_name', ''),
-            'status': 'pending',
-            'items': [],
-            'total_amount': 0.0,
-            'remark': data.get('remark', ''),
-            'created_by': created_by,
-            'confirmed_by': None,
-            'confirmed_at': None,
-            'completed_by': None,
-            'completed_at': None,
-            'created_at': now,
-            'updated_at': now,
-        }
-        return str(cls._col().insert_one(doc).inserted_id)
-
-    @classmethod
-    def update_basic(cls, oid: str, data: dict) -> bool:
-        fields = {'updated_at': datetime.utcnow()}
-        for key in ('customer', 'remark'):
-            if key in data:
-                fields[key] = data[key]
-        if 'warehouse_id' in data:
-            fields['warehouse_id'] = ObjectId(data['warehouse_id'])
-            fields['warehouse_name'] = data.get('warehouse_name', '')
-        r = cls._col().update_one(
-            {'_id': ObjectId(oid), 'status': 'pending'},
-            {'$set': fields}
-        )
-        return r.matched_count > 0
-
-    @classmethod
-    def add_item(cls, oid: str, item_data: dict) -> bool:
-        item = {
-            '_id': ObjectId(),
-            'product_id': ObjectId(item_data['product_id']),
-            'product_name': item_data.get('product_name', ''),
-            'product_sku': item_data.get('product_sku', ''),
-            'unit': item_data.get('unit', '個'),
-            'expected_qty': int(item_data.get('expected_qty', 0)),
-            'shipped_qty': 0,
-            'unit_price': float(item_data.get('unit_price', 0)),
-        }
-        r = cls._col().update_one(
-            {'_id': ObjectId(oid), 'status': 'pending'},
-            {
-                '$push': {'items': item},
-                '$set': {'updated_at': datetime.utcnow()},
-            }
-        )
-        cls._recalc_total(oid)
-        return r.matched_count > 0
-
-    @classmethod
-    def remove_item(cls, oid: str, item_id: str) -> bool:
-        r = cls._col().update_one(
-            {'_id': ObjectId(oid), 'status': 'pending'},
-            {
-                '$pull': {'items': {'_id': ObjectId(item_id)}},
-                '$set': {'updated_at': datetime.utcnow()},
-            }
-        )
-        cls._recalc_total(oid)
-        return r.matched_count > 0
-
-    @classmethod
-    def update_item(cls, oid: str, item_id: str, data: dict) -> bool:
-        fields = {}
-        if 'expected_qty' in data:
-            fields['items.$.expected_qty'] = int(data['expected_qty'])
-        if 'unit_price' in data:
-            fields['items.$.unit_price'] = float(data['unit_price'])
-        if not fields:
-            return False
-        fields['updated_at'] = datetime.utcnow()
-        r = cls._col().update_one(
-            {'_id': ObjectId(oid), 'status': 'pending', 'items._id': ObjectId(item_id)},
-            {'$set': fields}
-        )
-        cls._recalc_total(oid)
-        return r.matched_count > 0
-
-    @classmethod
-    def _recalc_total(cls, oid: str):
-        doc = cls._col().find_one({'_id': ObjectId(oid)})
-        if not doc:
-            return
-        total = sum(
-            item.get('expected_qty', 0) * item.get('unit_price', 0)
-            for item in doc.get('items', [])
-        )
-        cls._col().update_one({'_id': ObjectId(oid)}, {'$set': {'total_amount': round(total, 2)}})
-
-    @classmethod
-    def confirm(cls, oid: str, confirmed_by: str) -> bool:
-        """Atomically transition status pending → confirmed.
-
-        Uses find_one_and_update so the filter {status: 'pending'} and the
-        write happen in a single server-side operation.  A concurrent request
-        that races past the caller's stock check will find the document already
-        flipped to 'confirmed' and receive None here, preventing oversell.
-
-        Returns True if the transition succeeded, False if the document was
-        not found or was already in a non-pending state.
-        """
-        now = datetime.utcnow()
-        doc = cls._col().find_one_and_update(
-            {'_id': ObjectId(oid), 'status': 'pending'},
-            {'$set': {'status': 'confirmed', 'confirmed_by': confirmed_by,
-                      'confirmed_at': now, 'updated_at': now}}
-        )
-        return doc is not None
-
-    @classmethod
-    def complete(cls, oid: str, completed_by: str, shipped_qtys: dict = None) -> dict:
+    def complete(cls, oid: str, completed_by: str, shipped_qtys: dict = None,
+                session=None) -> dict:
         """
         完成出庫：更新 shipped_qty，回傳 items 清單供呼叫者扣減庫存
         shipped_qtys: {item_id: qty}
+        session: [OPT-N1] 可選 pymongo ClientSession，交易內呼叫時傳入
         """
-        doc = cls._col().find_one({'_id': ObjectId(oid), 'status': 'confirmed'})
-        if not doc:
-            return None
-        now = datetime.utcnow()
-        for item in doc.get('items', []):
-            item_id_str = str(item['_id'])
-            qty = int(shipped_qtys.get(item_id_str, item['expected_qty'])) if shipped_qtys else item['expected_qty']
-            cls._col().update_one(
-                {'_id': ObjectId(oid), 'items._id': item['_id']},
-                {'$set': {'items.$.shipped_qty': qty}}
-            )
-        cls._col().update_one(
-            {'_id': ObjectId(oid)},
-            {'$set': {'status': 'completed', 'completed_by': completed_by,
-                      'completed_at': now, 'updated_at': now}}
-        )
-        return _fmt_order(cls._col().find_one({'_id': ObjectId(oid)}))
-
-    @classmethod
-    def cancel(cls, oid: str, operator: str) -> bool:
-        now = datetime.utcnow()
-        r = cls._col().update_one(
-            {'_id': ObjectId(oid), 'status': {'$in': ['pending', 'confirmed']}},
-            {'$set': {'status': 'cancelled', 'updated_at': now}}
-        )
-        return r.matched_count > 0
+        return super().complete(oid, completed_by, shipped_qtys, session=session)

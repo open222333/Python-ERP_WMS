@@ -21,6 +21,7 @@ from app.docs.view import app_docs
 from app.customer_order.view import app_customer_order
 from app.invoice.view import app_invoice
 from src import FLASK_JSON_PATH, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
+from src.observability import init_observability  # [OPT-N2] 可觀測性
 import json
 
 app = Flask(__name__)
@@ -149,12 +150,36 @@ def _ensure_indexes():
         # customer_orders: 廚房看板依 status 篩選
         ('customer_orders', [('status', ASCENDING), ('created_at', DESCENDING)],
          {'name': 'cust_order_status_time'}),
+        # [OPT] 補缺失索引：products.barcode、warehouses.code、stores.code
+        ('products',        [('barcode', ASCENDING)],
+         {'name': 'products_barcode'}),
+        ('warehouses',      [('code', ASCENDING)],
+         {'name': 'warehouses_code'}),
+        ('stores',          [('code', ASCENDING)],
+         {'name': 'stores_code'}),
     ]
     for col_name, keys, kwargs in _indexes:
         try:
             db[col_name].create_index(keys, **kwargs)
         except Exception as e:
             _log.error('索引建立失敗 %s %s：%s', col_name, kwargs.get('name'), e)
+
+    # [OPT] 補缺失唯一索引：users.username、products.sku。
+    #       若既有重複資料導致 unique 建立失敗，log 警告並降級為非 unique 索引，不中斷啟動。
+    _unique_indexes = [
+        ('users',    [('username', ASCENDING)], 'users_username_unique'),
+        ('products', [('sku', ASCENDING)],      'products_sku_unique'),
+    ]
+    for col_name, keys, idx_name in _unique_indexes:
+        try:
+            db[col_name].create_index(keys, unique=True, name=idx_name)
+        except Exception as e:
+            _log.warning('唯一索引建立失敗（可能有重複資料），降級為非 unique %s %s：%s',
+                         col_name, idx_name, e)
+            try:
+                db[col_name].create_index(keys, name=idx_name + '_nonunique')
+            except Exception as e2:
+                _log.error('索引建立失敗 %s %s：%s', col_name, idx_name, e2)
 
     # ── 舊 users.store_id → store_ids 陣列遷移（冪等）────
     try:
@@ -243,6 +268,7 @@ def _seed_defaults():
 
 
 def create_app(config_object=None):
+    init_observability(app)  # [OPT-N2] request-id / 結構化日誌 / 慢請求 / Sentry(選配)
     from src.models.user import User
     User.ensure_guest_user()
     _ensure_indexes()

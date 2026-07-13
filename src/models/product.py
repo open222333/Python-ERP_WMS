@@ -177,6 +177,30 @@ class Product:
             logger.error(f'Product.find_by_id 查詢失敗 pid={pid}', exc_info=True)
             raise
 
+    # [OPT] 批次查詢多筆產品（$in 一次查回），供列表頁避免 N+1 查詢
+    @classmethod
+    def find_by_ids(cls, pids: list) -> dict:
+        """回傳 {pid_str: product_dict}；無效 ID 直接略過"""
+        oids = []
+        for pid in pids or []:
+            try:
+                oids.append(ObjectId(pid))
+            except (InvalidId, TypeError):
+                pass
+        if not oids:
+            return {}
+        return {str(d['_id']): cls._fmt(d)
+                for d in cls._col().find({'_id': {'$in': oids}})}
+
+    # [OPT] 批次以 SKU 查詢產品（$in 一次查回），供匯入避免 N+1 查詢
+    @classmethod
+    def find_by_skus(cls, skus: list) -> dict:
+        """回傳 {sku: product_dict}"""
+        if not skus:
+            return {}
+        return {d['sku']: cls._fmt(d)
+                for d in cls._col().find({'sku': {'$in': list(skus)}})}
+
     @classmethod
     def find_by_sku(cls, sku: str) -> dict:
         try:

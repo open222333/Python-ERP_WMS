@@ -6,6 +6,8 @@ from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.product import Product, ProductCategory
 from src.models.log import Log
+from src.schemas.base import validate_payload  # [REFACTOR] pydantic 驗證層
+from src.schemas.domain import ProductPayload
 from src.permissions import require_role
 
 app_product = Blueprint('app_product', __name__)
@@ -140,6 +142,10 @@ def get_product(pid):
 @require_role('admin', 'operator')
 def create_product():
     data = request.get_json(silent=True) or {}
+    # [REFACTOR] pydantic 型別/結構驗證（必填檢查仍由下方手寫檢查負責）
+    _, err = validate_payload(ProductPayload, data)
+    if err:
+        return err
     if not data.get('sku') or not data.get('name'):
         return jsonify({'success': False, 'message': 'sku 與 name 不得為空'}), 400
     if Product.find_by_sku(data['sku']):
@@ -154,6 +160,10 @@ def create_product():
 @require_role('admin', 'operator')
 def update_product(pid):
     data = request.get_json(silent=True) or {}
+    # [REFACTOR] pydantic 型別/結構驗證（部分更新語意不變：只驗有給的欄位）
+    _, err = validate_payload(ProductPayload, data)
+    if err:
+        return err
     if not Product.update(pid, data):
         return jsonify({'success': False, 'message': '產品不存在'}), 404
     Log.create(get_jwt_identity(), '更新產品', f'id={pid}')
@@ -268,6 +278,9 @@ def import_menu():
 
     # ── 處理產品 ──────────────────────────────────────────────
     user = get_jwt_identity()
+    # [OPT] 先用 $in 批次查出所有既有 SKU 建 dict，消除迴圈逐筆 find_by_sku 的 N+1 查詢
+    all_skus = [s for s in ((p.get('sku') or '').strip() for p in products) if s]
+    existing_by_sku = Product.find_by_skus(all_skus)
     for prod in products:
         sku  = (prod.get('sku')  or '').strip()
         name = (prod.get('name') or '').strip()
@@ -291,12 +304,14 @@ def import_menu():
             'description': prod.get('description', ''),
         }
 
-        existing = Product.find_by_sku(sku)
+        existing = existing_by_sku.get(sku)  # [OPT] 改查 dict，不再逐筆查 DB
         if existing:
             Product.update(existing['_id'], prod_data)
             result['updated_products'] += 1
         else:
-            Product.create(prod_data, created_by=user)
+            new_id = Product.create(prod_data, created_by=user)
+            # [OPT] 同批次重複 SKU 第二次起改走更新，維持原逐筆查詢的行為
+            existing_by_sku[sku] = {'_id': new_id, 'sku': sku}
             result['created_products'] += 1
 
     Log.create(user, '匯入菜單',

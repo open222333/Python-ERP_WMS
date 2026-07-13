@@ -6,15 +6,12 @@ Collection: customer_orders
 from datetime import datetime, timedelta
 from bson import ObjectId
 from src.mongo import get_db
+# [REFACTOR] 狀態集合與標籤遷移至 src/constants.py 統一管理，此處保留別名維持既有 import 相容
+from src.constants import CustomerOrderStatus
 
 
-ORDER_STATUS = ('pending', 'processing', 'completed', 'cancelled')
-ORDER_STATUS_LABEL = {
-    'pending':    '待處理',
-    'processing': '處理中',
-    'completed':  '已完成',
-    'cancelled':  '已取消',
-}
+ORDER_STATUS = CustomerOrderStatus.ALL
+ORDER_STATUS_LABEL = CustomerOrderStatus.LABELS
 
 
 def _fmt(doc) -> dict:
@@ -71,7 +68,7 @@ class CustomerOrder:
             'table_no':   table_no,
             'items':      items,
             'total':      total,
-            'status':     'pending',
+            'status':     CustomerOrderStatus.PENDING,
             'menu_id':    menu_id,
             'remark':     remark,
             'handled_by': '',
@@ -98,11 +95,12 @@ class CustomerOrder:
         return [_fmt(d) for d in docs]
 
     @classmethod
-    def find_active(cls, store_filter: dict = None) -> list:
+    def find_active(cls, store_filter: dict = None, limit: int = 500) -> list:
         """待處理 + 處理中 訂單（廚房顯示用）"""
         q = dict(store_filter or {})
-        q['status'] = {'$in': ['pending', 'processing']}
-        docs = cls._col().find(q).sort('created_at', 1)   # 先進先出
+        q['status'] = {'$in': list(CustomerOrderStatus.ACTIVE)}
+        # [OPT] 加上 limit 上限，避免異常大量未結訂單拖垮查詢與 SSE 推播
+        docs = cls._col().find(q).sort('created_at', 1).limit(limit)   # 先進先出
         return [_fmt(d) for d in docs]
 
     @classmethod

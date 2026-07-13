@@ -2,9 +2,11 @@
 import { ref, computed, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { useCacheStore } from '@/stores/cache' // [OPT] 共用 AdminLayout 已載入的 cache，免重複請求
 import { fmtDate, fmtMoney } from '@/utils/format'
 
 const toast = useToastStore()
+const cache = useCacheStore() // [OPT]
 
 // ── State ────────────────────────────────────────────────
 const loading         = ref(true)
@@ -13,8 +15,10 @@ const period          = ref<'day' | 'week' | 'month' | 'year'>('day')
 const alertFilter     = ref<'all' | 'low' | 'high'>('all')
 const pendingInbound  = ref(0)
 const pendingOutbound = ref(0)
-const productCount    = ref(0)
-const warehouseCount  = ref(0)
+// [OPT] 改用 cache store（AdminLayout onMounted 已呼叫 cache.loadAll()），
+//       省去每次進頁的 /product/、/warehouse/ 請求；computed 保持響應，cache 載入完成即更新
+const productCount    = computed(() => cache.products.length)
+const warehouseCount  = computed(() => cache.warehouses.length)
 const recentInbound   = ref<any[]>([])
 const recentOutbound  = ref<any[]>([])
 
@@ -65,9 +69,8 @@ function statusLabel(s: string) {
 async function load() {
   loading.value = true
   try {
-    const [prodR, whR, ibPendR, obPendR, ibRecentR, obRecentR, analR] = await Promise.all([
-      http.get('/product/').catch(() => ({ data: { data: [] } })),
-      http.get('/warehouse/').catch(() => ({ data: { data: [] } })),
+    // [OPT] 產品/倉庫數改讀 cache store，移除 /product/、/warehouse/ 兩個重複請求
+    const [ibPendR, obPendR, ibRecentR, obRecentR, analR] = await Promise.all([
       http.get('/inbound/?status=pending').catch(() => ({ data: { data: [] } })),
       http.get('/outbound/?status=pending').catch(() => ({ data: { data: [] } })),
       http.get('/inbound/').catch(() => ({ data: { data: [] } })),
@@ -75,8 +78,6 @@ async function load() {
       http.get('/analytics/summary').catch(() => null),
     ])
 
-    productCount.value    = (prodR.data?.data || []).length
-    warehouseCount.value  = (whR.data?.data   || []).length
     pendingInbound.value  = (ibPendR.data?.data || []).length
     pendingOutbound.value = (obPendR.data?.data || []).length
     recentInbound.value   = (ibRecentR.data?.data || []).slice(0, 5)

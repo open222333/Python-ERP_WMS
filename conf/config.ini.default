@@ -20,6 +20,11 @@ ADMIN_TITLE=WMS 倉儲管理系統
 
 [MONGO]
 ; MongoDB 連線 URI 預設 mongodb://localhost:27017
+; [OPT-N1] 若 MongoDB 已啟用 replica set（見 docker-compose.db.yml 的 rs0，
+; 交易一致性 / Change Streams 皆需要），連線字串需加上 ?replicaSet=rs0，例如：
+;   MONGO_URI=mongodb://mongo:27017/?replicaSet=rs0
+; 未加此參數，或連到 standalone MongoDB，程式會自動偵測並退回非交易寫入
+; （src/mongo.py::supports_transactions()），行為不受影響，僅少了交易保護。
 MONGO_URI=mongodb://localhost:27017
 
 ; MongoDB 資料庫名稱 (WMS 使用 wms)

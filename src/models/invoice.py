@@ -5,6 +5,8 @@ Collection: invoices
 from datetime import datetime
 from bson import ObjectId
 from src.mongo import get_db
+# [REFACTOR] 狀態字串改由 src/constants.py 統一管理
+from src.constants import InvoiceStatus
 
 
 def _fmt(doc) -> dict:
@@ -51,7 +53,7 @@ class Invoice:
             'customer_name':  customer_name,
             'customer_email': customer_email,
             'remark':         remark,
-            'status':         'pending',         # pending / issued / voided / error
+            'status':         InvoiceStatus.PENDING,   # pending / issued / voided / error
             'invoice_no':     '',
             'random_no':      '',
             'invoice_date':   '',
@@ -73,7 +75,7 @@ class Invoice:
         cls._col().update_one(
             {'_id': ObjectId(inv_id)},
             {'$set': {
-                'status':         'issued',
+                'status':         InvoiceStatus.ISSUED,
                 'invoice_no':     invoice_no,
                 'random_no':      random_no,
                 'invoice_date':   invoice_date,
@@ -87,7 +89,7 @@ class Invoice:
     def mark_error(cls, inv_id: str, error_msg: str):
         cls._col().update_one(
             {'_id': ObjectId(inv_id)},
-            {'$set': {'status': 'error', 'error_msg': error_msg}},
+            {'$set': {'status': InvoiceStatus.ERROR, 'error_msg': error_msg}},
         )
 
     @classmethod
@@ -95,7 +97,7 @@ class Invoice:
         cls._col().update_one(
             {'_id': ObjectId(inv_id)},
             {'$set': {
-                'status':     'voided',
+                'status':     InvoiceStatus.VOIDED,
                 'void_reason': reason,
                 'voided_by':  operator,
                 'voided_at':  datetime.utcnow(),

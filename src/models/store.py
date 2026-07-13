@@ -26,12 +26,14 @@ class Store:
 
     @classmethod
     def _next_code(cls) -> str:
-        n = cls._col().count_documents({})
-        for i in range(n + 1, n + 999):
-            code = f'S{i:03d}'
-            if not cls._col().find_one({'code': code}):
-                return code
-        return f'S{n + 1:03d}'
+        # [OPT] 一次查詢取現有最大 code 序號 +1，取代迴圈逐筆 find_one
+        max_n = 0
+        for doc in cls._col().find({'code': {'$regex': r'^S\d+$'}}, {'code': 1}):
+            try:
+                max_n = max(max_n, int(doc['code'][1:]))
+            except (ValueError, TypeError):
+                continue
+        return f'S{max_n + 1:03d}'
 
     @classmethod
     def create(cls, name: str, code: str = '', store_role_id: str = None) -> str:
