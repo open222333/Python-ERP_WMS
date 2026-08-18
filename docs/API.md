@@ -186,25 +186,25 @@
 
 | 方法 | 路徑 | 說明 | Auth |
 |------|------|------|------|
-| POST | `/delivery/webhook/ubereats` | UberEats webhook（簽名驗證，auto-confirm） | 無（webhook） |
-| POST | `/delivery/webhook/foodpanda` | foodpanda webhook（簽名驗證） | 無（webhook） |
+| POST | `/delivery/webhook/ubereats` | UberEats webhook（簽名驗證；依平台店家代號歸屬分店，auto-confirm 用店家有效設定） | 無（webhook） |
+| POST | `/delivery/webhook/foodpanda` | foodpanda webhook（簽名驗證；歸屬邏輯同上） | 無（webhook） |
 | GET | `/delivery/orders` | 列出外送訂單（可篩：platform/status/date） | admin/operator/cashier |
 | GET | `/delivery/orders/<oid>` | 取得單一外送訂單 | admin/operator/cashier |
-| PUT | `/delivery/orders/<oid>/status` | 更新狀態（同步至平台；confirmed 自動建立 POS 單） | admin/operator |
+| PUT | `/delivery/orders/<oid>/status` | 更新狀態（同步至平台；confirmed 依店家有效設定建 POS 單並扣庫存） | admin/operator |
 | POST | `/delivery/sync/<platform>` | 從平台拉取最新訂單 | admin/operator |
 | POST | `/delivery/menu/sync/<platform>` | 同步平台菜單至 WMS 菜單管理 | admin/operator |
-| GET | `/delivery/mappings` | 列出平台商品對照（platform_id ↔ product_id） | admin/operator |
-| POST | `/delivery/mappings` | 新增/更新對照（upsert） | admin/operator |
+| GET | `/delivery/mappings` | 列出平台品項對照 | admin/operator |
+| POST | `/delivery/mappings` | 新增/更新對照（upsert）；目標二擇一：`product_id` 或 `menu_id`+`menu_item_id`（菜單品項對應，依 linked_products 扣庫存） | admin/operator |
 | DELETE | `/delivery/mappings/<mid>` | 刪除對照 | admin/operator |
 | GET | `/delivery/settings/<platform>` | 取得平台設定 | admin |
 | PUT | `/delivery/settings/<platform>` | 更新平台設定 | admin |
 | GET | `/delivery/store/` | 列出所有店家的外送設定 | admin |
 | GET | `/delivery/store/<store_id>/settings/<platform>` | 取得指定店家平台設定 | admin |
-| PUT | `/delivery/store/<store_id>/settings/<platform>` | 更新指定店家平台設定（含 mapping_template_id） | admin |
+| PUT | `/delivery/store/<store_id>/settings/<platform>` | 更新指定店家平台設定（mapping_template_id / item_mappings / store_id / vendor_code） | admin |
 | GET | `/delivery/mapping-templates/` | 列出所有品項對應模板 | admin |
 | POST | `/delivery/mapping-templates/` | 新增品項對應模板 | admin |
-| PUT | `/delivery/mapping-templates/<tid>` | 更新品項對應模板 | admin |
-| DELETE | `/delivery/mapping-templates/<tid>` | 刪除品項對應模板 | admin |
+| PUT | `/delivery/mapping-templates/<tid>/` | 更新品項對應模板 | admin |
+| DELETE | `/delivery/mapping-templates/<tid>/` | 刪除品項對應模板 | admin |
 
 ## `/invoice` — 電子發票
 

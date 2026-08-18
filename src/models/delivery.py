@@ -2,8 +2,8 @@
 外送平台訂單 / 映射 Model
 Collections:
   delivery_orders   — 訂單（每筆對應一個外送平台訂單）
-  delivery_mappings — 平台商品 ID ↔ 系統 product._id 映射
-  delivery_settings — 各平台啟用狀態及 webhook 設定
+  delivery_mappings — 平台商品 ID ↔ 系統 product._id 或菜單品項（menu_id + menu_item_id）映射
+  delivery_settings — 各平台啟用狀態及 webhook 設定（全域一筆 + 每店家每平台一筆）
 """
 from datetime import datetime
 from bson import ObjectId
@@ -28,8 +28,9 @@ def _fmt(doc) -> dict:
     for key in ('created_at', 'updated_at', 'synced_at'):
         if key in d and d[key]:
             d[key] = d[key].isoformat() + 'Z'
-    if 'product_id' in d and d['product_id']:
-        d['product_id'] = str(d['product_id'])
+    for oid_key in ('product_id', 'menu_id', 'menu_item_id', 'store_ref'):
+        if oid_key in d and d[oid_key]:
+            d[oid_key] = str(d[oid_key])
     return d
 
 
@@ -89,9 +90,18 @@ class DeliveryOrder:
         except Exception:
             placed_at = now
 
+        # 依平台端店家代號（store id / vendor code）解析所屬分店
+        external_store_id = str(normalized.get('external_store_id', '') or '')
+        store_ref = None
+        if external_store_id:
+            store_ref = DeliverySettings.find_store_by_external(
+                normalized['platform'], external_store_id)
+
         doc = {
             'platform':          normalized['platform'],
             'external_order_id': normalized.get('external_order_id', ''),
+            'external_store_id': external_store_id,
+            'store_ref':         ObjectId(store_ref) if store_ref else None,
             'order_no':          _gen_order_no(normalized['platform']),
             'external_order_no': normalized.get('order_no', ''),
             'status':            normalized.get('status', DeliveryOrderStatus.NEW),
@@ -167,15 +177,36 @@ class DeliveryMapping:
 
     @classmethod
     def upsert(cls, platform: str, product_id: str,
-               external_product_id: str, product_name: str = '') -> str:
+               external_product_id: str, product_name: str = '',
+               menu_id: str = None, menu_item_id: str = None,
+               menu_item_name: str = '') -> str:
+        """
+        對應目標二擇一：
+        - product_id                 → 產品層級對應（既有行為）
+        - menu_id + menu_item_id     → 菜單品項對應（扣庫存走品項 linked_products）
+        """
         now = datetime.utcnow()
+        if product_id:
+            key = {'platform': platform, 'product_id': ObjectId(product_id)}
+        elif menu_item_id:
+            # 菜單品項 _id 為 UUID 字串（embedded doc），不可轉 ObjectId
+            key = {'platform': platform, 'menu_item_id': str(menu_item_id)}
+        else:
+            raise ValueError('product_id 與 menu_item_id 至少須填一項')
+
+        set_fields = {
+            'external_product_id': external_product_id,
+            'product_name':        product_name,
+            'updated_at':          now,
+        }
+        if menu_item_id:
+            set_fields['menu_id']        = ObjectId(menu_id) if menu_id else None
+            set_fields['menu_item_id']   = str(menu_item_id)
+            set_fields['menu_item_name'] = menu_item_name
+            set_fields['product_id']     = None
         r = cls._col().find_one_and_update(
-            {'platform': platform, 'product_id': ObjectId(product_id)},
-            {'$set': {
-                'external_product_id': external_product_id,
-                'product_name':        product_name,
-                'updated_at':          now,
-            }, '$setOnInsert': {'created_at': now}},
+            key,
+            {'$set': set_fields, '$setOnInsert': {'created_at': now}},
             upsert=True,
             return_document=True,
         )
@@ -201,6 +232,7 @@ class DeliverySettings:
     def _default(cls, platform: str) -> dict:
         return {'platform': platform, 'enabled': False, 'auto_confirm': False,
                 'default_warehouse_id': '', 'webhook_url': '', 'last_sync': None,
+                'store_id': '', 'vendor_code': '',
                 'item_mappings': [], 'mapping_template_id': None}
 
     @classmethod
@@ -221,6 +253,41 @@ class DeliverySettings:
         if doc is None:
             return cls._default(platform)
         return cls._fmt_doc(doc)
+
+    @classmethod
+    def find_store_by_external(cls, platform: str, external_store_id: str) -> str:
+        """依平台端店家代號（UberEats store id / foodpanda vendor code）反查 store_ref"""
+        if not external_store_id:
+            return None
+        doc = cls._col().find_one({
+            'platform':  platform,
+            'store_ref': {'$ne': None},
+            '$or': [{'store_id': external_store_id},
+                    {'vendor_code': external_store_id}],
+        })
+        return str(doc['store_ref']) if doc else None
+
+    @classmethod
+    def effective(cls, platform: str, store_ref: str = None) -> dict:
+        """
+        取得「有效設定」：有 store_ref 且該店有設定時以店家設定優先，
+        空值欄位（default_warehouse_id / item_mappings / mapping_template_id）回退全域。
+        """
+        from bson import ObjectId as ObjId
+        base = cls.get(platform)
+        if not store_ref:
+            return base
+        doc = cls._col().find_one(
+            {'platform': platform, 'store_ref': ObjId(store_ref)})
+        if doc is None:
+            return base
+        store = cls._fmt_doc(doc)
+        merged = dict(base)
+        for k, v in store.items():
+            if k in ('enabled', 'auto_confirm') or v not in (None, '', []):
+                merged[k] = v
+        merged['store_ref'] = store_ref
+        return merged
 
     @classmethod
     def get_store_platforms(cls, store_ref: str) -> dict:

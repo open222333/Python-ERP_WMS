@@ -29,8 +29,9 @@ stock_movements ── product_id / warehouse_id（含 denormalized name/sku）
 inbound_orders / outbound_orders ── warehouse_id；items[].product_id
 customer_orders ── store_id
 pos_orders ── warehouse_id / store_id / cust_order_id / delivery_order_id（皆 optional）
-delivery_orders（webhook 來源）；delivery_mappings ── product_id
-delivery_settings ── store_ref / default_warehouse_id / mapping_template_id
+delivery_orders（webhook 來源）── store_ref（依平台店家代號自動歸屬）
+delivery_mappings ── product_id 或 menu_id + menu_item_id（菜單品項對應，扣庫存走品項 linked_products）
+delivery_settings ── store_ref / default_warehouse_id / mapping_template_id / store_id / vendor_code
 delivery_mapping_templates（品項對應模板，可跨分店共用）
 invoices ── order_id → pos_orders
 logs（操作紀錄）；system_settings（key-value）
@@ -44,6 +45,14 @@ Redis:
 已建索引：`inventory(warehouse_id, product_id)`、`inbound_orders(status, created_at)`、`outbound_orders(status, created_at)`、`pos_orders(cashier, created_at)`、`customer_orders(status, created_at)`。
 
 `GET /inventory/movement/` 會依系統設定 `movements_retention_days` lazy 清除過期異動紀錄（0 或未設定則不清）。
+
+## 外送訂單對應解析順序（PosOrder.create_from_delivery）
+
+1. **external_id 對應**（`delivery_mappings`）：菜單品項對應（`menu_item_id`，依品項 linked_products 扣庫存，可多原料/跨倉）優先；否則產品對應（`product_id`，於預設倉扣庫存）
+2. **名稱式對應**：店家設定 `item_mappings`（依 `platform_item_name` 不分大小寫比對）；為空且有綁 `mapping_template_id` → 用模板內容。`system_items` 支援 `type: 'menu_item'` 與產品型（無 type 視為產品，向下相容）
+3. **無對應** → 僅記錄銷售、不扣庫存（`skipped_items` 回報）
+
+設定取用 `DeliverySettings.effective(platform, store_ref)`：店家設定優先、空值欄位回退全域。訂單歸屬店家依 webhook payload 的平台店家代號（UberEats store id / foodpanda vendor code）比對店家設定的 `store_id` / `vendor_code`。
 
 ## 實作備忘（常見坑）
 

@@ -141,6 +141,8 @@ class FoodpandaClient:
         order_total = raw.get('order_total', {})
         return {
             'platform':          'foodpanda',
+            'external_store_id': str(raw.get('vendor', {}).get('code', '') or
+                                     raw.get('vendor_code', '') or ''),
             'external_order_id': raw.get('code', ''),
             'order_no':          raw.get('code', ''),
             'status':            raw.get('status', {}).get('code', '').lower(),

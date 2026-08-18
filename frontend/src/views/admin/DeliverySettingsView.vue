@@ -13,7 +13,15 @@ const PLATFORMS = [
 ] as const
 type PlatformKey = 'ubereats' | 'foodpanda'
 
-interface SystemItem  { product_id: string; product_name: string; qty: number }
+// type 未填視為 'product'（向下相容舊資料）
+interface SystemItem  {
+  type?: 'product' | 'menu_item'
+  product_id?: string
+  menu_id?: string
+  menu_item_id?: string
+  product_name: string   // 顯示名稱（產品名或菜單品項名）
+  qty: number
+}
 interface ItemMapping { platform_item_name: string; system_items: SystemItem[] }
 interface Template    { _id: string; name: string; platform: string; items: ItemMapping[] }
 
@@ -32,6 +40,8 @@ const tplDeleting  = ref('')
 const tplAddingMapping = ref(false)
 const tplNewMapping    = ref<ItemMapping>({ platform_item_name: '', system_items: [] })
 const tplProductSearch = ref('')
+const tplSourceTab     = ref<'product' | 'menu_item'>('product')
+const tplMenuSearch    = ref('')
 
 const filteredTplProducts = computed(() => {
   const kw = tplProductSearch.value.trim().toLowerCase()
@@ -39,6 +49,26 @@ const filteredTplProducts = computed(() => {
     ? cache.products.filter((p: any) =>
         p.name.toLowerCase().includes(kw) || (p.sku || '').toLowerCase().includes(kw))
     : cache.products.slice(0, 30)
+})
+
+// ── 菜單品項來源 ─────────────────────────────────────────────
+const menus = ref<any[]>([])
+
+async function loadMenus() {
+  try {
+    const r = await http.get('/menu/')
+    menus.value = r.data.data || []
+  } catch { /* 菜單非必要資料，失敗不擋設定頁 */ }
+}
+
+const filteredTplMenuItems = computed(() => {
+  const kw  = tplMenuSearch.value.trim().toLowerCase()
+  const out: any[] = []
+  for (const m of menus.value)
+    for (const it of (m.items || []))
+      if (!kw || (it.name || '').toLowerCase().includes(kw))
+        out.push({ ...it, menu_id: m._id, menu_name: m.name })
+  return kw ? out : out.slice(0, 30)
 })
 
 async function loadTemplates() {
@@ -111,13 +141,24 @@ async function delTpl(tpl: Template) {
 function tplStartAddMapping() {
   tplNewMapping.value    = { platform_item_name: '', system_items: [] }
   tplProductSearch.value = ''
+  tplMenuSearch.value    = ''
+  tplSourceTab.value     = 'product'
   tplAddingMapping.value = true
 }
 function tplCancelAddMapping() { tplAddingMapping.value = false }
 
 function tplAddProduct(product: any) {
   if (!tplNewMapping.value.system_items.find(s => s.product_id === product._id))
-    tplNewMapping.value.system_items.push({ product_id: product._id, product_name: product.name, qty: 1 })
+    tplNewMapping.value.system_items.push({
+      type: 'product', product_id: product._id, product_name: product.name, qty: 1,
+    })
+}
+function tplAddMenuItem(mi: any) {
+  if (!tplNewMapping.value.system_items.find(s => s.menu_item_id === mi._id))
+    tplNewMapping.value.system_items.push({
+      type: 'menu_item', menu_id: mi.menu_id, menu_item_id: mi._id,
+      product_name: mi.name, qty: 1,
+    })
 }
 function tplRemoveProduct(idx: number) { tplNewMapping.value.system_items.splice(idx, 1) }
 
@@ -141,6 +182,7 @@ interface StoreRow {
 interface PlatformForm {
   enabled: boolean; auto_confirm: boolean
   default_warehouse_id: string; mapping_template_id: string
+  platform_store_code: string   // UberEats Store ID / foodpanda Vendor Code
 }
 
 const loading   = ref(false)
@@ -154,6 +196,7 @@ const activePlatform   = ref<PlatformKey>('ubereats')
 
 const emptyForm = (): PlatformForm => ({
   enabled: false, auto_confirm: false, default_warehouse_id: '', mapping_template_id: '',
+  platform_store_code: '',
 })
 
 const forms = ref<Record<PlatformKey, PlatformForm>>({
@@ -198,6 +241,7 @@ async function openModal(store: StoreRow) {
         auto_confirm:         !!d.auto_confirm,
         default_warehouse_id: wh,
         mapping_template_id:  d.mapping_template_id || '',
+        platform_store_code:  d.store_id || d.vendor_code || '',
       }
     }
     merge('ubereats', ue.data)
@@ -210,9 +254,19 @@ async function openModal(store: StoreRow) {
 async function savePlatform(platform: PlatformKey) {
   saving.value = platform
   try {
+    const f = forms.value[platform]
+    const payload: Record<string, any> = {
+      enabled:              f.enabled,
+      auto_confirm:         f.auto_confirm,
+      default_warehouse_id: f.default_warehouse_id,
+      mapping_template_id:  f.mapping_template_id,
+      // 平台店家代號依平台寫入對應欄位（webhook 訂單自動歸屬本店用）
+      [platform === 'ubereats' ? 'store_id' : 'vendor_code']:
+        f.platform_store_code.trim(),
+    }
     await http.put(
       `/delivery/store/${editingStoreId.value}/settings/${platform}`,
-      forms.value[platform],
+      payload,
     )
     toast.show(`${PLATFORMS.find(p => p.key === platform)?.name} 設定已儲存`, 'success')
     await load()
@@ -225,7 +279,7 @@ async function savePlatform(platform: PlatformKey) {
 
 onMounted(async () => {
   await cache.loadAll()
-  await Promise.all([load(), loadTemplates()])
+  await Promise.all([load(), loadTemplates(), loadMenus()])
 })
 </script>
 
@@ -294,7 +348,7 @@ onMounted(async () => {
     <!-- ─── 品項對應模板 tab ─────────────────────────────── -->
     <template v-else>
       <div class="d-flex align-items-center px-3 py-2 border-bottom">
-        <span class="text-muted small">建立品項對應模板（平台品項 → 系統產品），再由各店家的平台設定中綁定。</span>
+        <span class="text-muted small">建立品項對應模板（平台品項 → 系統產品／菜單品項），再由各店家的平台設定中綁定。</span>
         <button class="btn btn-sm btn-primary ms-3 flex-shrink-0" @click="openTplModal()">
           <i class="bi bi-plus-lg me-1"></i>新增模板
         </button>
@@ -409,6 +463,19 @@ onMounted(async () => {
                   </div>
                 </div>
 
+                <!-- 平台店家代號 -->
+                <div class="mb-3">
+                  <label class="form-label fw-semibold">
+                    平台店家代號
+                    <span class="text-muted small">
+                      （{{ p.key === 'ubereats' ? 'UberEats Store ID' : 'foodpanda Vendor Code' }}，
+                      填寫後 Webhook 訂單會自動歸屬本店並套用本店設定）
+                    </span>
+                  </label>
+                  <input v-model="forms[p.key].platform_store_code" type="text"
+                         class="form-control" placeholder="從平台商家後台取得" />
+                </div>
+
                 <!-- 品項對應模板 -->
                 <div class="mb-4">
                   <label class="form-label fw-semibold">
@@ -481,7 +548,7 @@ onMounted(async () => {
               <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="fw-semibold">
                   <i class="bi bi-diagram-3 me-1 text-primary"></i>品項對應清單
-                  <span class="text-muted small ms-1">（平台品項 → 系統內產品）</span>
+                  <span class="text-muted small ms-1">（平台品項 → 系統產品／菜單品項）</span>
                 </div>
                 <button v-if="!tplAddingMapping" class="btn btn-sm btn-outline-primary"
                         @click="tplStartAddMapping">
@@ -531,7 +598,9 @@ onMounted(async () => {
                   <div class="text-muted small mb-1">已選系統品項：</div>
                   <div class="d-flex flex-wrap gap-1">
                     <span v-for="(si, idx) in tplNewMapping.system_items" :key="idx"
-                          class="badge bg-primary d-flex align-items-center gap-1">
+                          class="badge d-flex align-items-center gap-1"
+                          :class="si.type === 'menu_item' ? 'bg-success' : 'bg-primary'">
+                      <i :class="si.type === 'menu_item' ? 'bi bi-journal-text' : 'bi bi-box'"></i>
                       {{ si.product_name }}
                       <input v-model.number="si.qty" type="number" min="1"
                              class="form-control form-control-sm d-inline-block p-0"
@@ -542,8 +611,22 @@ onMounted(async () => {
                   </div>
                 </div>
 
+                <!-- 來源切換：產品 / 菜單品項 -->
+                <div class="btn-group btn-group-sm mb-2" role="group">
+                  <button type="button" class="btn"
+                          :class="tplSourceTab === 'product' ? 'btn-primary' : 'btn-outline-primary'"
+                          @click="tplSourceTab = 'product'">
+                    <i class="bi bi-box me-1"></i>系統產品
+                  </button>
+                  <button type="button" class="btn"
+                          :class="tplSourceTab === 'menu_item' ? 'btn-success' : 'btn-outline-success'"
+                          @click="tplSourceTab = 'menu_item'">
+                    <i class="bi bi-journal-text me-1"></i>菜單品項
+                  </button>
+                </div>
+
                 <!-- 搜尋產品 -->
-                <div class="mb-2">
+                <div v-if="tplSourceTab === 'product'" class="mb-2">
                   <label class="form-label fw-semibold small mb-1">搜尋系統產品</label>
                   <input v-model="tplProductSearch" type="text" class="form-control form-control-sm"
                          placeholder="輸入名稱或 SKU 搜尋..." />
@@ -559,6 +642,31 @@ onMounted(async () => {
                       {{ prod.name }}
                       <code class="ms-1 text-secondary" style="font-size:.7rem">{{ prod.sku }}</code>
                     </button>
+                  </div>
+                </div>
+
+                <!-- 搜尋菜單品項 -->
+                <div v-else class="mb-2">
+                  <label class="form-label fw-semibold small mb-1">搜尋菜單品項</label>
+                  <input v-model="tplMenuSearch" type="text" class="form-control form-control-sm"
+                         placeholder="輸入品項名稱搜尋..." />
+                  <div class="border rounded mt-1" style="max-height:160px;overflow-y:auto">
+                    <div v-if="!filteredTplMenuItems.length" class="text-muted small p-2">無符合菜單品項</div>
+                    <button v-for="mi in filteredTplMenuItems" :key="mi._id"
+                            class="btn btn-sm w-100 text-start rounded-0 border-0 border-bottom"
+                            :class="tplNewMapping.system_items.find(s => s.menu_item_id === mi._id)
+                                      ? 'btn-light text-muted' : 'btn-white'"
+                            @click="tplAddMenuItem(mi)">
+                      <i class="bi bi-check2 me-1"
+                         v-if="tplNewMapping.system_items.find(s => s.menu_item_id === mi._id)"></i>
+                      {{ mi.name }}
+                      <span class="text-secondary ms-1" style="font-size:.7rem">{{ mi.menu_name }}</span>
+                      <span v-if="mi.linked_products?.length" class="badge bg-light text-dark border ms-1"
+                            style="font-size:.65rem">扣 {{ mi.linked_products.length }} 項原料</span>
+                    </button>
+                  </div>
+                  <div class="form-text">
+                    對應到菜單品項時，接單會依品項的「連結商品」設定扣庫存（可多原料、可跨倉）。
                   </div>
                 </div>
 

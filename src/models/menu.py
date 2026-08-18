@@ -280,18 +280,27 @@ class Menu:
     # ── 取得單一品項 ──────────────────────────────
     @classmethod
     def find_item(cls, mid: str, item_id: str) -> dict:
-        doc = cls._col().find_one(
-            {'_id': ObjectId(mid), 'items._id': item_id},
-            {'items.$': 1},
-        )
-        if not doc or not doc.get('items'):
+        """
+        取得單一菜單品項（含 linked_products / applied_groups 完整格式化），
+        找不到回傳 None。mid 為 None 時跨菜單以 item_id 搜尋（品項 _id 為
+        UUID，全域唯一）。不用位置投影（$）以維持 mongomock 相容。
+        """
+        try:
+            if mid:
+                doc = cls._col().find_one(
+                    {'_id': ObjectId(mid), 'items._id': str(item_id)})
+            else:
+                doc = cls._col().find_one({'items._id': str(item_id)})
+            menu = _fmt_menu(doc)
+            if not menu:
+                return None
+            for item in menu.get('items', []):
+                if str(item.get('_id')) == str(item_id):
+                    item['menu_id'] = menu['_id']
+                    return item
             return None
-        item = dict(doc['items'][0])
-        if item.get('product_id'):
-            item['product_id'] = str(item['product_id'])
-        if item.get('warehouse_id'):
-            item['warehouse_id'] = str(item['warehouse_id'])
-        return item
+        except Exception:
+            return None
 
     # ── 分類 CRUD（embedded） ──────────────────────
     @classmethod

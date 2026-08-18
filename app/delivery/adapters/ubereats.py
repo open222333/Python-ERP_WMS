@@ -161,6 +161,7 @@ class UberEatsClient:
                         for i in cart.get('items', [])) / 100)
         return {
             'platform':         'ubereats',
+            'external_store_id': str(raw.get('store', {}).get('id', '') or ''),
             'external_order_id': raw.get('id', ''),
             'order_no':         raw.get('display_id', ''),
             'status':           raw.get('current_state', '').lower(),

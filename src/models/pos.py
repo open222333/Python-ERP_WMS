@@ -326,11 +326,17 @@ class PosOrder:
 
     @classmethod
     def create_from_delivery(cls, delivery_order: dict,
-                              warehouse_id: str, operator: str) -> dict:
+                              warehouse_id: str, operator: str,
+                              settings: dict = None) -> dict:
         """
-        從外送訂單建立銷售紀錄。
-        - delivery_mappings 有對應 → 比照 POS 原子扣庫存
-        - 無對應 → 僅記錄銷售，不動庫存（items 保留平台原名稱）
+        從外送訂單建立銷售紀錄。對應解析順序（每品項）：
+        1. delivery_mappings（platform + external_id）
+           - 菜單品項對應（menu_item_id）→ 依品項 linked_products 扣庫存（可多原料/跨倉）
+           - 產品對應（product_id）→ 於預設倉扣庫存（既有行為）
+        2. 名稱式對應：settings.item_mappings（店家/全域），空則回退 mapping_template
+           system_items 支援 {type:'menu_item', menu_id, menu_item_id} 與
+           {product_id, qty}（無 type 視為 product，向下相容）
+        3. 無對應 → 僅記錄銷售，不動庫存（items 保留平台原名稱）
         回傳 {'success': bool, 'sale_id': str, 'skipped_items': list, 'error': str}
         """
         from src.models.inventory import Inventory, StockMovement
@@ -365,53 +371,169 @@ class PosOrder:
             for m in maps_col.find({'platform': platform, 'external_product_id': {'$in': ext_ids}})
         } if ext_ids else {}
 
+        # ── 名稱式對應表（店家/全域 item_mappings，空則回退模板）────
+        name_map = {}
+        s = settings or {}
+        raw_name_mappings = s.get('item_mappings') or []
+        if not raw_name_mappings and s.get('mapping_template_id'):
+            from src.models.delivery import DeliveryMappingTemplate
+            tpl = DeliveryMappingTemplate.find_by_id(s['mapping_template_id'])
+            raw_name_mappings = (tpl or {}).get('items', [])
+        for nm in raw_name_mappings:
+            nm_key = (nm.get('platform_item_name') or '').strip().lower()
+            if nm_key:
+                name_map[nm_key] = nm.get('system_items', [])
+
         mapped_pids = [ObjectId(m['product_id']) for m in mapping_map.values() if m.get('product_id')]
+        for sis in name_map.values():
+            for si in sis:
+                if si.get('product_id') and si.get('type', 'product') == 'product':
+                    try:
+                        mapped_pids.append(ObjectId(si['product_id']))
+                    except Exception:
+                        pass
         product_map = {
             str(p['_id']): p
             for p in db['products'].find({'_id': {'$in': mapped_pids}})
         } if mapped_pids else {}
 
+        from src.models.menu import Menu
+
+        def _menu_consumptions(menu_id, item_id, times):
+            """菜單品項 → linked_products 消耗清單；回傳 (menu_item, [consumption])"""
+            mi = Menu.find_item(menu_id, item_id)
+            if not mi:
+                return None, []
+            cons = []
+            for lp in mi.get('linked_products', []):
+                if not lp.get('product_id'):
+                    continue
+                cons.append({
+                    'product_id':   str(lp['product_id']),
+                    'warehouse_id': str(lp['warehouse_id']) if lp.get('warehouse_id') else warehouse_id,
+                    'qty':          max(1, int(lp.get('consume_qty', 1) or 1)) * times,
+                })
+            return mi, cons
+
+        consumptions = []  # 待扣庫存清單 [{product_id, warehouse_id, qty, sale_idx}]
+
         for ri in raw_items:
             ext_id  = str(ri.get('external_id', ''))
+            qty     = int(ri.get('quantity', 1))
             mapping = mapping_map.get(ext_id) if ext_id else None
-            m_pid   = mapping.get('product_id') if mapping else None
-            product = product_map.get(str(m_pid)) if m_pid else None
+            idx     = len(sale_items)
 
-            sale_items.append({
-                'product_id':   str(m_pid) if m_pid else None,
-                'product_name': product.get('name', '') if product
-                                else ri.get('product_name', ''),
-                'product_sku':  product.get('sku', '') if product else '',
-                'unit':         product.get('unit', '份') if product else '份',
-                'quantity':     int(ri.get('quantity', 1)),
-                'unit_price':   float(ri.get('unit_price', 0)),
-                'has_mapping':  mapping is not None,
-            })
-            if not mapping:
-                skipped.append(ri.get('product_name', ext_id))
+            sale_item = {
+                'product_id':     None,
+                'menu_item_id':   None,
+                'menu_item_name': '',
+                'product_name':   ri.get('product_name', ''),
+                'product_sku':    '',
+                'unit':           '份',
+                'quantity':       qty,
+                'unit_price':     float(ri.get('unit_price', 0)),
+                'has_mapping':    False,
+            }
 
-        # ── 原子扣庫存（只扣有映射的品項）──────────────
+            if mapping and mapping.get('menu_item_id'):
+                # 1a. external_id → 菜單品項
+                mi, cons = _menu_consumptions(mapping.get('menu_id'),
+                                              mapping['menu_item_id'], qty)
+                if mi:
+                    sale_item.update({
+                        'menu_item_id':   str(mapping['menu_item_id']),
+                        'menu_item_name': mi.get('name', ''),
+                        'has_mapping':    True,
+                    })
+                    for c in cons:
+                        c['sale_idx'] = idx
+                    consumptions.extend(cons)
+                else:
+                    skipped.append(f"{sale_item['product_name']}（菜單品項已不存在）")
+            elif mapping and mapping.get('product_id'):
+                # 1b. external_id → 產品（既有行為）
+                product = product_map.get(str(mapping['product_id']))
+                sale_item.update({
+                    'product_id':   str(mapping['product_id']),
+                    'product_name': product.get('name', '') if product
+                                    else sale_item['product_name'],
+                    'product_sku':  product.get('sku', '') if product else '',
+                    'unit':         product.get('unit', '份') if product else '份',
+                    'has_mapping':  True,
+                })
+                consumptions.append({'product_id': str(mapping['product_id']),
+                                     'warehouse_id': warehouse_id,
+                                     'qty': qty, 'sale_idx': idx})
+            else:
+                # 2. 名稱式對應（item_mappings / 模板）
+                sis = name_map.get((ri.get('product_name') or '').strip().lower(), [])
+                matched = False
+                for si in sis:
+                    si_qty = max(1, int(si.get('qty', 1) or 1))
+                    if si.get('type') == 'menu_item' and si.get('menu_item_id'):
+                        mi, cons = _menu_consumptions(si.get('menu_id'),
+                                                      si['menu_item_id'], qty * si_qty)
+                        if mi:
+                            matched = True
+                            if not sale_item['menu_item_id']:
+                                sale_item.update({
+                                    'menu_item_id':   str(si['menu_item_id']),
+                                    'menu_item_name': mi.get('name', ''),
+                                })
+                            for c in cons:
+                                c['sale_idx'] = idx
+                            consumptions.extend(cons)
+                    elif si.get('product_id'):
+                        matched = True
+                        if not sale_item['product_id']:
+                            product = product_map.get(str(si['product_id']))
+                            sale_item.update({
+                                'product_id':  str(si['product_id']),
+                                'product_sku': product.get('sku', '') if product else '',
+                                'unit':        product.get('unit', '份') if product else '份',
+                            })
+                        consumptions.append({'product_id': str(si['product_id']),
+                                             'warehouse_id': warehouse_id,
+                                             'qty': qty * si_qty, 'sale_idx': idx})
+                if matched:
+                    sale_item['has_mapping'] = True
+                else:
+                    skipped.append(ri.get('product_name', ext_id))
+
+            sale_items.append(sale_item)
+
+        # ── 原子扣庫存（依消耗清單逐筆，支援跨倉）──────────
         deducted = []
-        for item in sale_items:
-            if not item['has_mapping']:
+        prod_cache = {}
+        for c in consumptions:
+            c_qty = c['qty']
+            try:
+                pid_obj = ObjectId(c['product_id'])
+                c_wid   = ObjectId(c['warehouse_id'])
+            except Exception:
+                skipped.append(f"{sale_items[c['sale_idx']]['product_name']}（對應資料無效）")
                 continue
-            if not item['product_id']:
-                skipped.append(f"{item.get('product_name', '?')}（映射缺少 product_id）")
-                continue
-            qty     = item['quantity']
-            pid_obj = ObjectId(item['product_id'])
-            result  = inv_col.find_one_and_update(
-                {'product_id': pid_obj, 'warehouse_id': wid_obj,
-                 'quantity': {'$gte': qty}},
-                {'$inc': {'quantity': -qty}, '$set': {'updated_at': now}},
+            result = inv_col.find_one_and_update(
+                {'product_id': pid_obj, 'warehouse_id': c_wid,
+                 'quantity': {'$gte': c_qty}},
+                {'$inc': {'quantity': -c_qty}, '$set': {'updated_at': now}},
                 return_document=True,
             )
             if result:
-                item['before_qty'] = result['quantity'] + qty
-                item['after_qty']  = result['quantity']
-                deducted.append(item)
+                p = prod_cache.get(c['product_id']) or product_map.get(c['product_id']) \
+                    or db['products'].find_one({'_id': pid_obj}) or {}
+                prod_cache[c['product_id']] = p
+                deducted.append({
+                    'product_id':   c['product_id'],
+                    'warehouse_id': c['warehouse_id'],
+                    'quantity':     c_qty,
+                    'before_qty':   result['quantity'] + c_qty,
+                    'after_qty':    result['quantity'],
+                    'product_name': p.get('name', sale_items[c['sale_idx']]['product_name']),
+                    'product_sku':  p.get('sku', ''),
+                })
             else:
-                skipped.append(f"{item['product_name']}（庫存不足）")
+                skipped.append(f"{sale_items[c['sale_idx']]['product_name']}（庫存不足）")
 
         # ── 計算金額 ────────────────────────────────────
         subtotal     = sum(i['quantity'] * i['unit_price'] for i in sale_items)
@@ -438,13 +560,15 @@ class PosOrder:
             'warehouse_name':    w['name'] if w else '',
             'customer_name':     delivery_order.get('customer_name', ''),
             'items': [{
-                'product_id':   ObjectId(i['product_id']) if i['product_id'] else None,
-                'product_name': i['product_name'],
-                'product_sku':  i['product_sku'],
-                'unit':         i['unit'],
-                'quantity':     i['quantity'],
-                'unit_price':   i['unit_price'],
-                'subtotal':     round(i['quantity'] * i['unit_price'], 2),
+                'product_id':     ObjectId(i['product_id']) if i['product_id'] else None,
+                'menu_item_id':   i.get('menu_item_id'),
+                'menu_item_name': i.get('menu_item_name', ''),
+                'product_name':   i['product_name'],
+                'product_sku':    i['product_sku'],
+                'unit':           i['unit'],
+                'quantity':       i['quantity'],
+                'unit_price':     i['unit_price'],
+                'subtotal':       round(i['quantity'] * i['unit_price'], 2),
             } for i in sale_items],
             'subtotal':      round(subtotal, 2),
             'delivery_fee':  delivery_fee,
@@ -461,19 +585,23 @@ class PosOrder:
         }
         sid = str(db[cls.COLLECTION].insert_one(order_doc).inserted_id)
 
-        # ── 記錄 StockMovement（有扣庫存的品項）─────────
+        # ── 記錄 StockMovement（有扣庫存的品項，倉別依消耗清單）──
         ext_no = delivery_order.get('external_order_no', '')
+        wh_cache = {warehouse_id: w}
         for item in deducted:
+            wid_i = item['warehouse_id']
+            if wid_i not in wh_cache:
+                wh_cache[wid_i] = Warehouse.find_by_id(wid_i)
             StockMovement.create(
                 product_id=item['product_id'],
-                warehouse_id=warehouse_id,
+                warehouse_id=wid_i,
                 movement_type='outbound',
                 quantity=-item['quantity'],
                 before_qty=item['before_qty'],
                 after_qty=item['after_qty'],
                 product_name=item['product_name'],
                 product_sku=item['product_sku'],
-                warehouse_name=w['name'] if w else '',
+                warehouse_name=(wh_cache[wid_i] or {}).get('name', ''),
                 reference_type='delivery_order',
                 reference_id=del_oid,
                 remark=f"{platform} 外送 {ext_no}",

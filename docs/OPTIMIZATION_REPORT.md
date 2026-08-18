@@ -75,7 +75,7 @@
 | N7 | nginx 安全 headers 不完整 | `conf/nginx/conf.d/default.conf.{cloudflare,https-letsencrypt}.template` 的 HSTS header **已寫好但被註解掉**；全站缺 X-Frame-Options / X-Content-Type-Options / Referrer-Policy。已驗證閒置的靜態資源快取、gzip 皆正確，僅安全 header 這塊缺 |
 | N8 | api 容器無資源限制 | `docker-compose.api.yml` 的 api 服務沒有 `deploy.resources`（mongo/redis 都有），單一服務異常吃記憶體會拖垮同機資料庫容器 |
 | N9 | 死的日誌檔設定 | `src/__init__.py` 的 `LOG_PATH`（建立 `logs/` 資料夾）與對應的 docker volume mount，目前完全沒有 FileHandler 寫入——gunicorn 的 `accesslog/errorlog='-'` 輸出到 stdout（Docker 慣例，這部分正確），但 `logs/` 資料夾本身從未被使用，屬死設定，可清除或補上實際用途 |
-| N10 | 金流／webhook 模組零測試覆蓋 | `delivery`（795 行 view + 310 行 model，UberEats/foodpanda webhook + 訂單同步）、`invoice`（598 行 view + 132 行 model，ECPay 電子發票開立/作廢）、`analytics`（240 行，儀表板統計）在 `tests/unit` 完全沒有對應測試。delivery 與 invoice 涉及真實金流/稅務合規，風險層級高於一般模組缺測試 |
+| N10 | 金流／webhook 模組零測試覆蓋（**delivery 部分已完成 2026-07-17**） | ~~`delivery`~~ 已補 `tests/unit/test_delivery.py` 22 條（webhook 歸屬/自動接單、對應解析三層順序、linked_products 跨倉扣庫存、庫存不足、防重複、API 權限），並同批完成 view 拆分（`app/delivery/views/` 套件）與菜單品項對應功能。**尚缺**：`invoice`（598 行 view + 132 行 model，ECPay 電子發票開立/作廢）、`analytics`（240 行，儀表板統計）仍無測試，invoice 涉稅務合規，風險最高 |
 
 **查證後排除的疑似項目**（避免誤導，記錄於此供参考）：
 - ~~JWT secret（`conf/flask.json`）被提交進 git~~ — 已用 `git ls-files` 與 `git check-ignore` 驗證，該檔案有被 `conf/.gitignore` 正確排除，**不是真實問題**

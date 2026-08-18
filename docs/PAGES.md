@@ -26,7 +26,7 @@
 | `/admin/pos-report` | `PosReportView.vue` | POS 銷售報表，日/週/月/年圖表 |
 | `/admin/menus` | `MenusView.vue` | 菜單全功能編輯：菜單/分類/選項組/品項，庫存聯動設定，JSON 匯出/匯入 |
 | `/admin/delivery-orders` | `DeliveryOrdersView.vue` | 外送平台訂單（UberEats / foodpanda），狀態管理 |
-| `/admin/delivery-settings` | `DeliverySettingsView.vue` | 外送平台設定（兩個 Tab：店家設定、品項對應模板 CRUD） |
+| `/admin/delivery-settings` | `DeliverySettingsView.vue` | 外送平台設定（兩個 Tab）：店家設定（啟用/自動接單/預設倉/平台店家代號/綁定模板）、品項對應模板 CRUD（system_items 可選系統產品或菜單品項） |
 | `/admin/stores` | `StoresView.vue` | 分店 CRUD 及分店帳號管理 |
 | `/admin/users` | `UsersView.vue` | 使用者/範本/分店/店家角色，四個 tab |
 | `/admin/logs` | `LogsView.vue` | 操作紀錄查詢，CSV 匯出/匯入，定期清理 |

@@ -13,7 +13,7 @@
 - **銷售記錄**：查詢、篩選、CSV 匯出 / 歷史資料匯入
 - **操作紀錄**：查詢、CSV 匯出、批次匯入、自動清除（保留天數設定）
 - **分析報表**：日 / 週 / 月 / 年度用量與毛利、庫存警示儀表板
-- **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）
+- **外送平台**：串接 UberEats（OAuth2）與 foodpanda（API Key）— 即時訂單推播（Webhook）+ 主動拉取 + 菜單同步（含客製化選項群組）；訂單依平台店家代號自動歸屬分店（店家專屬設定優先、回退全域）；品項對應支援「產品」與「菜單品項」兩種目標（菜單品項依 linked_products 扣庫存，可多原料/跨倉），另有名稱式對應模板可跨店共用
 - **菜單管理**：菜單 / 分類 / 品項 CRUD、客製化選項組（single / multiple）、品項批次設定客製化選項（多選 + 3 狀態套用/移除/不改）、菜單列表預設展開（☆ 標記，localStorage 記憶）、JSON 批次匯出 / 匯入（跨菜單帶 ID 重映射）；新增表單（產品 / 品項 / 分類 / 選項組）關閉不儲存自動保留草稿，儲存成功後清空
 - **顧客點餐頁**：時效 Token QR Code（`/order/?t=TOKEN`）自動帶入桌號，無需登入；桌號共享 Session Token（Redis 儲存），同桌多支裝置共用同一 Session；結帳或取消訂單時自動關閉 Session；SSE 即時推播訂單狀態更新與 Session 關閉事件（「感謝光臨」全螢幕提示）；Session Token 存入 `localStorage` 支援重整恢復連線；向下相容舊式 `?table=` URL；客製化選項、購物車結帳；不帶參數時顯示空白頁；`GET /customer-order/menu` 回應強制 `Cache-Control: no-store`，前端亦附加 `_ts` 時間戳防止瀏覽器（尤其 iOS Safari）快取舊 session_token；完成訂單後再次掃碼點餐時，新 Session 建立同時自動清除舊的關閉旗標，不會因 5 分鐘關閉旗標殘留而立即跳出感謝光臨畫面
 - **QR 碼管理**：桌號識別碼（SKU 式 `T-001`，自動生成可手動修改）+ 輪替安全 Token 雙層設計；後台設定各桌 Token TTL（小時，預設關閉 = 0 表示不自動刷新 / 不過期）、手動刷新、啟用 / 停用個別桌號；Token 懶觸發自動刷新；列表即時顯示各桌目前 Session 活躍狀態（有無顧客在線）與到期時間，支援手動強制結束指定桌況 Session（即時觸發顧客端「感謝光臨」提示）；標題列顯示「N 桌活躍中」統計；Session 狀態每 30 秒自動刷新，並提供「Session 狀態」手動刷新按鈕；點餐頁基礎網址可設定並儲存（供自訂點餐域名使用）
@@ -1248,7 +1248,7 @@ Webhook URL 請填入各平台 Developer Dashboard：
 |---|---|---|---|
 | GET | `/delivery/orders` | cashier+ | 查詢外送訂單（platform / status / date） |
 | GET | `/delivery/orders/<id>` | cashier+ | 單筆訂單詳情 |
-| PUT | `/delivery/orders/<id>/status` | operator+ | 更新狀態（同步回原平台） |
+| PUT | `/delivery/orders/<id>/status` | operator+ | 更新狀態（同步回原平台；`confirmed` 時依店家有效設定建 POS 銷售紀錄並扣庫存） |
 
 **訂單狀態**：`new` → `confirmed` → `preparing` → `ready` → `picked_up` → `delivered`，或 `cancelled`
 
@@ -1273,15 +1273,29 @@ curl -X POST http://127.0.0.1/delivery/menu/sync/foodpanda \
 
 **菜單同步說明**：從外送平台拉回菜單時，會一併同步客製化選項群組（UberEats `modifier_groups` / foodpanda `topping_groups`）至 WMS 菜單的 `option_groups`，並自動建立品項與選項群組的連結。
 
-#### 商品映射 & 平台設定
+#### 品項映射 & 平台設定
 
 | 方法 | 路徑 | 角色 | 說明 |
 |---|---|---|---|
-| GET | `/delivery/mappings` | operator+ | 列出系統商品 ↔ 平台商品 ID 映射 |
-| POST | `/delivery/mappings` | operator+ | 新增/更新映射 |
+| GET | `/delivery/mappings` | operator+ | 列出平台品項映射 |
+| POST | `/delivery/mappings` | operator+ | 新增/更新映射（upsert）。目標二擇一：`product_id`（產品，於預設倉扣庫存）或 `menu_id` + `menu_item_id`（菜單品項，依 linked_products 扣庫存） |
 | DELETE | `/delivery/mappings/<id>` | operator+ | 刪除映射 |
-| GET | `/delivery/settings/<platform>` | admin | 取得平台設定 |
-| PUT | `/delivery/settings/<platform>` | admin | 更新平台設定（啟用、自動接單、store_id 等） |
+| GET | `/delivery/settings/<platform>` | admin | 取得全域平台設定 |
+| PUT | `/delivery/settings/<platform>` | admin | 更新全域平台設定（啟用、自動接單、store_id 等） |
+
+#### 店家專屬設定 & 品項對應模板
+
+| 方法 | 路徑 | 角色 | 說明 |
+|---|---|---|---|
+| GET | `/delivery/store/` | admin | 列出所有店家的外送設定摘要 |
+| GET | `/delivery/store/<store_id>/settings/<platform>` | admin | 取得店家平台設定 |
+| PUT | `/delivery/store/<store_id>/settings/<platform>` | admin | 更新店家平台設定（啟用、自動接單、預設倉、`item_mappings`、`mapping_template_id`、平台店家代號 `store_id` / `vendor_code`） |
+| GET | `/delivery/mapping-templates/` | admin | 列出品項對應模板 |
+| POST | `/delivery/mapping-templates/` | admin | 新增模板（`items[].system_items` 支援產品與 `type: 'menu_item'` 菜單品項） |
+| PUT | `/delivery/mapping-templates/<tid>/` | admin | 更新模板 |
+| DELETE | `/delivery/mapping-templates/<tid>/` | admin | 刪除模板 |
+
+**店家歸屬**：店家設定填入平台店家代號（UberEats Store ID / foodpanda Vendor Code）後，webhook 訂單會自動歸屬該店（`store_ref`），接單時採用該店的有效設定（店家值優先、空值回退全域）。
 
 ---
 
@@ -1517,9 +1531,10 @@ cancelled（已取消）  ← 終態
 A. 即時推播（Webhook，推薦）
    平台發送訂單 → POST /delivery/webhook/<platform>
        ↓ 驗 HMAC-SHA256 簽名
-       ↓ 正規化訂單格式
+       ↓ 正規化訂單格式（含平台店家代號 → 自動歸屬分店 store_ref）
        ↓ 儲存至 delivery_orders
-       ↓ （若啟用自動接單）回呼平台確認 API
+       ↓ （若該店有效設定啟用自動接單）回呼平台確認 API，
+         並建立 POS 銷售紀錄 + 依品項對應扣庫存（見下方「品項對應解析順序」）
 
 B. 主動拉取（Polling，備用）
    POST /delivery/sync/<platform>
@@ -1529,6 +1544,15 @@ B. 主動拉取（Polling，備用）
 C. 後台操作
    後台「外送訂單」→ 查看 → 確認接單 / 拒絕 / 更新進度
        ↓ 系統同步呼叫平台 API 更新訂單狀態
+       ↓ 確認接單（confirmed）時建立 POS 銷售紀錄並扣庫存，
+         使用訂單所屬店家的有效設定（店家優先、空值回退全域）
+
+品項對應解析順序（每個訂單品項）：
+   1. external_id 對應（delivery_mappings）
+      - 菜單品項對應 → 依品項 linked_products 扣庫存（可多原料、可跨倉）
+      - 產品對應     → 於預設倉扣庫存
+   2. 名稱式對應（店家設定 item_mappings；為空且綁模板 → 用對應模板內容）
+   3. 無對應 → 僅記錄銷售、不扣庫存（skipped_items 回報）
 
 D. 菜單同步（含客製化選項群組）
    後台「平台設定」→「匯入菜單」
@@ -1650,9 +1674,10 @@ from src.permissions import require_role
 | `menus` | POS 菜單（含 `categories`、`option_groups`、`items`，全 embedded） |
 | `customer_orders` | 顧客點餐訂單（`table_no` / 帳號識別，含品項、客製化選項、狀態） |
 | _(Redis)_ `table_session:{table_no}` | TableSession（桌號共享 Session Token，JSON 儲存；`table_session_tok:{token}` 提供反向查詢；`table_session_closed:{table_no}` 為關閉旗標，5 分鐘 TTL） |
-| `delivery_orders` | 外送平台訂單（UberEats / foodpanda） |
-| `delivery_mappings` | 系統商品 ID ↔ 平台商品 ID 映射表 |
-| `delivery_settings` | 各平台啟用狀態、自動接單設定 |
+| `delivery_orders` | 外送平台訂單（UberEats / foodpanda），含 `store_ref`（依平台店家代號自動歸屬分店） |
+| `delivery_mappings` | 平台品項映射：目標為 `product_id`（產品）或 `menu_id` + `menu_item_id`（菜單品項，依 linked_products 扣庫存） |
+| `delivery_settings` | 平台設定（全域一筆 + 每店家每平台一筆）：啟用、自動接單、預設倉、`item_mappings`、`mapping_template_id`、平台店家代號 |
+| `delivery_mapping_templates` | 名稱式品項對應模板（可跨店共用，`system_items` 支援產品與菜單品項） |
 | `counters` | 原子流水號計數器（`inbound_orders`、`outbound_orders`、`customer_orders` 使用；`find_one_and_update + $inc` 在多 Worker / 多進程下保證序號不重複） |
 
 ---
@@ -1737,7 +1762,8 @@ Python-ERP_WMS/
 │   ├── kitchen/view.py                 # GET /kitchen/ → 廚房看板頁面（免登入）
 │   ├── quick_io/view.py                # GET /quick-io/ → 快速出入庫頁面
 │   ├── delivery/                       # 外送平台整合
-│   │   ├── view.py                     # Webhook + 訂單 + 菜單同步 + 設定端點
+│   │   ├── view.py                     # 相容入口（re-export blueprint）
+│   │   ├── views/                      # 路由分檔：base / webhooks / orders / menu_sync / mappings / settings
 │   │   └── adapters/
 │   │       ├── ubereats.py             # UberEats Marketplace API client（含選項群組解析）
 │   │       └── foodpanda.py            # foodpanda Vendor API client（含選項群組解析）
@@ -1779,5 +1805,5 @@ Python-ERP_WMS/
         ├── customer_order.py           # CustomerOrder（顧客點餐訂單）
         ├── table_session.py            # TableSession（Redis 桌號共享 Session，結帳 / 取消時自動關閉）
         ├── user_template.py            # UserTemplate（頁面權限模板）
-        └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings
+        └── delivery.py                 # DeliveryOrder、DeliveryMapping、DeliverySettings、DeliveryMappingTemplate
 ```
