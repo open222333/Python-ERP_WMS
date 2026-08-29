@@ -27,6 +27,54 @@
 
 ---
 
+## 主機需求
+
+| 項目 | 最低限度 | 建議舒適 |
+|---|---|---|
+| vCPU | 1 | 2 |
+| RAM | 1GB | 2GB |
+| Disk | 20GB | 30GB |
+| Swap | 1GB | 2GB |
+
+### 依情況調整配置
+
+- **RAM 只有 1GB（最低限度）**：務必先設定 Swap（見下），否則 MongoDB / 前端 build 過程容易觸發 OOM。`mongo` 服務已在 `docker-compose.db.yml` 設 `limits.memory: 1g`（超過會被容器 OOM kill），流量或資料量成長時建議調高：
+  ```yaml
+  # docker-compose.db.yml
+  mongo:
+    deploy:
+      resources:
+        limits:
+          memory: 1g        # 資料量成長 / 常出現 OOM 時調高
+        reservations:
+          memory: 256m
+  ```
+- **api（Flask/gunicorn）服務目前無資源限制**（已知項，見 `docs/OPTIMIZATION_REPORT.md` N8），低規格主機建議自行加上避免單一服務吃光記憶體拖垮同機 MongoDB／Redis：
+  ```yaml
+  # docker-compose.api.yml
+  services:
+    api:
+      deploy:
+        resources:
+          limits:
+            memory: 512m
+          reservations:
+            memory: 128m
+  ```
+  同時可調整 worker 數：`gunicorn.py` 預設 `workers = max(2, CPU*2+1)`（1 vCPU 主機預設即為 3），記憶體吃緊時可用 `conf/config.ini` 的 `[GUNICORN] WORKERS` 或環境變數 `GUNICORN_WORKERS` 覆寫為 2。
+- **Disk 20GB 是最低限度**：主要消耗來自 Docker image/volume（`docker system df` 可查）與 MongoDB 資料增長；接近滿版時可執行 `docker image prune -f`、`docker builder prune -f`（**不要**用 `docker system prune -a --volumes`，會刪資料 volume）。長期營運或資料量大建議直接抓 30GB 以上。
+- **Swap 是低 RAM 主機的安全網，不是效能來源**：1GB RAM 務必開 1GB 以上 swap，避免 build 前端或 MongoDB 索引重建時被 OOM kill；2GB 以上 RAM 可視情況減少依賴。設定範例（Ubuntu）：
+  ```bash
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  ```
+- **前端建置吃資源尖峰**：`npm run build`（Docker 生產模式下在 image build 階段執行）是全流程中記憶體與 CPU 用量最高的步驟。1 vCPU / 1GB RAM 主機若 build 失敗或極慢，建議改用「開發機建置、上傳 `frontend-dist/`」的部署方式（見下方主機 nginx 部署 Step 0），避免在低規格主機上本地 build。
+
+---
+
 ## 快速開始
 
 ```bash
