@@ -26,6 +26,12 @@ services:
           memory: 1g
         reservations:
           memory: 256m
+    # [OPT] 見 docker-compose.api.yml 說明
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # [OPT-N1] 一次性初始化容器：呼叫 rs.initiate()。冪等（已初始化則略過，
   # 用 try/catch 吞掉 "already initialized" 錯誤），跑完即結束（無需常駐）。
@@ -70,3 +76,9 @@ services:
           memory: 128m
         reservations:
           memory: 32m
+    # [OPT] 見 docker-compose.api.yml 說明
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

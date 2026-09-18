@@ -1,6 +1,12 @@
 # API 參考
 
 > 所有路由均**無 `/api/` 前綴**。JWT 帶於 `Authorization: Bearer <token>` header。
+>
+> **`/apidocs`（Swagger UI）預設僅開發/測試環境開啟**：`FLASK_ENV=production` 時
+> `src.ENABLE_SWAGGER` 預設為 `False`，`/apidocs`、`/apidocs/`、`/apispec_*.json`
+> 皆回 404（未註冊路由），根路由 `/` 改回傳 `{"success": true, "service": "wms-api"}`
+> 而不轉址。需在正式環境暫時查閱時，於 `conf/config.ini` 明確設定
+> `[SETTING] ENABLE_SWAGGER=true`（見 `docs/FIXES.md` 2026-09-18 條目）。
 
 ## `/auth` — 認證
 

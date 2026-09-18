@@ -20,3 +20,10 @@ services:
       - mongo
       - redis
     restart: unless-stopped
+    # [OPT] 預設 json-file log driver 無上限，長期執行會佔滿硬碟；
+    # 限制單檔 10MB、最多保留 3 份（約 30MB 上限），取代主機層 daemon.json 全域設定
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

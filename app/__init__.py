@@ -20,7 +20,7 @@ from app.settings.view import app_settings
 from app.docs.view import app_docs
 from app.customer_order.view import app_customer_order
 from app.invoice.view import app_invoice
-from src import FLASK_JSON_PATH, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB
+from src import FLASK_JSON_PATH, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB, ENABLE_SWAGGER
 from src.observability import init_observability  # [OPT-N2] 可觀測性
 import json
 
@@ -63,13 +63,18 @@ template = {
     }
 }
 
-swagger = Swagger(app, template=template)
+# [SEC] /apidocs 對外公開等同送出完整 API 規格（路徑/參數/權限）給潛在攻擊者，
+# 正式環境預設不註冊 Swagger 路由（ENABLE_SWAGGER 見 src/__init__.py）；
+# 停用時 /apidocs、/apidocs/、/apispec_*.json 皆回應 Flask 預設 404，非僅前端隱藏。
+swagger = Swagger(app, template=template) if ENABLE_SWAGGER else None
 jwt = JWTManager(app)
 
 
 @app.route("/")
 def status():
-    return redirect('/apidocs/')
+    if ENABLE_SWAGGER:
+        return redirect('/apidocs/')
+    return jsonify({'success': True, 'service': 'wms-api'})
 
 
 def _ensure_indexes():

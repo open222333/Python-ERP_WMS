@@ -20,3 +20,9 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+    # [OPT] 見 docker-compose.api.yml 說明；nginx access/error log 量通常最大，同套上限
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,5 +1,12 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-09-18 運維檢查後修復（對外 apidocs 曝露、容器日誌無上限）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `src/__init__.py`、`app/__init__.py`、`conf/config.ini.default` | `/apidocs`（Swagger）對外公開無任何驗證，等同送出完整後台 API 路徑/參數/權限地圖 | 新增 `ENABLE_SWAGGER`：`FLASK_ENV=production` 時預設不初始化 `Swagger(app,...)`（`/apidocs`、`/apidocs/`、`/apispec_*.json` 皆回一般 404，非僅前端隱藏），開發/測試環境預設維持開啟；可用 `conf/config.ini` 的 `ENABLE_SWAGGER` 明確覆寫。`/` 根路由停用時改回傳簡短狀態 JSON，不再轉址 `/apidocs/`。測試：`tests/unit/test_apidocs_gate.py` |
+| `docker-compose.{api,nginx,db}.yml`（新增 `conf/logrotate/wms-nginx`） | 容器日誌用預設 `json-file` driver 無上限，長期執行可能吃滿硬碟 | 四個服務（api/nginx/mongo/redis）加 `logging.options`（`max-size: 10m`、`max-file: 3`），效果等同主機層 `/etc/docker/daemon.json` 全域預設，但改為隨 repo 版控、不需重啟整個 Docker daemon。**注意**：nginx 的 access/error log 走 bind mount 直寫主機檔案（`./logs/nginx/*.log`），不經過此 driver，另補主機 logrotate 範本 `conf/logrotate/wms-nginx`（`copytruncate`，14 天保留） |
+
 ## 2026-07-08 交易一致性 / 可觀測性 / 熱點快取（`# [OPT-N1]` `# [OPT-N2]` `# [OPT-N3]` 標記）
 
 | 檔案 | 問題 | 修復說明 |

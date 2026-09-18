@@ -63,6 +63,7 @@
   ```
   同時可調整 worker 數：`gunicorn.py` 預設 `workers = max(2, CPU*2+1)`（1 vCPU 主機預設即為 3），記憶體吃緊時可用 `conf/config.ini` 的 `[GUNICORN] WORKERS` 或環境變數 `GUNICORN_WORKERS` 覆寫為 2。
 - **Disk 20GB 是最低限度**：主要消耗來自 Docker image/volume（`docker system df` 可查）與 MongoDB 資料增長；接近滿版時可執行 `docker image prune -f`、`docker builder prune -f`（**不要**用 `docker system prune -a --volumes`，會刪資料 volume）。長期營運或資料量大建議直接抓 30GB 以上。
+- **容器日誌長期無限增長**：各服務已在 `docker-compose.{api,nginx,db}.yml` 設定 `logging.options`（`max-size: 10m`、`max-file: 3`），限制 Docker 擷取的 stdout/stderr（`docker logs` 可見的部分）。**但 nginx 的 access/error log 是透過 bind mount 直接寫到 `./logs/nginx/*.log`，不經過 Docker log driver，上述設定對它不生效**，需另外在主機設定 logrotate（範本：`conf/logrotate/wms-nginx`，用法見檔案開頭註解）。
 - **Swap 是低 RAM 主機的安全網，不是效能來源**：1GB RAM 務必開 1GB 以上 swap，避免 build 前端或 MongoDB 索引重建時被 OOM kill；2GB 以上 RAM 可視情況減少依賴。設定範例（Ubuntu）：
   ```bash
   sudo fallocate -l 2G /swapfile
@@ -148,6 +149,7 @@ cd .. && docker compose -f docker-compose.yml -f docker-compose.dev.yml restart 
 - [角色與權限](#角色與權限)
 - [設定檔說明](#設定檔說明)
 - [MongoDB Collections](#mongodb-collections)
+- [已知技術債與優化狀態](#已知技術債與優化狀態)
 - [注意事項](#注意事項)
 - [專案結構](#專案結構)
 
@@ -1747,6 +1749,28 @@ from src.permissions import require_role
 2. 取得 `API Key` 與 `Vendor Code`
 3. 填入 `conf/config.ini` 的 `[FOODPANDA]` 段落
 4. 後台「平台設定」→ 複製 Webhook URL → 提供給 foodpanda 技術支援
+
+---
+
+## 已知技術債與優化狀態
+
+> 完整分析、規格與逐項驗證記錄見 [`docs/OPTIMIZATION_REPORT.md`](docs/OPTIMIZATION_REPORT.md)；接續未完成項目前建議先讀該檔，避免重複盤點或重工。已修復項目的細節見 [`docs/FIXES.md`](docs/FIXES.md)。
+
+**已完成的大型項目**（僅列標題，細節見報告）：單元測試套件（194 tests）、狀態常數化、inbound/outbound 合併、POS Service 層拆分、SSE 一次性 ticket、PosView 拆分、pydantic 驗證層、MongoDB 交易一致性、可觀測性（request-id/結構化日誌/慢請求）、熱點快取、前端 JS→TS 全遷移、delivery 模組測試與 view 拆分＋菜單品項對應、`/apidocs` 存取控制與容器日誌上限。報告最初（2026-07-04）列出的 P0/P1/P2 問題清單已逐項修復，僅 SSE 改 Change Streams 與大列表虛擬滾動仍開放（見下表）。
+
+**尚未處理**（依報告最新一輪盤點，未排程或依條件延後）：
+
+| 項目 | 說明 |
+|---|---|
+| 死程式碼／未用套件 | `src/mysql.py` 全專案無 import；`fake-useragent`、`opencv-python-headless`、`PyMySQL` 三個套件同樣無 import，可一併清除 |
+| 無健康檢查端點 | 無 `/health`／`/healthz`；api/nginx/redis 服務的 `docker-compose.*.yml` 無 `healthcheck`（僅 mongo 有），服務未就緒時仍可能被路由進來 |
+| nginx 安全 headers 不完整 | HSTS 已寫好但被註解掉；全站缺 X-Frame-Options / X-Content-Type-Options / Referrer-Policy |
+| api 容器無資源限制 | 僅 mongo/redis 設了 `deploy.resources`；api 服務未設，單一服務異常吃記憶體會拖垮同機資料庫（`logging` 上限已補，記憶體限制未補） |
+| `logs/` 資料夾為死設定 | `LOG_PATH` 建立資料夾但從未被 FileHandler 寫入；gunicorn 已正確輸出至 stdout |
+| `invoice`／`analytics` 模組零測試覆蓋 | `delivery` 已補測試（2026-07-17），`invoice`（ECPay 開立/作廢）與 `analytics`（儀表板統計）仍無對應測試；`invoice` 涉稅務合規，風險最高 |
+| SSE 改 MongoDB Change Streams | 需 replica set；現行 2 秒輪詢已有去重與筆數上限，非急迫 |
+| 大列表虛擬滾動 | 待單列表資料量 >1000 筆時再處理（ProductsView / MovementsView / LogsView） |
+| Backlog（未排程，依價值排序） | CI/CD（pytest + vue-tsc + build 自動化）、公開端點 rate limit、MongoDB 備份、nginx 靜態資源快取、E2E 測試（Playwright）、依賴弱點掃描（pip-audit/npm audit）、swagger docstring 抽 YAML |
 
 ---
 

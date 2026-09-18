@@ -21,6 +21,7 @@ Flask + MongoDB + Vue 3 的多店家 WMS / POS 系統。
 - **前端**：Vue 3 + Vite（`frontend/`），打包輸出至 `frontend-dist/`，由 nginx 靜態服務
 - **API 基底路徑**：nginx 直接代理 `/warehouse/`、`/inbound/` 等，**無 `/api/` 前綴**（錯誤用 `/api/warehouse/` 會 404）
 - `FLASK_ENV` 決定 Config：`production`（預設，DEBUG=False）/ `development` / `testing`
+- **`/apidocs`（Swagger）**：`src.ENABLE_SWAGGER` 依 `FLASK_ENV` 決定是否註冊，`production` 預設關閉（404，非僅隱藏）；可用 `conf/config.ini` 的 `ENABLE_SWAGGER` 覆寫（見 `docs/FIXES.md`）
 
 ## 延伸文件
 

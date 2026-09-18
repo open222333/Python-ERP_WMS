@@ -32,6 +32,15 @@ FLASK_JSON_PATH = config.get('SETTING', 'FLASK_JSON_PATH', fallback=join('conf',
 # 後台管理頁面名稱 預設值 後台管理
 ADMIN_TITLE = config.get('SETTING', 'ADMIN_TITLE', fallback='後台管理')
 
+# 執行環境（production / development / testing），供本檔與 app/__init__.py 共用判斷
+FLASK_ENV = environ.get('FLASK_ENV', 'production')
+
+# API 文件（Swagger /apidocs）是否啟用。
+# [SEC] 正式環境對外公開完整 API 規格等同送出後台路徑與參數地圖，預設關閉；
+# 開發/測試環境預設開啟。可用 config.ini 的 ENABLE_SWAGGER 明確覆寫。
+ENABLE_SWAGGER = config.getboolean(
+    'SETTING', 'ENABLE_SWAGGER', fallback=(FLASK_ENV != 'production'))
+
 # Flask 參數
 FLASK_PORT = int(environ.get('FLASK_PORT', 5000))
 JWT_ACCESS_TOKEN_EXPIRES_HOURS  = int(environ.get('JWT_ACCESS_TOKEN_EXPIRES_HOURS',  8))

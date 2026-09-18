@@ -18,6 +18,12 @@
 ; 後台管理頁面名稱
 ADMIN_TITLE=WMS 倉儲管理系統
 
+; [SEC] API 文件（Swagger /apidocs）是否啟用。
+; 預設：FLASK_ENV=production 時關閉，其他環境（development/testing）開啟。
+; 正式環境若需暫時查閱 API 文件，明確設為 true 並記得改完再關閉；
+; 對外站台不建議開啟（等同公開完整 API 路徑/參數地圖）。
+; ENABLE_SWAGGER=false
+
 [MONGO]
 ; MongoDB 連線 URI 預設 mongodb://localhost:27017
 ; [OPT-N1] 若 MongoDB 已啟用 replica set（見 docker-compose.db.yml 的 rs0，
