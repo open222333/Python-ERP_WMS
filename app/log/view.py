@@ -150,13 +150,18 @@ def export_logs():
     start_date = request.args.get('start_date', '')
     end_date   = request.args.get('end_date',   '')
 
-    logs = Log.find_all(
-        limit      = 0,          # 0 = 無上限
-        username   = username   or None,
-        action     = action     or None,
-        start_date = start_date or None,
-        end_date   = end_date   or None,
-    )
+    # [OPT-MEM] 改為逐筆讀取 cursor 的真串流：原本先 find_all() 整批轉 list 再串流，
+    # 記憶體用量隨紀錄筆數線性成長；且 find_all 的 limit 夾在 1~10000，
+    # 傳 limit=0 實際只會匯出 1 筆（既有 bug，一併修正）。
+    try:
+        logs = Log.iter_all(
+            username   = username   or None,
+            action     = action     or None,
+            start_date = start_date or None,
+            end_date   = end_date   or None,
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
 
     def generate():
         buf = io.StringIO()

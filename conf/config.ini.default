@@ -66,11 +66,16 @@ REDIS_HOST=localhost
 ; REDIS_DB=0
 
 [GUNICORN]
-; Worker 進程數，建議 2 × CPU + 1；記憶體不足時降為 2
+; Worker 程序數，預設 max(2, CPU + 1)（1 vCPU = 2）。每個程序約 80MB，記憶體吃緊時優先降這個
 ; WORKERS=2
 
-; 每個 Worker 的執行緒數（worker_class=gthread）
-; THREADS=2
+; 每個 Worker 的執行緒數（worker_class=gthread），預設 4。
+; 總併發 = WORKERS × THREADS；SSE 長連線（廚房看板、顧客點餐）每條佔用一個執行緒
+; THREADS=4
+
+; 每個 Worker 處理幾個請求後自動重啟以釋放碎片化記憶體，預設 1000；0 = 停用
+; MAX_REQUESTS=1000
+; MAX_REQUESTS_JITTER=100
 
 ; Worker 類型，gthread 省記憶體（多執行緒）；gevent 高並發
 ; WORKER_CLASS=gthread

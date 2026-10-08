@@ -20,6 +20,15 @@ services:
       - mongo
       - redis
     restart: unless-stopped
+    # [OPT-MEM] 記憶體硬上限，避免 api 異常吃光記憶體拖垮同機 MongoDB / Redis（OPTIMIZATION_REPORT N8）。
+    # 實測預設 2 workers × 4 threads 啟動後約 220MB（RSS 合計），512m 保留匯出、尖峰的餘裕。
+    # 超過上限容器會被 OOM kill 並由 restart 自動拉起；調高 GUNICORN_WORKERS 時請同步調高。
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEM_LIMIT:-512m}
+        reservations:
+          memory: ${API_MEM_RESERVATION:-128m}
     # [OPT] 預設 json-file log driver 無上限，長期執行會佔滿硬碟；
     # 限制單檔 10MB、最多保留 3 份（約 30MB 上限），取代主機層 daemon.json 全域設定
     logging:

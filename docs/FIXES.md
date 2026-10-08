@@ -1,5 +1,15 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-10-08 記憶體優化（`# [OPT-MEM]` 標記）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `gunicorn.py`、`conf/config.ini.default` | 預設 `max(2, CPU*2+1)` workers × 2 threads，1 vCPU 主機為 3 程序（每程序約 80MB），且長時間執行記憶體碎片不釋放 | 預設改 `max(2, CPU+1)` × 4 threads（1 vCPU：2 程序 / 8 併發）；`max_requests=1000`＋`jitter=100` 定期回收 worker；`pre_fork` 呼叫 `gc.freeze()` 改善 copy-on-write 共享。實測（mongomock 下載入完整 app）RSS 合計 290MB → 221MB。全部可用 config.ini / `GUNICORN_*` 覆寫 |
+| `src/models/log.py`、`app/log/view.py` | 操作紀錄匯出先整批轉 list 再串流；且 `find_all` 的 limit 夾在 1~10000，匯出傳 `limit=0` **實際只匯出 1 筆**（既有 bug） | 新增 `Log.iter_all()` 逐筆讀 cursor（batch 500），匯出不限筆數且記憶體用量固定；日期格式錯誤在串流開始前回 400 |
+| `src/models/pos.py`、`app/pos/view.py` | 銷售匯出 `find_all(limit=0)` 把全部訂單（含完整 items）一次載入，實測每 1 萬筆約 57MB，隨資料量線性成長 | 新增 `PosOrder.iter_export()` 逐筆讀 cursor，projection 只取匯出欄位（items 僅 quantity），同時持有約 500 筆精簡文件（約 1MB）；CSV 輸出欄位與內容不變 |
+| `src/models/delivery.py` | 外送訂單列表（最多 200 筆）每筆都帶完整平台原始 JSON `raw_payload`，前端完全未使用 | 列表 projection 排除 `raw_payload`；單筆詳情 `find_by_id` 保留完整資料 |
+| `docker-compose.api.yml` | api 容器無記憶體上限（OPTIMIZATION_REPORT N8） | `deploy.resources` 上限 `${API_MEM_LIMIT:-512m}`、保底 `${API_MEM_RESERVATION:-128m}` |
+
 ## 2026-09-18 運維檢查後修復（對外 apidocs 曝露、容器日誌無上限）
 
 | 檔案 | 問題 | 修復說明 |

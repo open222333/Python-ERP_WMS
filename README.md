@@ -49,19 +49,12 @@
         reservations:
           memory: 256m
   ```
-- **api（Flask/gunicorn）服務目前無資源限制**（已知項，見 `docs/OPTIMIZATION_REPORT.md` N8），低規格主機建議自行加上避免單一服務吃光記憶體拖垮同機 MongoDB／Redis：
-  ```yaml
-  # docker-compose.api.yml
-  services:
-    api:
-      deploy:
-        resources:
-          limits:
-            memory: 512m
-          reservations:
-            memory: 128m
-  ```
-  同時可調整 worker 數：`gunicorn.py` 預設 `workers = max(2, CPU*2+1)`（1 vCPU 主機預設即為 3），記憶體吃緊時可用 `conf/config.ini` 的 `[GUNICORN] WORKERS` 或環境變數 `GUNICORN_WORKERS` 覆寫為 2。
+- **api（Flask/gunicorn）記憶體**：`docker-compose.api.yml` 已設記憶體上限（預設 `512m`，保底 `128m`），可在 `.env` 用 `API_MEM_LIMIT` / `API_MEM_RESERVATION` 調整；超過上限容器會被 OOM kill 後自動重啟。
+  - **程序數是最大的記憶體開關**：每個 gunicorn worker 程序約 80MB，執行緒共用程序記憶體。`gunicorn.py` 預設 `workers = max(2, CPU+1)`、`threads = 4`（1 vCPU = 2 程序 × 4 執行緒 = 8 併發）。實測 1 vCPU 情境由舊預設 3×2 改為 2×4 後，RSS 合計 290MB → 221MB，併發數反而 6 → 8。
+  - **SSE 長連線佔用執行緒**：廚房看板、顧客點餐頁每條連線佔一個執行緒，總併發 = `WORKERS × THREADS`。同時在線裝置多時優先調高 `THREADS`（幾乎不增加記憶體），而不是 `WORKERS`。
+  - **定期回收 worker**：預設每處理 1000 個請求（±100 隨機）優雅重啟該 worker，釋放長時間執行累積的記憶體碎片；被回收的 worker 上的 SSE 連線會斷線並由前端自動重連。可用 `MAX_REQUESTS=0` 停用。
+  - 以上皆可用 `conf/config.ini` 的 `[GUNICORN]` 區段（`WORKERS` / `THREADS` / `MAX_REQUESTS` / `MAX_REQUESTS_JITTER`）或環境變數 `GUNICORN_*` 覆寫；調高 `WORKERS` 時記得同步調高 `API_MEM_LIMIT`。
+- **MongoDB WiredTiger 快取**：容器記憶體上限 1g 時，MongoDB 7 會依 cgroup 上限自動把快取設為最小值 256MB，不需另外調整；若調高 `limits.memory`，快取會跟著放大（約為 (上限 − 1GB) × 50%）。
 - **Disk 20GB 是最低限度**：主要消耗來自 Docker image/volume（`docker system df` 可查）與 MongoDB 資料增長；接近滿版時可執行 `docker image prune -f`、`docker builder prune -f`（**不要**用 `docker system prune -a --volumes`，會刪資料 volume）。長期營運或資料量大建議直接抓 30GB 以上。
 - **容器日誌長期無限增長**：各服務已在 `docker-compose.{api,nginx,db}.yml` 設定 `logging.options`（`max-size: 10m`、`max-file: 3`），限制 Docker 擷取的 stdout/stderr（`docker logs` 可見的部分）。**但 nginx 的 access/error log 是透過 bind mount 直接寫到 `./logs/nginx/*.log`，不經過 Docker log driver，上述設定對它不生效**，需另外在主機設定 logrotate（範本：`conf/logrotate/wms-nginx`，用法見檔案開頭註解）。
 - **Swap 是低 RAM 主機的安全網，不是效能來源**：1GB RAM 務必開 1GB 以上 swap，避免 build 前端或 MongoDB 索引重建時被 OOM kill；2GB 以上 RAM 可視情況減少依賴。設定範例（Ubuntu）：
@@ -1756,7 +1749,7 @@ from src.permissions import require_role
 
 > 完整分析、規格與逐項驗證記錄見 [`docs/OPTIMIZATION_REPORT.md`](docs/OPTIMIZATION_REPORT.md)；接續未完成項目前建議先讀該檔，避免重複盤點或重工。已修復項目的細節見 [`docs/FIXES.md`](docs/FIXES.md)。
 
-**已完成的大型項目**（僅列標題，細節見報告）：單元測試套件（194 tests）、狀態常數化、inbound/outbound 合併、POS Service 層拆分、SSE 一次性 ticket、PosView 拆分、pydantic 驗證層、MongoDB 交易一致性、可觀測性（request-id/結構化日誌/慢請求）、熱點快取、前端 JS→TS 全遷移、delivery 模組測試與 view 拆分＋菜單品項對應、`/apidocs` 存取控制與容器日誌上限。報告最初（2026-07-04）列出的 P0/P1/P2 問題清單已逐項修復，僅 SSE 改 Change Streams 與大列表虛擬滾動仍開放（見下表）。
+**已完成的大型項目**（僅列標題，細節見報告）：單元測試套件（194 tests）、狀態常數化、inbound/outbound 合併、POS Service 層拆分、SSE 一次性 ticket、PosView 拆分、pydantic 驗證層、MongoDB 交易一致性、可觀測性（request-id/結構化日誌/慢請求）、熱點快取、前端 JS→TS 全遷移、delivery 模組測試與 view 拆分＋菜單品項對應、`/apidocs` 存取控制與容器日誌上限、記憶體優化（gunicorn 少程序多執行緒、匯出改真串流、api 容器記憶體上限）。報告最初（2026-07-04）列出的 P0/P1/P2 問題清單已逐項修復，僅 SSE 改 Change Streams 與大列表虛擬滾動仍開放（見下表）。
 
 **尚未處理**（依報告最新一輪盤點，未排程或依條件延後）：
 
@@ -1765,7 +1758,6 @@ from src.permissions import require_role
 | 死程式碼／未用套件 | `src/mysql.py` 全專案無 import；`fake-useragent`、`opencv-python-headless`、`PyMySQL` 三個套件同樣無 import，可一併清除 |
 | 無健康檢查端點 | 無 `/health`／`/healthz`；api/nginx/redis 服務的 `docker-compose.*.yml` 無 `healthcheck`（僅 mongo 有），服務未就緒時仍可能被路由進來 |
 | nginx 安全 headers 不完整 | HSTS 已寫好但被註解掉；全站缺 X-Frame-Options / X-Content-Type-Options / Referrer-Policy |
-| api 容器無資源限制 | 僅 mongo/redis 設了 `deploy.resources`；api 服務未設，單一服務異常吃記憶體會拖垮同機資料庫（`logging` 上限已補，記憶體限制未補） |
 | `logs/` 資料夾為死設定 | `LOG_PATH` 建立資料夾但從未被 FileHandler 寫入；gunicorn 已正確輸出至 stdout |
 | `invoice`／`analytics` 模組零測試覆蓋 | `delivery` 已補測試（2026-07-17），`invoice`（ECPay 開立/作廢）與 `analytics`（儀表板統計）仍無對應測試；`invoice` 涉稅務合規，風險最高 |
 | SSE 改 MongoDB Change Streams | 需 replica set；現行 2 秒輪詢已有去重與筆數上限，非急迫 |

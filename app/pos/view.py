@@ -184,10 +184,11 @@ def export_sales():
     except ValueError:
         return jsonify({'success': False, 'message': '日期格式錯誤，請使用 YYYY-MM-DD'}), 400
 
-    rows = PosOrder.find_all(
+    # [OPT-MEM] 逐筆讀取 cursor 的真串流（見 PosOrder.iter_export），不先整批載入記憶體
+    rows = PosOrder.iter_export(
         date_from=date_from, date_to=date_to,
         cashier=cashier or None, status=status or None,
-        source=source or None, limit=0,   # 0 = 無上限
+        source=source or None,
         store_filter=get_store_filter(),
     )
 

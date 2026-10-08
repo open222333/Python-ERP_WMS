@@ -23,6 +23,16 @@ class Log:
         }, session=session)
         return str(result.inserted_id)
 
+    _PROJECTION = {'_id': 1, 'username': 1, 'action': 1,
+                   'detail': 1, 'success': 1, 'created_at': 1}
+
+    @staticmethod
+    def _fmt_row(log: dict) -> dict:
+        log['_id'] = str(log['_id'])
+        if 'created_at' in log and isinstance(log['created_at'], datetime):
+            log['created_at'] = log['created_at'].isoformat()
+        return log
+
     @classmethod
     def find_all(cls, limit: int = 200,
                  username: str = None,
@@ -30,10 +40,33 @@ class Log:
                  start_date: str = None,
                  end_date: str = None) -> list:
         """
-        查詢紀錄。
-        limit=0 → 無上限（僅供匯出使用）。
+        查詢紀錄（列表頁用），limit 限制在 1~10000。
+        匯出全部請用 iter_all()，逐筆讀取不整批載入記憶體。
         start_date / end_date 格式：'YYYY-MM-DD'
         """
+        q = cls._build_query(username, action, start_date, end_date)
+        limit = max(1, min(int(limit), 10000))
+        cursor = cls._col().find(q, cls._PROJECTION).sort('created_at', -1).limit(limit)
+        return [cls._fmt_row(log) for log in cursor]
+
+    @classmethod
+    def iter_all(cls, username: str = None, action: str = None,
+                 start_date: str = None, end_date: str = None,
+                 batch_size: int = 500):
+        """
+        [OPT-MEM] 匯出用：逐筆 yield，無筆數上限。
+        cursor 每批只從 MongoDB 取 batch_size 筆，記憶體用量與總筆數無關。
+        """
+        # 查詢條件在呼叫當下建立（非 generator 內），日期格式錯誤會立即拋 ValueError，
+        # 讓 view 在開始串流前就能回 400，而不是串流到一半才失敗。
+        q = cls._build_query(username, action, start_date, end_date)
+        cursor = cls._col().find(q, cls._PROJECTION).sort('created_at', -1) \
+                           .batch_size(batch_size)
+        return (cls._fmt_row(log) for log in cursor)
+
+    @staticmethod
+    def _build_query(username: str = None, action: str = None,
+                     start_date: str = None, end_date: str = None) -> dict:
         q: dict = {}
         if username:
             q['username'] = {'$regex': username, '$options': 'i'}
@@ -54,20 +87,7 @@ class Log:
                     raise ValueError(f'end_date 格式無效: {end_date!r}')
             if dt_q:
                 q['created_at'] = dt_q
-
-        cursor = cls._col().find(q, {'_id': 1, 'username': 1, 'action': 1,
-                                     'detail': 1, 'success': 1, 'created_at': 1}) \
-                            .sort('created_at', -1)
-        limit = max(1, min(int(limit), 10000))
-        cursor = cursor.limit(limit)
-
-        result = []
-        for log in cursor:
-            log['_id'] = str(log['_id'])
-            if 'created_at' in log and isinstance(log['created_at'], datetime):
-                log['created_at'] = log['created_at'].isoformat()
-            result.append(log)
-        return result
+        return q
 
     @classmethod
     def count_all(cls) -> int:

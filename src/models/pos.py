@@ -86,6 +86,37 @@ class PosOrder:
     def find_all(cls, date_from: datetime = None, date_to: datetime = None,
                  cashier: str = None, status: str = None, source: str = None,
                  limit: int = 200, store_filter: dict = None) -> list:
+        q = cls._build_query(date_from, date_to, cashier, status, source, store_filter)
+        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
+        return [_fmt(d) for d in docs]
+
+    # [OPT-MEM] 匯出只需要的欄位；items 只取 quantity（計算 items_count 用），
+    # 不帶完整品項明細與客製化選項，每筆文件體積大幅縮小。
+    _EXPORT_PROJECTION = {
+        'order_no': 1, 'source': 1, 'warehouse_name': 1, 'cashier': 1,
+        'items.quantity': 1, 'subtotal': 1, 'discount': 1, 'total_amount': 1,
+        'payment_type': 1, 'cash_amount': 1, 'change_amount': 1,
+        'status': 1, 'remark': 1, 'created_at': 1,
+    }
+
+    @classmethod
+    def iter_export(cls, date_from: datetime = None, date_to: datetime = None,
+                    cashier: str = None, status: str = None, source: str = None,
+                    store_filter: dict = None, batch_size: int = 500):
+        """
+        [OPT-MEM] 匯出用：逐筆讀取 cursor（每批 batch_size 筆），無筆數上限。
+        原本 find_all(limit=0) 會把整個查詢結果（含完整 items）一次轉成 list，
+        記憶體用量隨銷售筆數線性成長，多年資料一次匯出可能讓 worker OOM。
+        """
+        q = cls._build_query(date_from, date_to, cashier, status, source, store_filter)
+        cursor = cls._col().find(q, cls._EXPORT_PROJECTION) \
+                           .sort('created_at', -1).batch_size(batch_size)
+        return (_fmt(d) for d in cursor)
+
+    @staticmethod
+    def _build_query(date_from: datetime = None, date_to: datetime = None,
+                     cashier: str = None, status: str = None, source: str = None,
+                     store_filter: dict = None) -> dict:
         q = dict(store_filter or {})
         if date_from or date_to:
             q['created_at'] = {}
@@ -102,8 +133,7 @@ class PosOrder:
             q['$or'] = [{'source': 'pos'}, {'source': {'$exists': False}}]
         elif source:
             q['source'] = source
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
-        return [_fmt(d) for d in docs]
+        return q
 
     # [OPT] 銷售報表改用 MongoDB aggregation 統計，取代撈全部訂單再 Python groupby
     @classmethod

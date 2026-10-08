@@ -73,7 +73,7 @@
 | N5 | 死程式碼／未用套件 | `src/mysql.py`（PyMySQL 連線池）全專案無任何 import；`requirements.txt` 的 `fake-useragent`、`opencv-python-headless`（~90MB）、`PyMySQL` 三個套件同樣無任何 import。專案純用 MongoDB（CLAUDE.md 從未提及 MySQL），這是留下的樣板殘留，拖慢 build 並放大 image 體積。建議：刪除 `src/mysql.py`、`conf/config.ini(.default)` 的 `[MYSQL]` 區段、三個套件 |
 | N6 | 無健康檢查端點與容器 healthcheck | 專案無 `/health`／`/healthz` 端點；`docker-compose.api.yml`／`docker-compose.nginx.yml` 的 api、nginx、redis 服務都沒 healthcheck（只有 N1 新增的 mongo 有），`depends_on` 也沒用 `condition: service_healthy`，服務未就緒時仍可能被路由進來（nginx → api 502） |
 | N7 | nginx 安全 headers 不完整 | `conf/nginx/conf.d/default.conf.{cloudflare,https-letsencrypt}.template` 的 HSTS header **已寫好但被註解掉**；全站缺 X-Frame-Options / X-Content-Type-Options / Referrer-Policy。已驗證閒置的靜態資源快取、gzip 皆正確，僅安全 header 這塊缺 |
-| N8 | api 容器無資源限制 | `docker-compose.api.yml` 的 api 服務沒有 `deploy.resources`（mongo/redis 都有），單一服務異常吃記憶體會拖垮同機資料庫容器 |
+| ~~N8~~ | ~~api 容器無資源限制~~（✅ 2026-10-08 完成） | `docker-compose.api.yml` 已加 `deploy.resources`（預設 512m，`API_MEM_LIMIT` 可調），同批完成 gunicorn 少程序多執行緒與匯出串流，見 `docs/FIXES.md` |
 | N9 | 死的日誌檔設定 | `src/__init__.py` 的 `LOG_PATH`（建立 `logs/` 資料夾）與對應的 docker volume mount，目前完全沒有 FileHandler 寫入——gunicorn 的 `accesslog/errorlog='-'` 輸出到 stdout（Docker 慣例，這部分正確），但 `logs/` 資料夾本身從未被使用，屬死設定，可清除或補上實際用途 |
 | N10 | 金流／webhook 模組零測試覆蓋（**delivery 部分已完成 2026-07-17**） | ~~`delivery`~~ 已補 `tests/unit/test_delivery.py` 22 條（webhook 歸屬/自動接單、對應解析三層順序、linked_products 跨倉扣庫存、庫存不足、防重複、API 權限），並同批完成 view 拆分（`app/delivery/views/` 套件）與菜單品項對應功能。**尚缺**：`invoice`（598 行 view + 132 行 model，ECPay 電子發票開立/作廢）、`analytics`（240 行，儀表板統計）仍無測試，invoice 涉稅務合規，風險最高 |
 

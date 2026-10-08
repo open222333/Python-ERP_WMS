@@ -63,7 +63,10 @@ class DeliveryOrder:
                 q['placed_at']['$gte'] = date_from
             if date_to:
                 q['placed_at']['$lte'] = date_to
-        docs = cls._col().find(q).sort('placed_at', -1).limit(limit)
+        # [OPT-MEM] 列表排除 raw_payload（平台原始訂單 JSON，單筆可達數 KB～數十 KB）：
+        # 列表最多 200 筆，原本每次都整批載入 worker 記憶體並回傳給前端，前端完全沒用到。
+        # 單筆詳情（find_by_id）維持完整資料，供除錯追查。
+        docs = cls._col().find(q, {'raw_payload': 0}).sort('placed_at', -1).limit(limit)
         return [_fmt(d) for d in docs]
 
     @classmethod
