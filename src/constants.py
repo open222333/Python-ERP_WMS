@@ -93,9 +93,10 @@ class PosOrderStatus:
 class DeliveryOrderStatus:
     """外送平台訂單狀態。
 
-    [REFACTOR] 狀態集合與 terminal state guard 由
-    src/models/delivery.py 的 VALID_STATUSES / TERMINAL_STATES 遷移至此
-    （原 model 改為引用，行為不變：終態後不可再轉移，其餘轉移不設限）。
+    [D1] 狀態只能往前推進（new → confirmed → preparing → ready → picked_up → delivered），
+    可跳過中間狀態（平台推播常會略過），任何非終態皆可轉為 cancelled；不可倒退。
+    平台原始狀態字串由各 adapter 的 STATUS_MAP 轉成本類別的內部狀態，見
+    app/delivery/adapters/*.py。
     """
     NEW       = 'new'
     CONFIRMED = 'confirmed'
@@ -111,6 +112,31 @@ class DeliveryOrderStatus:
 
     # 終態：進入後不可再轉移
     TERMINAL_STATES = frozenset({DELIVERED, CANCELLED})
+
+    # [D2] 「店家已接單」的狀態：由非接單狀態進入這些狀態時建立銷售紀錄並扣庫存；
+    # 由這些狀態轉為 cancelled 時作廢銷售紀錄並回補庫存
+    ACCEPTED_STATES = frozenset({CONFIRMED, PREPARING, READY, PICKED_UP, DELIVERED})
+
+    # 前進順序（數字越大越後面）；cancelled 另外處理
+    _ORDER = {NEW: 0, CONFIRMED: 1, PREPARING: 2, READY: 3, PICKED_UP: 4, DELIVERED: 5}
+
+    @classmethod
+    def is_valid_transition(cls, from_status: str, to_status: str) -> bool:
+        """
+        合法轉移：
+        - 終態（delivered / cancelled）不可再轉移
+        - 任何非終態可轉 cancelled
+        - 其餘只能往前（可跳過中間狀態），不可倒退
+        - refunded 保留給既有資料，不作為轉移目標
+        相同狀態視為冪等，由呼叫端另行處理（不在此回 True）。
+        """
+        if from_status in cls.TERMINAL_STATES or to_status not in cls.ALL:
+            return False
+        if to_status == cls.CANCELLED:
+            return True
+        if from_status not in cls._ORDER or to_status not in cls._ORDER:
+            return False
+        return cls._ORDER[to_status] > cls._ORDER[from_status]
 
 
 class InvoiceStatus:

@@ -1291,9 +1291,9 @@ Webhook URL 請填入各平台 Developer Dashboard：
 |---|---|---|---|
 | GET | `/delivery/orders` | cashier+ | 查詢外送訂單（platform / status / date） |
 | GET | `/delivery/orders/<id>` | cashier+ | 單筆訂單詳情 |
-| PUT | `/delivery/orders/<id>/status` | operator+ | 更新狀態（同步回原平台；`confirmed` 時依店家有效設定建 POS 銷售紀錄並扣庫存） |
+| PUT | `/delivery/orders/<id>/status` | operator+ | 更新狀態（同步回原平台）。只能往前推進、不可倒退，非法轉移回 400；進入已接單狀態時依店家有效設定建 POS 銷售並扣庫存，已接單後取消會作廢銷售並回補庫存 |
 
-**訂單狀態**：`new` → `confirmed` → `preparing` → `ready` → `picked_up` → `delivered`，或 `cancelled`
+**訂單狀態**：`new` → `confirmed` → `preparing` → `ready` → `picked_up` → `delivered`，或 `cancelled`。只能往前推進（可跳過中間狀態），任何非終態可轉 `cancelled`，`delivered`／`cancelled` 為終態。平台原始狀態（如 UberEats `ACCEPTED`／`CANCELED`）由各 adapter 的 `STATUS_MAP` 轉成內部狀態，原始值保留在 `platform_status`；無法辨識的值記 warning log。
 
 #### 主動拉取 & 菜單同步
 
@@ -1575,9 +1575,11 @@ A. 即時推播（Webhook，推薦）
    平台發送訂單 → POST /delivery/webhook/<platform>
        ↓ 驗 HMAC-SHA256 簽名
        ↓ 正規化訂單格式（含平台店家代號 → 自動歸屬分店 store_ref）
-       ↓ 儲存至 delivery_orders
-       ↓ （若該店有效設定啟用自動接單）回呼平台確認 API，
-         並建立 POS 銷售紀錄 + 依品項對應扣庫存（見下方「品項對應解析順序」）
+       ↓ 平台狀態轉為內部狀態，儲存／依合法轉移推進 delivery_orders
+       ↓ （若該店有效設定啟用自動接單）回呼平台確認 API
+       ↓ 進入「已接單」狀態（不論由本系統或平台端接單）→ 建立 POS 銷售紀錄 +
+         依品項對應扣庫存（見下方「品項對應解析順序」）
+       ↓ 已接單後平台端取消 → 作廢銷售紀錄、依庫存異動帳原樣回補
 
 B. 主動拉取（Polling，備用）
    POST /delivery/sync/<platform>
@@ -1587,7 +1589,7 @@ B. 主動拉取（Polling，備用）
 C. 後台操作
    後台「外送訂單」→ 查看 → 確認接單 / 拒絕 / 更新進度
        ↓ 系統同步呼叫平台 API 更新訂單狀態
-       ↓ 確認接單（confirmed）時建立 POS 銷售紀錄並扣庫存，
+       ↓ 進入已接單狀態時建立 POS 銷售紀錄並扣庫存；已接單後取消則作廢並回補，
          使用訂單所屬店家的有效設定（店家優先、空值回退全域）
 
 品項對應解析順序（每個訂單品項）：
@@ -1778,7 +1780,7 @@ from src.permissions import require_role
 | 銷售匯入 | 批次匯入歷史銷售記錄不執行庫存扣減，僅寫入 `pos_orders`，避免影響現有庫存數量 |
 | 操作紀錄清除 | 自動清除為懶觸發（每次打開紀錄頁面時檢查），無需額外排程器；保留天數設為 0 則永不自動清除 |
 | 出庫確認 | 確認出庫單時自動驗證庫存，庫存不足拒絕確認 |
-| 庫存更新時機 | 庫存變更僅在「完成入/出庫」及「POS 結帳/退款」時觸發 |
+| 庫存更新時機 | 完成入/出庫；POS 結帳（退款回補）；外送訂單接單（已接單後取消回補）；掃碼點餐完成（退款回補）。銷售扣庫一律依菜單品項 `consume_inventory` 與 `linked_products`，回補一律依 `stock_movements` 異動帳原樣補回當初扣的品項、數量與倉庫 |
 | Webhook 安全 | **必須**設定 `WEBHOOK_SECRET`，系統驗證 HMAC-SHA256 簽名；留空時系統**拒絕**所有 Webhook 請求並記錄 error log（不再略過驗簽） |
 | debug 模式 | 預設開啟，正式部署請改用 `ProductionConfig` 並設定 `debug=False` |
 | 正式部署 | Docker 部署預設使用 gunicorn（`CMD gunicorn -c gunicorn.py run:app`）；純主機部署亦同；參數統一在 `conf/config.ini [GUNICORN]` 設定 |

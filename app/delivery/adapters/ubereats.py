@@ -12,6 +12,21 @@ logger = logging.getLogger(__name__)
 TOKEN_URL    = 'https://auth.uber.com/oauth/v2/token'
 API_BASE     = 'https://api.uber.com'
 
+# [D1] UberEats current_state → 內部狀態（key 小寫）。
+# 注意 UberEats 的取消拼法是 CANCELED（單 L），舊版直接轉小寫存入，與內部 cancelled 對不上。
+from src.constants import DeliveryOrderStatus as _S  # noqa: E402
+
+STATUS_MAP = {
+    'created':   _S.NEW,
+    'offered':   _S.NEW,
+    'scheduled': _S.NEW,
+    'accepted':  _S.CONFIRMED,
+    'denied':    _S.CANCELLED,
+    'canceled':  _S.CANCELLED,
+    'cancelled': _S.CANCELLED,
+    'finished':  _S.DELIVERED,
+}
+
 
 class UberEatsClient:
     """UberEats API 客戶端 — 自動管理 access_token 生命週期"""
@@ -159,12 +174,16 @@ class UberEatsClient:
         subtotal = (_sub_amt / 100 if _sub_amt is not None else
                     sum(i.get('price', {}).get('total_price', {}).get('amount', 0)
                         for i in cart.get('items', [])) / 100)
+        from app.delivery.adapters import map_platform_status
+        status, platform_status = map_platform_status(
+            'ubereats', raw.get('current_state', ''), STATUS_MAP)
         return {
             'platform':         'ubereats',
             'external_store_id': str(raw.get('store', {}).get('id', '') or ''),
             'external_order_id': raw.get('id', ''),
             'order_no':         raw.get('display_id', ''),
-            'status':           raw.get('current_state', '').lower(),
+            'status':           status,
+            'platform_status':  platform_status,
             'customer_name':    raw.get('eater', {}).get('first_name', ''),
             'items':            items,
             'subtotal':         subtotal,

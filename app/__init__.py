@@ -121,8 +121,16 @@ def _ensure_indexes():
          {'name': 'mv_reftype_time'}),
         ('pos_orders',      [('created_at', DESCENDING)],
          {'name': 'pos_created_at'}),
+        # [D2] 原為 unique + sparse：複合 sparse 索引只要文件有任一欄位就收錄，
+        # 掃碼點餐銷售（source='cust_order'、無 delivery_order_id）從第 2 筆起撞重複鍵，
+        # 銷售紀錄靜默漏建。改為 partial：只對真的有 delivery_order_id 的文件做唯一限制。
         ('pos_orders',      [('delivery_order_id', ASCENDING), ('source', ASCENDING)],
-         {'name': 'pos_delivery_order', 'unique': True, 'sparse': True}),
+         {'name': 'pos_delivery_order', 'unique': True,
+          'partialFilterExpression': {'delivery_order_id': {'$type': 'string'}}}),
+        # [D2] 掃碼點餐完成時建立銷售並扣庫：同一張點單只能有一筆銷售，避免重複扣庫
+        ('pos_orders',      [('cust_order_id', ASCENDING)],
+         {'name': 'pos_cust_order', 'unique': True,
+          'partialFilterExpression': {'cust_order_id': {'$type': 'string'}}}),
         ('customer_orders', [('order_date', ASCENDING), ('created_at', DESCENDING)],
          {'name': 'cust_order_date_time'}),
         ('inbound_orders',  [('created_at', DESCENDING)],
@@ -163,6 +171,16 @@ def _ensure_indexes():
         ('stores',          [('code', ASCENDING)],
          {'name': 'stores_code'}),
     ]
+    # [D2] 舊部署上的 pos_delivery_order 是 sparse 版本：同名不同選項 create_index 會失敗，
+    # 舊的錯誤索引會被留下，故先移除再由下方重建（冪等：已是 partial 版本則不動）
+    try:
+        _old = db['pos_orders'].index_information().get('pos_delivery_order')
+        if _old and _old.get('sparse'):
+            db['pos_orders'].drop_index('pos_delivery_order')
+            _log.info('已移除舊版 sparse 索引 pos_delivery_order，改建 partial 版本')
+    except Exception as e:
+        _log.error('pos_delivery_order 舊索引移除失敗：%s', e)
+
     for col_name, keys, kwargs in _indexes:
         try:
             db[col_name].create_index(keys, **kwargs)

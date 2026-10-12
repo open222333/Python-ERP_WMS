@@ -196,7 +196,7 @@
 | POST | `/delivery/webhook/foodpanda` | foodpanda webhook（簽名驗證；歸屬邏輯同上） | 無（webhook） |
 | GET | `/delivery/orders` | 列出外送訂單（可篩：platform/status/date） | admin/operator/cashier |
 | GET | `/delivery/orders/<oid>` | 取得單一外送訂單 | admin/operator/cashier |
-| PUT | `/delivery/orders/<oid>/status` | 更新狀態（同步至平台；confirmed 依店家有效設定建 POS 單並扣庫存） | admin/operator |
+| PUT | `/delivery/orders/<oid>/status` | 更新狀態（同步至平台）。只能往前推進，非法轉移 400、並發衝突 409、相同狀態回 `changed: false`；進入已接單狀態建 POS 單並扣庫存，已接單後取消作廢 POS 單並回補（回傳 `voided_sale_id`、`restored_items`） | admin/operator |
 | POST | `/delivery/sync/<platform>` | 從平台拉取最新訂單 | admin/operator |
 | POST | `/delivery/menu/sync/<platform>` | 同步平台菜單至 WMS 菜單管理 | admin/operator |
 | GET | `/delivery/mappings` | 列出平台品項對照 | admin/operator |

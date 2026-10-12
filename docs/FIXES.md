@@ -1,5 +1,16 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-10-09 外送狀態轉換與銷售管道扣庫一致（`# [D1]` `# [D2]` 標記，OPTIMIZATION_REPORT 第四輪 D1、D2）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `app/delivery/adapters/{__init__,ubereats,foodpanda}.py` | 平台狀態只轉小寫就存入（UberEats `CREATED`/`ACCEPTED`/`CANCELED`），與內部 `new`/`confirmed`/`cancelled` 對不上：新單狀態為未知值，後續更新全被靜默忽略，**平台端取消永遠不同步** | 各 adapter 加 `STATUS_MAP` 轉成內部狀態，原始值存 `platform_status`；無法辨識的值記 warning log。foodpanda 對照依本 adapter 既有用值＋常見別名，**需以實際 payload 核對補齊** |
+| `src/constants.py`、`src/models/delivery.py` | 終態以外的轉移不設限（可倒退）；檢查與寫入非原子 | `DeliveryOrderStatus.is_valid_transition`：只能往前（可跳過）、非終態可取消；`DeliveryOrder.transition()` compare-and-set，並發時只有一方成功；修正前存入的未知狀態值視同 `new` |
+| `src/services/delivery_service.py`（新增）、`app/delivery/views/{webhooks,orders,base}.py` | 銷售建立只在「手動或自動轉為 confirmed」時觸發；平台端接單、跳過 confirmed、拉單時已確認的訂單都不會建銷售扣庫；取消不回補 | 所有狀態變更入口統一經 service：由未接單進入已接單狀態 → 建銷售扣庫；已接單後轉 cancelled → 作廢銷售並回補。後台改為先驗證轉移合法才呼叫平台 API（非法 400、並發衝突 409） |
+| `src/models/pos.py` `refund` | 退款以 `items[].product_id × quantity` 回補訂單倉庫，與結帳依 `linked_products` 扣庫不一致：`consume_qty>1` 少補、跨倉不補、`consume_inventory=False` 品項憑空多補 | 新增 `_restore_stock_by_ledger()`：依 `stock_movements` 把當初扣的原樣補回（冪等）；退款與外送取消共用 |
+| `src/models/pos.py` `create_from_cust_order` | 掃碼點餐完成時完全不扣庫存 | 比照 POS 依菜單品項 `consume_inventory`／`linked_products` 扣庫（異動帳 `cust_order_sale`）；預設倉為本店倉庫；庫存不足不阻擋、記錄 `stock_skipped`；先寫銷售單再扣庫確保冪等 |
+| `app/__init__.py` 索引 | `pos_delivery_order` 為 unique + **sparse** 複合索引：只要有任一欄位就收錄，掃碼點餐銷售（無 `delivery_order_id`）**從第 2 筆起撞重複鍵、銷售紀錄靜默漏建**；`bulk_import` 多筆同 source 同樣失敗 | 改為 `partialFilterExpression`（只限制有 `delivery_order_id` 的文件）；啟動時偵測舊 sparse 版本自動移除重建；新增 `pos_cust_order` partial 唯一索引防同一點單重複建銷售 |
+
 ## 2026-10-08 記憶體優化（`# [OPT-MEM]` 標記）
 
 | 檔案 | 問題 | 修復說明 |

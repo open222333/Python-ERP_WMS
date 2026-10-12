@@ -16,9 +16,9 @@ from src.models.delivery import DeliveryOrder, DeliverySettings
 from src.models.log import Log
 from src.permissions import require_role
 from src.constants import DeliveryOrderStatus
+from src.services import delivery_service
 from app.delivery.views.base import (
     app_delivery, logger, _get_ubereats_client, _get_foodpanda_client,
-    create_sale_for_order,
 )
 
 
@@ -130,6 +130,15 @@ def update_order_status(oid):
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
 
+    # [D1] 先驗證轉移是否合法，再呼叫平台 API（避免對平台送出本系統不接受的變更）
+    current = order['status'] if order['status'] in DeliveryOrderStatus.ALL \
+        else DeliveryOrderStatus.NEW
+    if status == current:
+        return jsonify({'success': True, 'changed': False})
+    if not DeliveryOrderStatus.is_valid_transition(current, status):
+        return jsonify({'success': False,
+                        'message': f'不允許的狀態變更：{current} → {status}'}), 400
+
     # 同步更新到原平台
     try:
         if order['platform'] == 'ubereats':
@@ -149,21 +158,17 @@ def update_order_status(oid):
     except Exception as e:
         logger.warning('Platform status sync error: %s', e)
 
-    ok = DeliveryOrder.update_status(oid, status, operator=get_jwt_identity())
-    if not ok:
-        return jsonify({'success': False, 'message': '狀態更新失敗，請確認狀態值'}), 400
-
-    # ── 確認接單時自動建立銷售紀錄（店家設定優先、回退全域）──
-    sale_info = {}
-    if status == DeliveryOrderStatus.CONFIRMED:
-        try:
-            sale_info = create_sale_for_order(order, get_jwt_identity())
-        except Exception as e:
-            logger.warning('create_from_delivery error: %s', e)
+    # [D2] 狀態變更與副作用（接單建銷售扣庫／取消作廢回補）統一由 service 處理
+    result = delivery_service.change_status(str(oid), status, get_jwt_identity())
+    if not result['changed']:
+        return jsonify({'success': False,
+                        'message': '狀態更新失敗（可能已被其他操作變更），請重新整理'}), 409
 
     Log.create(get_jwt_identity(), '外送訂單狀態',
-               f'order_id={oid} status={status}')
-    return jsonify({'success': True, **sale_info})
+               f'order_id={oid} {result["from_status"]} → {status}')
+    extra = {k: v for k, v in result.items()
+             if k in ('sale_id', 'skipped_items', 'voided_sale_id', 'restored_items')}
+    return jsonify({'success': True, 'changed': True, **extra})
 
 
 # ─────────────────────────────────────────────
@@ -200,7 +205,7 @@ def sync_orders(platform):
             raw_orders = client.list_orders(status='active')
             for raw in raw_orders:
                 normalized       = UberEatsClient.normalize_order(raw)
-                _, is_new        = DeliveryOrder.upsert_from_normalized(normalized)
+                _, is_new, _     = delivery_service.ingest_normalized(normalized, get_jwt_identity())
                 if is_new:
                     new_count += 1
 
@@ -214,7 +219,7 @@ def sync_orders(platform):
                 raw_orders = client.list_orders(status=status)
                 for raw in raw_orders:
                     normalized = FoodpandaClient.normalize_order(raw)
-                    _, is_new  = DeliveryOrder.upsert_from_normalized(normalized)
+                    _, is_new, _ = delivery_service.ingest_normalized(normalized, get_jwt_identity())
                     if is_new:
                         new_count += 1
 

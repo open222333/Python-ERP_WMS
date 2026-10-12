@@ -647,16 +647,29 @@ class PosOrder:
     @classmethod
     def create_from_cust_order(cls, cust_order: dict, operator: str) -> str:
         """
-        顧客點單完成時，自動建立對應的銷售記錄（不扣庫存）。
+        顧客點單完成時，自動建立對應的銷售記錄，並依菜單品項設定扣庫存。
         回傳新建的 pos_order _id (str)，若已存在則回傳既有 _id。
+
+        [D2] 原本完全不扣庫存，與 POS 結帳、外送接單規則不一致。現在比照 POS：
+        菜單品項 consume_inventory=True 時依 linked_products（含 consume_qty、指定倉）扣庫；
+        未指定倉的連結用本店倉庫（見 _resolve_cust_order_warehouse）。
+        餐點已出，庫存不足時不阻擋，改記錄於銷售單 stock_skipped（與外送接單一致）。
+        冪等：先寫入銷售單（cust_order_id 唯一索引），撞到重複代表已處理過，不再扣庫。
         """
-        co_id = cust_order.get('_id', '')
+        from pymongo.errors import DuplicateKeyError
+
+        co_id = str(cust_order.get('_id', ''))
         existing = cls._col().find_one({'cust_order_id': co_id, 'source': 'cust_order'})
         if existing:
             return str(existing['_id'])
 
         now   = datetime.utcnow()
         total = float(cust_order.get('total', 0))
+        default_wid = cls._resolve_cust_order_warehouse(cust_order.get('store_id'))
+        default_w = None
+        if default_wid:
+            from src.models.warehouse import Warehouse
+            default_w = Warehouse.find_by_id(default_wid)
 
         sale_items = [{
             'product_id':   None,
@@ -671,8 +684,8 @@ class PosOrder:
 
         order_doc = {
             'order_no':               f"CO-{cust_order.get('order_no', '')}",
-            'warehouse_id':           None,
-            'warehouse_name':         '',
+            'warehouse_id':           ObjectId(default_wid) if default_wid else None,
+            'warehouse_name':         (default_w or {}).get('name', ''),
             'items':                  sale_items,
             'subtotal':               total,
             'discount':               0.0,
@@ -689,7 +702,97 @@ class PosOrder:
             'cust_order_id':          co_id,
             'created_at':             now,
         }
-        return str(get_db()[cls.COLLECTION].insert_one(order_doc).inserted_id)
+        if cust_order.get('store_id'):
+            order_doc['store_id'] = ObjectId(str(cust_order['store_id']))
+        try:
+            sid = str(get_db()[cls.COLLECTION].insert_one(order_doc).inserted_id)
+        except DuplicateKeyError:
+            # 並發下另一個請求已建立 → 回傳既有的，不重複扣庫
+            existing = cls._col().find_one({'cust_order_id': co_id, 'source': 'cust_order'})
+            return str(existing['_id']) if existing else ''
+
+        skipped = cls._deduct_cust_order_stock(
+            cust_order, sid, order_doc['order_no'], default_wid, operator)
+        if skipped:
+            cls._col().update_one({'_id': ObjectId(sid)},
+                                  {'$set': {'stock_skipped': skipped}})
+        return sid
+
+    @staticmethod
+    def _resolve_cust_order_warehouse(store_id) -> str:
+        """
+        掃碼點餐扣庫的預設倉庫（品項連結未指定倉時使用）：
+        - 點單屬於某店：系統預設倉（default_warehouse_id）若屬於該店就用它，否則用該店第一個倉庫
+        - 點單無店家（單店部署）：系統預設倉
+        都找不到回 None（該品項扣庫略過並記錄）。
+        """
+        from src.models.settings import SystemSettings
+        from src.models.warehouse import Warehouse
+        default = str(SystemSettings.get('default_warehouse_id') or '')
+        if store_id:
+            ids = [w['_id'] for w in
+                   Warehouse.find_all(store_filter={'store_id': ObjectId(str(store_id))})]
+            if default in ids:
+                return default
+            return ids[0] if ids else None
+        return default or None
+
+    @classmethod
+    def _deduct_cust_order_stock(cls, cust_order: dict, sid: str, order_no: str,
+                                 default_wid: str, operator: str) -> list:
+        """依菜單品項 linked_products 扣庫並寫 stock_movements（cust_order_sale）。回傳略過清單。"""
+        from src.models.inventory import StockMovement
+        from src.models.menu import Menu
+        from src.models.warehouse import Warehouse
+
+        inv_col = get_db()['inventory']
+        default_wid_obj = ObjectId(default_wid) if default_wid else None
+        menu_id = cust_order.get('menu_id') or None
+        now = datetime.utcnow()
+        skipped, wh_cache = [], {}
+
+        for ci in cust_order.get('items', []):
+            name = ci.get('item_name', '')
+            mi = Menu.find_item(menu_id, ci.get('item_id')) if ci.get('item_id') else None
+            if not mi:
+                if ci.get('item_id'):
+                    skipped.append(f'{name}（菜單品項已不存在）')
+                continue
+            if not mi.get('consume_inventory', False):
+                continue   # 與 POS 一致：品項未設定「消耗庫存」就不扣
+            links = _item_consume_links(
+                {'quantity': int(ci.get('qty', 1)),
+                 'linked_products': mi.get('linked_products', [])},
+                default_wid_obj)
+            for lp in links:
+                if lp['wid_obj'] is None:
+                    skipped.append(f'{name}（找不到扣庫倉庫）')
+                    continue
+                result = inv_col.find_one_and_update(
+                    {'product_id': lp['pid_obj'], 'warehouse_id': lp['wid_obj'],
+                     'quantity': {'$gte': lp['need_qty']}},
+                    {'$inc': {'quantity': -lp['need_qty']}, '$set': {'updated_at': now}},
+                    return_document=True,
+                )
+                if not result:
+                    skipped.append(f'{name}（庫存不足）')
+                    continue
+                wid = str(lp['wid_obj'])
+                if wid not in wh_cache:
+                    wh_cache[wid] = Warehouse.find_by_id(wid)
+                product = get_db()['products'].find_one({'_id': lp['pid_obj']}) or {}
+                StockMovement.create(
+                    product_id=str(lp['pid_obj']), warehouse_id=wid,
+                    movement_type='outbound', quantity=-lp['need_qty'],
+                    before_qty=result['quantity'] + lp['need_qty'],
+                    after_qty=result['quantity'],
+                    product_name=product.get('name', name),
+                    product_sku=product.get('sku', ''),
+                    warehouse_name=(wh_cache[wid] or {}).get('name', ''),
+                    reference_type='cust_order_sale', reference_id=sid,
+                    remark=f'掃碼點餐 {order_no}', operator=operator,
+                )
+        return skipped
 
     @classmethod
     def bulk_import(cls, rows: list) -> int:
@@ -752,48 +855,16 @@ class PosOrder:
         退款：把 status 改為 refunded，並回補庫存。
         回傳 {'success': bool, 'error': str}
         """
-        from src.models.inventory import Inventory, StockMovement
-        from src.models.warehouse import Warehouse
-
         order = cls._col().find_one({'_id': ObjectId(sid), 'status': {'$in': list(PosOrderStatus.REFUNDABLE)}})
         if not order:
             return {'success': False, 'error': '銷售單不存在或已退款'}
 
         now = datetime.utcnow()
-        raw_wid = order.get('warehouse_id')
-        # Guard against None, empty string, or the literal string 'None' stored
-        # in older documents; any of those means "no warehouse tracked".
-        _raw_wid_str = str(raw_wid) if raw_wid is not None else ''
-        warehouse_id = _raw_wid_str if _raw_wid_str not in ('', 'None') else None
-        w = Warehouse.find_by_id(warehouse_id) if warehouse_id else None
-
-        for item in order['items']:
-            if not item.get('product_id'):
-                continue
-            if not warehouse_id:
-                # Skip inventory restore for orders without warehouse tracking
-                pass
-            else:
-                before_qty, after_qty = Inventory.adjust(
-                    product_id=str(item['product_id']),
-                    warehouse_id=warehouse_id,
-                    delta=item['quantity'],
-                )
-                StockMovement.create(
-                    product_id=str(item['product_id']),
-                    warehouse_id=warehouse_id,
-                    movement_type='inbound',
-                    quantity=item['quantity'],
-                    before_qty=before_qty,
-                    after_qty=after_qty,
-                    product_name=item['product_name'],
-                    product_sku=item['product_sku'],
-                    warehouse_name=w['name'] if w else '',
-                    reference_type='pos_refund',
-                    reference_id=sid,
-                    remark=f"POS 退款 {order['order_no']}",
-                    operator=operator,
-                )
+        # [D2] 依庫存異動帳（結帳時實際扣了什麼）原樣回補。
+        # 舊做法以 items[].product_id × quantity 回補到訂單倉庫，與結帳的扣庫規則不一致：
+        # 多原料連結、consume_qty>1、跨倉、consume_inventory=False 的品項都會補錯。
+        cls._restore_stock_by_ledger(order, operator, 'pos_refund',
+                                     f"POS 退款 {order['order_no']}")
 
         cls._col().update_one(
             {'_id': ObjectId(sid)},
@@ -801,3 +872,87 @@ class PosOrder:
                       'refunded_by': operator, 'refunded_at': now}},
         )
         return {'success': True}
+
+    # ── [D2] 庫存回沖（依異動帳）─────────────────────────────
+    @staticmethod
+    def _stock_ref_of(order: dict) -> tuple:
+        """
+        銷售單扣庫時寫入 stock_movements 的 (reference_type, reference_id)：
+        - POS 現場結帳       → ('pos_order', 銷售單 _id)
+        - 掃碼點餐完成       → ('cust_order_sale', 銷售單 _id)
+        - 外送平台接單       → ('delivery_order', 外送單 _id)
+        """
+        source = order.get('source') or 'pos'
+        if source == 'pos':
+            return 'pos_order', str(order['_id'])
+        if source == 'cust_order':
+            return 'cust_order_sale', str(order['_id'])
+        if order.get('delivery_order_id'):
+            return 'delivery_order', str(order['delivery_order_id'])
+        return None, None
+
+    @classmethod
+    def _restore_stock_by_ledger(cls, order: dict, operator: str,
+                                 restore_ref_type: str, remark: str) -> list:
+        """
+        把這張銷售單當初扣的庫存（stock_movements 中對應的 outbound 紀錄）原樣補回，
+        回補紀錄寫 reference_type=restore_ref_type、reference_id=銷售單 _id。
+        冪等：同一張銷售單若已有 restore_ref_type 的回補紀錄就不再補。
+        回傳實際回補的明細（供呼叫端回報）。
+        """
+        from src.models.inventory import Inventory, StockMovement
+        from src.models.warehouse import Warehouse
+
+        sid = str(order['_id'])
+        mv_col = StockMovement._col()
+        if mv_col.find_one({'reference_type': restore_ref_type, 'reference_id': sid}):
+            return []
+
+        ref_type, ref_id = cls._stock_ref_of(order)
+        if not ref_type:
+            return []
+
+        restored, wh_cache = [], {}
+        for mv in mv_col.find({'reference_type': ref_type, 'reference_id': ref_id,
+                               'movement_type': 'outbound'}):
+            qty = abs(int(mv.get('quantity', 0)))
+            if not qty:
+                continue
+            pid, wid = str(mv['product_id']), str(mv['warehouse_id'])
+            before_qty, after_qty = Inventory.adjust(product_id=pid, warehouse_id=wid, delta=qty)
+            if wid not in wh_cache:
+                wh_cache[wid] = Warehouse.find_by_id(wid)
+            StockMovement.create(
+                product_id=pid, warehouse_id=wid,
+                movement_type='inbound', quantity=qty,
+                before_qty=before_qty, after_qty=after_qty,
+                product_name=mv.get('product_name', ''),
+                product_sku=mv.get('product_sku', ''),
+                warehouse_name=(wh_cache[wid] or {}).get('name', mv.get('warehouse_name', '')),
+                reference_type=restore_ref_type, reference_id=sid,
+                remark=remark, operator=operator,
+            )
+            restored.append({'product_id': pid, 'warehouse_id': wid, 'quantity': qty})
+        return restored
+
+    @classmethod
+    def void_delivery_sale(cls, delivery_order_id: str, platform: str,
+                           operator: str, reason: str = '外送訂單取消') -> dict:
+        """
+        [D2] 外送訂單取消時作廢對應銷售紀錄並回補庫存。
+        以 compare-and-set（completed → refunded）確保並發／重複推播只執行一次。
+        回傳 {'voided': bool, 'sale_id': str | None, 'restored': list}
+        """
+        now = datetime.utcnow()
+        order = cls._col().find_one_and_update(
+            {'delivery_order_id': str(delivery_order_id), 'source': platform,
+             'status': PosOrderStatus.COMPLETED},
+            {'$set': {'status': PosOrderStatus.REFUNDED, 'refund_reason': reason,
+                      'refunded_by': operator, 'refunded_at': now}},
+        )
+        if not order:
+            return {'voided': False, 'sale_id': None, 'restored': []}
+        restored = cls._restore_stock_by_ledger(
+            order, operator, 'delivery_cancel',
+            f"{platform} 外送取消 {order.get('external_order_no', '')}")
+        return {'voided': True, 'sale_id': str(order['_id']), 'restored': restored}

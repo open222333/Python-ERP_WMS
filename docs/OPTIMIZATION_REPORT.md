@@ -96,7 +96,31 @@
 **經查證不需修**：
 - CORS：Flask 預設不回 CORS header，跨來源 JS 本就無法讀取回應，且前後端同源部署，非漏洞
 - menu export-all N+1：實查無逐筆查詢，僅 1 次 DB 查詢
-- 日期時區混用：全專案已統一 `utcnow()`
+- 日期時區混用：全專案已統一 `utcnow()`（儲存一致；但「依台灣當地時間分日」是另一個問題，見第四輪 D4）
+
+## 第四輪盤點：系統設計（2026-10-08，均已讀程式碼確認，未修）
+
+與前三輪不重複。D3 的 ECPay 檢核規則依規格推論，未實際呼叫 API 驗證；其餘可直接由程式碼確認。
+
+**業務邏輯一致性（影響帳與庫存數字）**
+
+| # | 問題 | 位置 | 說明 |
+|---|---|---|---|
+| ~~D1~~ | ~~外送平台訂單狀態無轉換層~~（✅ 2026-10-09 完成，見 FIXES.md） | `app/delivery/adapters/ubereats.py`／`foodpanda.py` 的 `normalize_order`、`src/models/delivery.py` `create_from_normalized` | 平台狀態只轉小寫就寫入（UberEats `CREATED`/`ACCEPTED`/`CANCELED`），系統只認 `new`/`confirmed`/`cancelled`：新單狀態成為未知值 `created`；後續平台狀態更新被 `update_status` 視為非法值靜默忽略，**平台端取消永遠不會同步**。另外終態以外的轉移不設限（`confirmed` 可退回 `new`）。建議：各 adapter 加平台狀態 → 內部狀態對照表，並套用合法轉移表 |
+| ~~D2~~ | ~~三種銷售管道扣庫規則不一致~~（✅ 2026-10-09 完成，見 FIXES.md） | `src/services/pos_service.py`、`app/delivery/views/orders.py`、`src/models/pos.py` `create_from_cust_order` | POS 結帳扣庫、退款回補；外送 confirm 扣庫，**取消不回補、銷售紀錄保留**；掃碼點餐**完全不扣庫**（菜單品項 `linked_products` 未被使用）。庫存會逐漸偏離實際，營收也會多算已取消外送單。建議：統一「確認扣庫／取消或退款回沖」規則，外送取消時同步作廢對應 POS 單並回補 |
+| D3 | 有折扣的訂單無法開立電子發票 | `src/invoice_providers/ecpay.py` `build_ecpay_items`、`app/invoice/view.py` issue | Items 取折扣前單價，合計為小計；`SalesAmount` 為折扣後總額，依 ECPay 規格兩者須相等，會被拒。單價與總額另以 `int()` 截斷小數（例：9 折 139.5 → 139）。建議：折扣以負項或依比例分攤至品項，金額以四捨五入並確保合計相等 |
+| D4 | 營收報表以 UTC 分日 | `src/models/pos.py` summary 的 `$dateToString`、`app/pos/view.py` 日期參數 | 未指定 `timezone`，查詢日期亦當 UTC：台灣 00:00–08:00 的銷售歸到前一天，08:00 前「今天」顯示昨天；單號日期亦為 UTC。建議：報表與查詢一律以 `Asia/Taipei` 換算（`$dateToString` 加 `timezone`、查詢區間轉 UTC），儲存維持 UTC 不變 |
+
+**架構**
+
+| # | 問題 | 位置 | 說明 |
+|---|---|---|---|
+| D5 | SSE 長連線佔用請求執行緒且無心跳 | `app/customer_order/view.py` `stream_orders`、`customer_stream` | 每支顧客手機、每台廚房看板固定佔一條 gthread（全站預設 2 程序 × 4 執行緒 = 8）；只在資料變動時寫出、無心跳，客人關頁後偵測不到斷線，需等該桌有變動或結帳才釋放。**數桌客人同時在線即可佔滿執行緒，後台與 POS 請求排隊卡住**。短期：每 15 秒送 `: ping` 心跳讓斷線可被偵測；長期：SSE 拆到獨立 async/gevent 服務或改 Redis pub/sub |
+| D6 | 庫位（location）只做一半 | `src/models/pos.py` 結帳扣庫與回滾、`app/inventory/view.py` adjust | 僅盤點會寫入 `location_id`，入庫/出庫/POS/外送皆忽略。扣庫只找「同商品同倉、單筆數量足夠」的任一列，庫存分散於多庫位時總量足夠仍判定不足；結帳失敗回滾的 `update_one` 未指定庫位，**可能補到其他庫位列**。建議：決定庫位是否為正式功能——是則各流程補齊並以總量判斷、回滾依實際扣減列；否則移除庫位維度 |
+| D7 | 銷售／外送單號隨機產生 | `src/models/pos.py` `_gen_order_no`、`src/models/delivery.py` `_gen_order_no` | 「日期＋4 碼隨機」，無唯一索引、非連號，不利對帳與稽核；已有 `counters` 連號機制但僅用於出入庫與點單。建議：改用 `counters` 產生連號並加 `order_no` 唯一索引 |
+| D8 | 每店設定兩套存法 | `delivery_settings`（專屬 collection）vs `system_settings`（`invoice_settings_{store_id}` 等字串拼接 key） | 驗證、遷移、店家隔離需各寫一套。建議：每店設定統一為專屬 collection（`store_id` + 類型），全域設定才留在 `system_settings` |
+
+**建議順序**：D1、D2（庫存與營收長期失真）→ D5 心跳（改動小、營業尖峰即會發生）→ D3、D4（稅務與日結）→ D6–D8。
 
 ## P0 — 高優先（建議立即修復）
 

@@ -54,6 +54,18 @@ Redis:
 
 設定取用 `DeliverySettings.effective(platform, store_ref)`：店家設定優先、空值欄位回退全域。訂單歸屬店家依 webhook payload 的平台店家代號（UberEats store id / foodpanda vendor code）比對店家設定的 `store_id` / `vendor_code`。
 
+## 銷售管道與庫存規則（[D1][D2]）
+
+| 管道 | 扣庫時機 | 回補時機 | 異動帳 reference_type |
+|---|---|---|---|
+| POS 現場結帳 | 結帳 | 退款 | `pos_order` → 回補 `pos_refund` |
+| 外送平台 | 由未接單進入已接單狀態（confirmed／preparing／ready／picked_up／delivered） | 已接單後轉 cancelled（作廢銷售） | `delivery_order` → 回補 `delivery_cancel` |
+| 掃碼點餐 | 點單完成 | 銷售單退款 | `cust_order_sale` → 回補 `pos_refund` |
+
+- 扣庫一律依菜單品項 `consume_inventory` 與 `linked_products`（含 `consume_qty`、指定倉）；回補一律依 `stock_movements` 把當初扣的品項／數量／倉庫原樣補回（`PosOrder._restore_stock_by_ledger`，冪等）
+- 外送狀態變更的所有入口（後台、webhook、拉單、自動接單）都經 `src/services/delivery_service.py`；平台狀態由各 adapter 的 `STATUS_MAP` 轉換，合法轉移見 `DeliveryOrderStatus.is_valid_transition`
+- 掃碼點餐扣庫的預設倉：系統預設倉若屬於該店就用它，否則用該店第一個倉庫；庫存不足不阻擋（餐點已出），記錄於銷售單 `stock_skipped`
+
 ## 實作備忘（常見坑）
 
 - **IME 輸入法**：Enter 觸發表單用 `@keydown.enter="e => !e.isComposing && fn()"`

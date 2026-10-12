@@ -6,7 +6,6 @@ import logging
 
 from flask import Blueprint
 
-from src.models.delivery import DeliverySettings
 
 logger = logging.getLogger('app.delivery')
 app_delivery = Blueprint('app_delivery', __name__)
@@ -47,22 +46,6 @@ def _get_foodpanda_client():
         return None
 
 
-# ─────────────────────────────────────────────
-#  共用：confirm 後建立銷售紀錄
-# ─────────────────────────────────────────────
-def create_sale_for_order(order: dict, operator: str) -> dict:
-    """
-    依訂單 store_ref 取「有效設定」（店家設定優先、空值回退全域），
-    有 default_warehouse_id 才建立銷售紀錄並依對應扣庫存。
-    回傳 {'sale_id', 'skipped_items'} 或空 dict。
-    """
-    settings = DeliverySettings.effective(order['platform'], order.get('store_ref'))
-    wid = settings.get('default_warehouse_id', '')
-    if not wid:
-        return {}
-    from src.models.pos import PosOrder
-    result = PosOrder.create_from_delivery(order, wid, operator, settings=settings)
-    return {
-        'sale_id':       result.get('sale_id'),
-        'skipped_items': result.get('skipped_items', []),
-    }
+# [D1][D2] 建立銷售紀錄與狀態變更副作用已移至 src/services/delivery_service.py，
+# 此處保留名稱以相容既有匯入
+from src.services.delivery_service import create_sale_for_order  # noqa: E402,F401

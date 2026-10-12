@@ -107,7 +107,12 @@ class DeliveryOrder:
             'store_ref':         ObjectId(store_ref) if store_ref else None,
             'order_no':          _gen_order_no(normalized['platform']),
             'external_order_no': normalized.get('order_no', ''),
-            'status':            normalized.get('status', DeliveryOrderStatus.NEW),
+            # [D1] adapter 已轉成內部狀態；平台值無法辨識（None）時以 new 建立，
+            # 平台原始值另存 platform_status 供追查
+            'status':            (normalized.get('status')
+                                  if normalized.get('status') in DeliveryOrderStatus.ALL
+                                  else DeliveryOrderStatus.NEW),
+            'platform_status':   normalized.get('platform_status', ''),
             'customer_name':     normalized.get('customer_name', ''),
             'customer_phone':    normalized.get('customer_phone', ''),
             'items':             normalized.get('items', []),
@@ -126,33 +131,62 @@ class DeliveryOrder:
 
     # ── 更新狀態 ──────────────────────────────────
     @classmethod
-    def update_status(cls, oid: str, status: str,
-                      operator: str = 'system') -> bool:
-        if status not in cls.VALID_STATUSES:
-            return False
+    def transition(cls, oid: str, to_status: str, operator: str = 'system',
+                   platform_status: str = None) -> tuple:
+        """
+        [D1] 依合法轉移表更新狀態（compare-and-set，並發時只有一方成功）。
+        回傳 (changed: bool, from_status: str | None)
+        - 相同狀態：視為冪等，不寫入狀態，changed=False
+        - 非法轉移（倒退、終態後再變更、未知狀態）：changed=False
+        - 舊資料若存有未知狀態值（修正前平台值直接寫入，如 'created'），視同 new
+        platform_status 有值時一併記錄（即使狀態未變更）。
+        """
         col = cls._col()
         current = col.find_one({'_id': ObjectId(oid)}, {'status': 1})
-        if current and current.get('status') in DeliveryOrderStatus.TERMINAL_STATES:
-            return False  # cannot transition from terminal state
+        if not current:
+            return False, None
+        from_status = current.get('status')
+        effective_from = (from_status if from_status in DeliveryOrderStatus.ALL
+                          else DeliveryOrderStatus.NEW)
+        now = datetime.utcnow()
+
+        if platform_status:
+            col.update_one({'_id': ObjectId(oid)},
+                           {'$set': {'platform_status': platform_status}})
+        if to_status == effective_from or \
+                not DeliveryOrderStatus.is_valid_transition(effective_from, to_status):
+            return False, from_status
+
         r = col.update_one(
-            {'_id': ObjectId(oid)},
-            {'$set': {'status': status, 'updated_at': datetime.utcnow(),
+            {'_id': ObjectId(oid), 'status': from_status},   # CAS：狀態未被他人改動才寫入
+            {'$set': {'status': to_status, 'updated_at': now,
                       'last_operator': operator}},
         )
-        return r.matched_count > 0
+        return r.modified_count > 0, from_status
+
+    @classmethod
+    def update_status(cls, oid: str, status: str,
+                      operator: str = 'system') -> bool:
+        """相容舊呼叫：True = 已轉移或原本就是該狀態；False = 非法轉移／不存在"""
+        changed, from_status = cls.transition(oid, status, operator)
+        return changed or (from_status is not None and from_status == status)
 
     # ── Upsert（webhook 重複推送保護）────────────
     @classmethod
     def upsert_from_normalized(cls, normalized: dict) -> tuple:
         """
         回傳 (internal_id, is_new)
-        若相同 platform + external_order_id 已存在則更新狀態，否則建立
+        若相同 platform + external_order_id 已存在則依合法轉移更新狀態，否則建立。
+        只處理資料本身；接單建銷售、取消回沖等副作用由
+        src/services/delivery_service.py 處理（view 一律走 service）。
         """
         existing = cls.find_by_external(
             normalized['platform'], normalized.get('external_order_id', '')
         )
         if existing:
-            cls.update_status(existing['_id'], normalized.get('status', existing['status']))
+            if normalized.get('status'):
+                cls.transition(existing['_id'], normalized['status'], 'system',
+                               platform_status=normalized.get('platform_status'))
             return existing['_id'], False
         return cls.create_from_normalized(normalized), True
 

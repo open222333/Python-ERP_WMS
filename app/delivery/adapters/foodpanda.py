@@ -8,6 +8,28 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# [D1] foodpanda status.code → 內部狀態（key 小寫）。
+# 本 adapter 呼叫 API 時使用 new / confirmed / delivered / cancelled（見 list_orders /
+# confirm_order / cancel_order），故這些視為平台原生值；其餘為常見別名。
+# ⚠ foodpanda Vendor API 文件需向商業夥伴申請，完整狀態值清單請以實際 webhook payload
+#   核對後補齊；未對應的值會記 warning log 並保留在 platform_status 欄位。
+from src.constants import DeliveryOrderStatus as _S  # noqa: E402
+
+STATUS_MAP = {
+    'new':              _S.NEW,
+    'received':         _S.NEW,
+    'confirmed':        _S.CONFIRMED,
+    'accepted':         _S.CONFIRMED,
+    'preparing':        _S.PREPARING,
+    'ready':            _S.READY,
+    'ready_for_pickup': _S.READY,
+    'picked_up':        _S.PICKED_UP,
+    'delivered':        _S.DELIVERED,
+    'cancelled':        _S.CANCELLED,
+    'canceled':         _S.CANCELLED,
+    'rejected':         _S.CANCELLED,
+}
+
 
 class FoodpandaClient:
     """foodpanda Vendor API 客戶端"""
@@ -139,13 +161,17 @@ class FoodpandaClient:
             })
         customer = raw.get('customer', {})
         order_total = raw.get('order_total', {})
+        from app.delivery.adapters import map_platform_status
+        status, platform_status = map_platform_status(
+            'foodpanda', raw.get('status', {}).get('code', ''), STATUS_MAP)
         return {
             'platform':          'foodpanda',
             'external_store_id': str(raw.get('vendor', {}).get('code', '') or
                                      raw.get('vendor_code', '') or ''),
             'external_order_id': raw.get('code', ''),
             'order_no':          raw.get('code', ''),
-            'status':            raw.get('status', {}).get('code', '').lower(),
+            'status':            status,
+            'platform_status':   platform_status,
             'customer_name':     f"{customer.get('first_name','')} {customer.get('last_name','')}".strip(),
             'customer_phone':    customer.get('mobile_number', ''),
             'items':             items,
