@@ -23,7 +23,9 @@ from src.models.invoice import Invoice
 from src.models.pos import PosOrder
 from src.models.log import Log
 from src.models.settings import SystemSettings
-from src.permissions import require_role
+from src.permissions import (require_role, require_hq, get_store_filter, store_allowed,
+                             allowed_store_ids, is_hq)
+from pymongo.errors import DuplicateKeyError
 # [REFACTOR] 狀態字串改由 src/constants.py 統一管理
 from src.constants import InvoiceStatus, PosOrderStatus
 
@@ -40,34 +42,87 @@ DEVICE_MODELS = [
 ]
 
 
-# ── 取得 ECPay 實例（支援機台 override）─────────────────────────
-def _get_ecpay(store_id: str = None, terminal_id: str = None):
-    from src.invoice_providers.ecpay import ECPayInvoice
-    s = (SystemSettings.get(_invoice_key(store_id)) if store_id
-         else SystemSettings.get('invoice_settings')) or {}
-
-    merchant_id = s.get('merchant_id', '')
-    hash_key    = s.get('hash_key', '')
-    hash_iv     = s.get('hash_iv', '')
-
+# ── 取得 ECPay 設定（店家 → 全域，機台可覆寫）───────────────────
+def _resolve_ecpay_config(store_id: str = None, terminal_id: str = None) -> dict:
+    """
+    [A4] 決定開立／作廢要用哪一組 ECPay 金鑰：
+    1. 店家設定已啟用且有商店代號 → 用店家自己的；否則回退全域（總部）設定
+    2. 指定機台且該機台有覆寫 → 以機台的商店代號／金鑰為準
+    原本 issue／void 呼叫 _get_ecpay() 都沒帶店家與機台，店家設定與機台覆寫從未生效；
+    且店家未設定時直接報錯，不會回退全域。
+    """
+    global_s = SystemSettings.get('invoice_settings') or {}
+    store_s = (SystemSettings.get(_invoice_key(store_id)) or {}) if store_id else {}
+    base = store_s if (store_s.get('enabled') and store_s.get('merchant_id')) else global_s
+    cfg = {
+        'merchant_id': base.get('merchant_id', ''),
+        'hash_key':    base.get('hash_key', ''),
+        'hash_iv':     base.get('hash_iv', ''),
+        'seller_id':   base.get('seller_id', ''),
+        'test_mode':   base.get('test_mode', True),
+        'source':      'store' if base is store_s and store_s else 'global',
+    }
     if terminal_id:
-        terminal = next((t for t in s.get('terminals', [])
-                         if t['id'] == terminal_id), None)
-        if terminal and terminal.get('ecpay_override'):
-            ov = terminal['ecpay_override']
-            merchant_id = ov.get('merchant_id') or merchant_id
-            hash_key    = ov.get('hash_key')    or hash_key
-            hash_iv     = ov.get('hash_iv')     or hash_iv
-
-    if not merchant_id or not hash_key or not hash_iv:
+        terminal = next((t for t in store_s.get('terminals', []) if t.get('id') == terminal_id), None)
+        if terminal is None:
+            raise ValueError(f'找不到發票機台 {terminal_id}')
+        ov = terminal.get('ecpay_override') or {}
+        if ov:
+            cfg['merchant_id'] = ov.get('merchant_id') or cfg['merchant_id']
+            cfg['hash_key']    = ov.get('hash_key')    or cfg['hash_key']
+            cfg['hash_iv']     = ov.get('hash_iv')     or cfg['hash_iv']
+            cfg['source'] = 'terminal'
+    if not cfg['merchant_id'] or not cfg['hash_key'] or not cfg['hash_iv']:
         raise ValueError('尚未設定 ECPay 金鑰，請先至「發票設定」填寫')
+    return cfg
+
+
+def _get_ecpay(store_id: str = None, terminal_id: str = None, expect_merchant: str = None):
+    """expect_merchant：作廢時傳入開立時的商店代號，與目前設定不同就拒絕（避免用錯金鑰）"""
+    from src.invoice_providers.ecpay import ECPayInvoice
+    cfg = _resolve_ecpay_config(store_id, terminal_id)
+    if expect_merchant and cfg['merchant_id'] != expect_merchant:
+        raise ValueError(f"此發票由商店代號 {expect_merchant} 開立，目前設定為 {cfg['merchant_id']}，"
+                         f"金鑰不同無法作廢，請至 ECPay 後台處理或恢復原設定")
     return ECPayInvoice(
-        merchant_id=merchant_id,
-        hash_key=hash_key,
-        hash_iv=hash_iv,
-        seller_id=s.get('seller_id', ''),
-        test_mode=s.get('test_mode', True),
-    )
+        merchant_id=cfg['merchant_id'],
+        hash_key=cfg['hash_key'],
+        hash_iv=cfg['hash_iv'],
+        seller_id=cfg['seller_id'],
+        test_mode=cfg['test_mode'],
+    ), cfg
+
+
+# ── [A2] 發票所屬店家 ─────────────────────────────────────────
+def _invoice_store_id(inv: dict):
+    """新發票記錄 store_id；舊發票由對應的銷售單推得"""
+    if inv.get('store_id'):
+        return inv['store_id']
+    order = PosOrder.find_by_id(inv.get('order_id', ''))
+    return (order or {}).get('store_id')
+
+
+def _invoice_owned(inv: dict) -> bool:
+    if is_hq():
+        return True
+    sid = _invoice_store_id(inv)
+    return bool(sid) and store_allowed(sid)
+
+
+def _invoice_store_filter() -> dict:
+    """列表用：店家帳號只看本店；舊發票（無 store_id）以銷售單所屬店家判斷"""
+    oids = allowed_store_ids()
+    if oids is None:
+        return {}
+    from src.mongo import get_db
+    legacy_order_ids = [str(o['_id']) for o in get_db()['pos_orders'].find(
+        {'store_id': {'$in': oids}}, {'_id': 1})]
+    return {'$or': [{'store_id': {'$in': oids}},
+                    {'store_id': None, 'order_id': {'$in': legacy_order_ids}}]}
+
+
+def _store_404():
+    return jsonify({'success': False, 'message': '店家不存在'}), 404
 
 
 # ─────────────────────────────────────────────────────────────
@@ -107,6 +162,7 @@ def get_invoice_settings():
 @app_invoice.route('/settings', methods=['PUT'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 全域發票設定影響所有未自行設定的店家
 def update_invoice_settings():
     """
     更新電子發票設定（僅限 admin）
@@ -199,6 +255,10 @@ def _safe_terminal(t: dict) -> dict:
 def list_store_invoice_settings():
     from src.models.store import Store
     stores = Store.find_all()
+    oids = allowed_store_ids()                       # [A2] 店家帳號只看本店
+    if oids is not None:
+        allowed = {str(o) for o in oids}
+        stores = [st for st in stores if st['_id'] in allowed]
     result = []
     for s in stores:
         data = SystemSettings.get(_invoice_key(s['_id'])) or {}
@@ -218,6 +278,8 @@ def list_store_invoice_settings():
 @jwt_required()
 @require_role('admin')
 def get_store_invoice_settings(store_id):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     data = SystemSettings.get(_invoice_key(store_id)) or {}
     return jsonify({'success': True, 'data': _safe_invoice(data)})
 
@@ -226,6 +288,8 @@ def get_store_invoice_settings(store_id):
 @jwt_required()
 @require_role('admin')
 def update_store_invoice_settings(store_id):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     body = request.get_json(silent=True) or {}
     existing = SystemSettings.get(_invoice_key(store_id)) or {}
 
@@ -265,6 +329,8 @@ def list_device_models():
 @jwt_required()
 @require_role('admin')
 def list_terminals(store_id):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     data = SystemSettings.get(_invoice_key(store_id)) or {}
     return jsonify({'success': True,
                     'data': [_safe_terminal(t) for t in data.get('terminals', [])]})
@@ -274,6 +340,8 @@ def list_terminals(store_id):
 @jwt_required()
 @require_role('admin')
 def create_terminal(store_id):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     body = request.get_json(silent=True) or {}
     data = SystemSettings.get(_invoice_key(store_id)) or {}
     terminals = data.get('terminals', [])
@@ -313,6 +381,8 @@ def create_terminal(store_id):
 @jwt_required()
 @require_role('admin')
 def update_terminal(store_id, tid):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     body = request.get_json(silent=True) or {}
     data = SystemSettings.get(_invoice_key(store_id)) or {}
     terminals = data.get('terminals', [])
@@ -353,6 +423,8 @@ def update_terminal(store_id, tid):
 @jwt_required()
 @require_role('admin')
 def delete_terminal(store_id, tid):
+    if not store_allowed(store_id):   # [A2]
+        return _store_404()
     data = SystemSettings.get(_invoice_key(store_id)) or {}
     terminals = data.get('terminals', [])
     before = len(terminals)
@@ -407,44 +479,64 @@ def issue_invoice():
     customer_name = str(body.get('customer_name', '')).strip()
     customer_email= str(body.get('customer_email', '')).strip()
 
+    terminal_id   = str(body.get('terminal_id', '')).strip()
+
     if not order_id:
         return jsonify({'success': False, 'message': '請提供訂單 ID'}), 400
 
-    # 檢查是否已開立
-    existing = Invoice.find_by_order(order_id)
-    if existing and existing['status'] == InvoiceStatus.ISSUED:
-        return jsonify({'success': False,
-                        'message': f"此訂單已開立發票 {existing['invoice_no']}"}), 400
-
-    # 取得 POS 訂單
-    order = PosOrder.find_by_id(order_id)
+    # 取得 POS 訂單（[A2] 只能開立本店的銷售單）
+    order = PosOrder.find_by_id(order_id, store_filter=get_store_filter())
     if not order:
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
     if order.get('status') != PosOrderStatus.COMPLETED:
         return jsonify({'success': False, 'message': '僅限已完成訂單'}), 400
 
-    # 建立 Invoice 記錄（pending）
+    # [A3] 檢查是否已開立或開立中（find_by_order 優先取有效的那張）
+    existing = Invoice.find_by_order(order_id)
+    if existing and existing['status'] == InvoiceStatus.ISSUED:
+        return jsonify({'success': False,
+                        'message': f"此訂單已開立發票 {existing['invoice_no']}"}), 400
+    if existing and existing['status'] == InvoiceStatus.PENDING:
+        return jsonify({'success': False, 'message': '此訂單發票開立中，請稍後再查詢'}), 409
+
+    # [D3] 發票金額四捨五入為整數，品項依比例分攤折扣
+    sales_amount = int(round(float(order.get('total_amount') or 0)))
+    if sales_amount <= 0:
+        return jsonify({'success': False, 'message': '訂單金額為 0，無法開立發票'}), 400
+
+    # [A4] 依銷售單所屬店家（與機台）決定金鑰；設定有誤時尚未建立發票紀錄
+    store_id = order.get('store_id')
+    try:
+        from src.invoice_providers.ecpay import build_ecpay_items
+        ecpay, cfg = _get_ecpay(store_id, terminal_id or None)
+        ec_items = build_ecpay_items(order.get('items', []), sales_amount)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    # 建立 Invoice 記錄（pending）；[A3] 並發重複開立會撞唯一索引
     operator = get_jwt_identity()
-    inv_id = Invoice.create(
-        order_id=order_id, order_no=order['order_no'],
-        total_amount=order['total_amount'],
-        items=order.get('items', []),
-        carrier_type=carrier_type, carrier_num=carrier_num,
-        buyer_id=buyer_id, love_code=love_code,
-        customer_name=customer_name, customer_email=customer_email,
-        created_by=operator,
-    )
+    try:
+        inv_id = Invoice.create(
+            order_id=order_id, order_no=order['order_no'],
+            total_amount=sales_amount,
+            items=order.get('items', []),
+            carrier_type=carrier_type, carrier_num=carrier_num,
+            buyer_id=buyer_id, love_code=love_code,
+            customer_name=customer_name, customer_email=customer_email,
+            created_by=operator,
+            store_id=store_id, terminal_id=terminal_id,
+            merchant_id=cfg['merchant_id'],
+        )
+    except DuplicateKeyError:
+        return jsonify({'success': False, 'message': '此訂單發票已在開立中或已開立'}), 409
 
     # 呼叫 ECPay
     try:
-        from src.invoice_providers.ecpay import build_ecpay_items
-        ecpay  = _get_ecpay()
         relate = f"{order['order_no']}-{inv_id[-6:]}"
-        ec_items = build_ecpay_items(order.get('items', []))
         result = ecpay.issue(
             relate_no=relate,
             items=ec_items,
-            total=int(order['total_amount']),
+            total=sales_amount,
             carrier_type=carrier_type,
             carrier_num=carrier_num,
             buyer_id=buyer_id,
@@ -467,7 +559,7 @@ def issue_invoice():
             ecpay_response=result,
         )
         Log.create(operator, '電子發票開立',
-                   f"order={order['order_no']} invoice={result['InvoiceNo']}")
+                   f"order={order['order_no']} invoice={result['InvoiceNo']} merchant={cfg['merchant_id']}")
         inv = Invoice.find_by_id(inv_id)
         return jsonify({'success': True, 'data': inv}), 201
 
@@ -476,10 +568,6 @@ def issue_invoice():
         logger.exception('電子發票開立失敗')
         return jsonify({'success': False, 'message': str(e)}), 500
 
-
-# ─────────────────────────────────────────────────────────────
-#  作廢發票
-# ─────────────────────────────────────────────────────────────
 
 @app_invoice.route('/<inv_id>/void', methods=['POST'])
 @jwt_required()
@@ -507,13 +595,19 @@ def void_invoice(inv_id):
     reason = str(body.get('reason', '')).strip() or '作廢'
 
     inv = Invoice.find_by_id(inv_id)
-    if not inv:
+    if not inv or not _invoice_owned(inv):   # [A2]
         return jsonify({'success': False, 'message': '發票不存在'}), 404
     if inv['status'] != InvoiceStatus.ISSUED:
         return jsonify({'success': False, 'message': '僅限已開立的發票'}), 400
 
     try:
-        ecpay = _get_ecpay()
+        # [A4] 用開立時的店家／機台設定，且商店代號必須相同
+        ecpay, _cfg = _get_ecpay(_invoice_store_id(inv), inv.get('terminal_id') or None,
+                                 expect_merchant=inv.get('merchant_id') or None)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    try:
         result = ecpay.void(
             invoice_no=inv['invoice_no'],
             invoice_date=inv['invoice_date'],
@@ -571,6 +665,7 @@ def list_invoices():
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        store_filter=_invoice_store_filter(),   # [A2]
     )
     return jsonify({'success': True, 'data': data})
 
@@ -593,6 +688,6 @@ def get_invoice(inv_id):
       404: {description: 不存在}
     """
     inv = Invoice.find_by_id(inv_id)
-    if not inv:
+    if not inv or not _invoice_owned(inv):   # [A2]
         return jsonify({'success': False, 'message': '發票不存在'}), 404
     return jsonify({'success': True, 'data': inv})

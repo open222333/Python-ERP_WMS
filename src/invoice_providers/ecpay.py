@@ -127,20 +127,73 @@ class ECPayInvoice:
         return self._post('/B2CInvoice/Invalid', data)
 
 
-def build_ecpay_items(pos_items: list) -> list:
-    """將 POS 品項轉換為 ECPay Items 格式"""
+def build_ecpay_items(pos_items: list, sales_amount: int = None) -> list:
+    """
+    將 POS 品項轉換為 ECPay Items 格式。
+
+    [D3] 品項金額合計必須等於發票總額（SalesAmount）。原本直接用折扣前單價，
+    訂單有折扣時合計 ≠ 總額而被退件；單價也用 int() 直接捨去小數。
+    現在把總額依各品項金額比例分攤（最大餘數法，合計精確等於 sales_amount），
+    並維持「數量 × 單價 = 金額」皆為整數：分攤後金額無法被數量整除時，
+    拆成兩行（r 份單價 p+1、其餘單價 p）。
+
+    sales_amount：發票總額（整數元）。None = 不分攤，等於品項小計四捨五入。
+    """
+    rows = []
+    for item in pos_items:
+        qty = int(item.get('quantity', 1) or 0)
+        if qty <= 0:
+            continue
+        price = float(item.get('unit_price', 0) or 0)
+        rows.append({
+            'name':  item.get('product_name') or '商品',
+            'unit':  item.get('unit') or '份',
+            'qty':   qty,
+            'gross': max(0.0, qty * price),
+        })
+    gross_total = sum(r['gross'] for r in rows)
+    if sales_amount is None:
+        sales_amount = int(round(gross_total))
+    sales_amount = int(sales_amount)
+    if sales_amount <= 0:
+        raise ValueError('發票金額必須大於 0')
+
+    if not rows or gross_total <= 0:
+        # 無可分攤的品項金額（例如全部 0 元）：以單一品項開立總額
+        rows = [{'name': '商品', 'unit': '份', 'qty': 1, 'gross': float(sales_amount)}]
+        gross_total = float(sales_amount)
+
+    # 最大餘數法：先取整數部分，差額依小數部分由大到小各補 1
+    shares = [r['gross'] * sales_amount / gross_total for r in rows]
+    alloc = [int(x) for x in shares]
+    remain = sales_amount - sum(alloc)
+    for idx in sorted(range(len(rows)), key=lambda k: shares[k] - alloc[k], reverse=True)[:remain]:
+        alloc[idx] += 1
+
     result = []
-    for idx, item in enumerate(pos_items, start=1):
-        qty   = int(item.get('quantity', 1))
-        price = int(item.get('unit_price', 0))
+    def _line(row, count, price):
         result.append({
-            'ItemSeq':     idx,
-            'ItemName':    item.get('product_name', '商品'),
-            'ItemCount':   qty,
-            'ItemWord':    item.get('unit', '份'),
+            'ItemSeq':     len(result) + 1,
+            'ItemName':    row['name'],
+            'ItemCount':   count,
+            'ItemWord':    row['unit'],
             'ItemPrice':   price,
             'ItemTaxType': '1',
-            'ItemAmount':  qty * price,
+            'ItemAmount':  count * price,
             'ItemRemark':  '',
         })
+
+    for row, amount in zip(rows, alloc):
+        if amount <= 0:
+            continue
+        q = row['qty']
+        p, r = divmod(amount, q)
+        if r == 0:
+            _line(row, q, p)
+        else:
+            _line(row, r, p + 1)          # r 份多 1 元
+            if q - r > 0 and p > 0:
+                _line(row, q - r, p)
+            elif q - r > 0:               # p == 0：其餘份數 0 元，不另列
+                pass
     return result

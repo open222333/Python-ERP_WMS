@@ -14,12 +14,17 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from src.models.delivery import DeliveryOrder, DeliverySettings
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, require_hq, get_store_filter, is_hq, store_allowed
 from src.constants import DeliveryOrderStatus
 from src.services import delivery_service
 from app.delivery.views.base import (
     app_delivery, logger, _get_ubereats_client, _get_foodpanda_client,
 )
+
+
+def _owned(order: dict) -> bool:
+    """[A2] 訂單屬於可存取的店家；未歸屬分店（store_ref=None）的訂單只有總部可存取"""
+    return is_hq() or (bool(order.get('store_ref')) and store_allowed(order['store_ref']))
 
 
 @app_delivery.route('/orders', methods=['GET'])
@@ -58,6 +63,7 @@ def list_orders():
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        store_filter=get_store_filter('store_ref'),   # [A2] 店家帳號只看本店；未歸屬分店的訂單限總部
     )
     return jsonify({'success': True, 'data': data})
 
@@ -86,7 +92,7 @@ def get_order(oid):
     except (InvalidId, Exception):
         return jsonify({'success': False, 'message': 'ID 格式無效'}), 400
     order = DeliveryOrder.find_by_id(oid)
-    if not order:
+    if not order or not _owned(order):
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
     return jsonify({'success': True, 'data': order})
 
@@ -127,7 +133,7 @@ def update_order_status(oid):
         return jsonify({'success': False, 'message': '請指定狀態'}), 400
 
     order = DeliveryOrder.find_by_id(oid)
-    if not order:
+    if not order or not _owned(order):   # [A2]
         return jsonify({'success': False, 'message': '訂單不存在'}), 404
 
     # [D1] 先驗證轉移是否合法，再呼叫平台 API（避免對平台送出本系統不接受的變更）
@@ -177,6 +183,7 @@ def update_order_status(oid):
 @app_delivery.route('/sync/<platform>', methods=['POST'])
 @jwt_required()
 @require_role('admin', 'operator')
+@require_hq   # [A2] 平台金鑰為全域設定（見 OPTIMIZATION_REPORT A12），拉單影響所有店家
 def sync_orders(platform):
     """
     主動從平台拉取最新訂單

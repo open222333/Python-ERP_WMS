@@ -21,6 +21,19 @@ from src.constants import OrderStatus
 # [REFACTOR] pydantic 驗證層：型別/結構防線（必填檢查仍由下方手寫檢查負責，保留原訊息）
 from src.schemas.base import validate_payload, apply_coerced
 from src.schemas.domain import InOutOrderCreate, InOutOrderItemPayload
+from src.permissions import allowed_warehouse_ids, warehouse_allowed
+
+
+def _owned_order(cfg, oid):
+    """[A2] 取單據並驗證屬於本店倉庫；他店單據視同不存在（回 None）"""
+    order = cfg.model.find_by_id(oid)
+    if not order or not warehouse_allowed(order.get('warehouse_id')):
+        return None
+    return order
+
+
+def _not_found(cfg):
+    return jsonify({'success': False, 'message': f'{cfg.noun}不存在'}), 404
 
 
 class OrderViewConfig:
@@ -44,19 +57,22 @@ def list_orders(cfg):
     warehouse_id = request.args.get('warehouse_id', '')
     limit = min(int(request.args.get('limit', 50)), 200)
     offset = int(request.args.get('offset', 0))
+    if warehouse_id and not warehouse_allowed(warehouse_id):   # [A2]
+        return jsonify({'success': True, 'data': []})
     data = cfg.model.find_all(
         status=status or None,
         warehouse_id=warehouse_id or None,
         limit=limit,
-        offset=offset
+        offset=offset,
+        warehouse_ids=allowed_warehouse_ids(),
     )
     return jsonify({'success': True, 'data': data})
 
 
 def get_order(cfg, oid):
-    order = cfg.model.find_by_id(oid)
+    order = _owned_order(cfg, oid)
     if not order:
-        return jsonify({'success': False, 'message': f'{cfg.noun}不存在'}), 404
+        return _not_found(cfg)
     return jsonify({'success': True, 'data': order})
 
 
@@ -68,7 +84,7 @@ def create_order(cfg):
         return err
     if not data.get('warehouse_id'):
         return jsonify({'success': False, 'message': '請指定倉庫'}), 400
-    w = Warehouse.find_by_id(data['warehouse_id'])
+    w = Warehouse.find_by_id(data['warehouse_id']) if warehouse_allowed(data['warehouse_id']) else None  # [A2]
     if not w:
         return jsonify({'success': False, 'message': '倉庫不存在'}), 404
     data['warehouse_name'] = w['name']
@@ -79,8 +95,10 @@ def create_order(cfg):
 
 def update_order(cfg, oid):
     data = request.get_json(silent=True) or {}
+    if not _owned_order(cfg, oid):   # [A2]
+        return _not_found(cfg)
     if 'warehouse_id' in data:
-        w = Warehouse.find_by_id(data['warehouse_id'])
+        w = Warehouse.find_by_id(data['warehouse_id']) if warehouse_allowed(data['warehouse_id']) else None
         if not w:
             return jsonify({'success': False, 'message': '倉庫不存在'}), 404
         data['warehouse_name'] = w['name']
@@ -96,6 +114,8 @@ def add_item(cfg, oid):
     if err:
         return err
     apply_coerced(data, payload, ('expected_qty', 'qty', 'price', 'unit_price'))
+    if not _owned_order(cfg, oid):   # [A2]
+        return _not_found(cfg)
     if not data.get('product_id'):
         return jsonify({'success': False, 'message': '請指定產品'}), 400
     if cfg.validate_item_qty:
@@ -120,6 +140,8 @@ def update_item(cfg, oid, item_id):
     if err:
         return err
     apply_coerced(data, payload, ('expected_qty', 'qty', 'price', 'unit_price'))
+    if not _owned_order(cfg, oid):   # [A2]
+        return _not_found(cfg)
     if cfg.validate_item_qty and 'expected_qty' in data:
         expected_qty = data['expected_qty']
         if expected_qty <= 0:
@@ -130,15 +152,17 @@ def update_item(cfg, oid, item_id):
 
 
 def remove_item(cfg, oid, item_id):
+    if not _owned_order(cfg, oid):   # [A2]
+        return _not_found(cfg)
     if not cfg.model.remove_item(oid, item_id):
         return jsonify({'success': False, 'message': '刪除失敗'}), 400
     return jsonify({'success': True})
 
 
 def confirm_order(cfg, oid):
-    order = cfg.model.find_by_id(oid)
+    order = _owned_order(cfg, oid)   # [A2]
     if not order:
-        return jsonify({'success': False, 'message': f'{cfg.noun}不存在'}), 404
+        return _not_found(cfg)
     if cfg.check_stock_on_confirm:
         if order['status'] == OrderStatus.CONFIRMED:
             return jsonify({'success': True, 'message': '已確認'}), 200
@@ -170,9 +194,13 @@ def complete_order(cfg, oid):
     qtys = data.get(cfg.qtys_key)  # {item_id: qty}
     operator = get_jwt_identity()
 
+    existing = cfg.model.find_by_id(oid)
+    if existing and not warehouse_allowed(existing.get('warehouse_id')):   # [A2] 他店單據
+        return _not_found(cfg)
+
     order = None
     if cfg.strict_complete:
-        order = cfg.model.find_by_id(oid)
+        order = existing
         if order is None:
             return jsonify({'success': False, 'message': f'{cfg.noun}不存在'}), 404
         if qtys is not None:
@@ -193,9 +221,9 @@ def complete_order(cfg, oid):
 
 
 def cancel_order(cfg, oid):
-    order = cfg.model.find_by_id(oid)
+    order = _owned_order(cfg, oid)   # [A2]
     if not order:
-        return jsonify({'success': False, 'message': f'{cfg.noun}不存在'}), 404
+        return _not_found(cfg)
     if not cfg.model.cancel(oid, get_jwt_identity()):
         return jsonify({'success': False, 'message': '取消失敗，已完成的單據無法取消'}), 400
     Log.create(get_jwt_identity(), f'取消{cfg.noun}', f"order_no={order['order_no']}")

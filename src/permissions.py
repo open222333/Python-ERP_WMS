@@ -31,23 +31,83 @@ def require_role(*roles):
     return decorator
 
 
-def get_store_filter() -> dict:
+def _claims_store_oids(claims: dict):
+    """None = 總部／super_admin（不限店家）；否則為可存取的 store ObjectId 清單"""
+    role = claims.get('role', 'viewer')
+    store_ids = claims.get('store_ids', []) or []
+    if role == 'super_admin' or not store_ids:
+        return None
+    oids = [ObjectId(sid) for sid in store_ids if sid]
+    return oids or None
+
+
+def store_filter_from_claims(claims: dict, field: str = 'store_id') -> dict:
+    """依 JWT claims（或 SSE ticket 內容）產生店家過濾條件，規則同 get_store_filter"""
+    oids = _claims_store_oids(claims)
+    if oids is None:
+        return {}
+    return {field: oids[0]} if len(oids) == 1 else {field: {'$in': oids}}
+
+
+def get_store_filter(field: str = 'store_id') -> dict:
     """回傳 MongoDB 查詢條件。
     - super_admin 或無 store_ids → {} （查全部）
     - 單一店家帳號 → {'store_id': ObjectId(...)}
     - 多店家帳號   → {'store_id': {'$in': [...]}}
+    field：欄位名稱不是 store_id 時指定（例如外送訂單的 store_ref）
     """
-    claims = get_jwt()
-    role = claims.get('role', 'viewer')
-    store_ids = claims.get('store_ids', [])
-    if role == 'super_admin' or not store_ids:
-        return {}
-    oids = [ObjectId(sid) for sid in store_ids if sid]
-    if not oids:
-        return {}
-    if len(oids) == 1:
-        return {'store_id': oids[0]}
-    return {'store_id': {'$in': oids}}
+    return store_filter_from_claims(get_jwt(), field)
+
+
+# ── [A2] 多店家隔離共用 helper ─────────────────────────────
+def is_hq() -> bool:
+    """總部帳號（無綁定店家）或 super_admin：可存取全部店家與全域設定"""
+    return _claims_store_oids(get_jwt()) is None
+
+
+def require_hq(fn):
+    """[A2] 影響所有店家的全域設定／全域資料寫入，限總部帳號（需放在 jwt_required 之後）"""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_hq():
+            return jsonify({'success': False, 'message': '此操作影響所有店家，僅限總部帳號'}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def allowed_store_ids():
+    """None = 不限；否則為可存取的 store ObjectId 清單"""
+    return _claims_store_oids(get_jwt())
+
+
+def store_allowed(store_id) -> bool:
+    oids = allowed_store_ids()
+    if oids is None:
+        return True
+    try:
+        return ObjectId(str(store_id)) in oids
+    except Exception:
+        return False
+
+
+def allowed_warehouse_ids():
+    """None = 不限；否則為所屬店家的倉庫 ObjectId 清單（庫存、異動、出入庫依倉庫隔離）"""
+    oids = allowed_store_ids()
+    if oids is None:
+        return None
+    from src.mongo import get_db
+    return [w['_id'] for w in get_db()['warehouses'].find(
+        {'store_id': {'$in': oids}}, {'_id': 1})]
+
+
+def warehouse_allowed(warehouse_id) -> bool:
+    wids = allowed_warehouse_ids()
+    if wids is None:
+        return True
+    try:
+        return ObjectId(str(warehouse_id)) in wids
+    except Exception:
+        return False
 
 
 def get_current_store_id() -> str | None:

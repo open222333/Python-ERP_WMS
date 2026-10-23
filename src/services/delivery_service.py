@@ -12,6 +12,8 @@
 """
 import logging
 
+from pymongo.errors import DuplicateKeyError
+
 from src.constants import DeliveryOrderStatus as S
 from src.models.delivery import DeliveryOrder, DeliverySettings
 
@@ -98,7 +100,19 @@ def ingest_normalized(normalized: dict, operator: str = 'system') -> tuple:
             existing['_id'], to_status, operator,
             platform_status=normalized.get('platform_status'))
 
-    oid = DeliveryOrder.create_from_normalized(normalized)
+    try:
+        oid = DeliveryOrder.create_from_normalized(normalized)
+    except DuplicateKeyError:
+        # [A5] 並發下另一個請求（webhook 重送／主動拉單）剛建立同一張單：改走既有單的狀態推進
+        existing = DeliveryOrder.find_by_external(
+            normalized['platform'], normalized.get('external_order_id', ''))
+        if not existing:
+            raise
+        info = {}
+        if normalized.get('status'):
+            info = change_status(existing['_id'], normalized['status'], operator,
+                                 platform_status=normalized.get('platform_status'))
+        return existing['_id'], False, info
     order = DeliveryOrder.find_by_id(oid)
     info = {}
     if order and order['status'] in S.ACCEPTED_STATES:

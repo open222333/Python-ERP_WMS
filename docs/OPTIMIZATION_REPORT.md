@@ -75,7 +75,7 @@
 | N7 | nginx 安全 headers 不完整 | `conf/nginx/conf.d/default.conf.{cloudflare,https-letsencrypt}.template` 的 HSTS header **已寫好但被註解掉**；全站缺 X-Frame-Options / X-Content-Type-Options / Referrer-Policy。已驗證閒置的靜態資源快取、gzip 皆正確，僅安全 header 這塊缺 |
 | ~~N8~~ | ~~api 容器無資源限制~~（✅ 2026-10-08 完成） | `docker-compose.api.yml` 已加 `deploy.resources`（預設 512m，`API_MEM_LIMIT` 可調），同批完成 gunicorn 少程序多執行緒與匯出串流，見 `docs/FIXES.md` |
 | N9 | 死的日誌檔設定 | `src/__init__.py` 的 `LOG_PATH`（建立 `logs/` 資料夾）與對應的 docker volume mount，目前完全沒有 FileHandler 寫入——gunicorn 的 `accesslog/errorlog='-'` 輸出到 stdout（Docker 慣例，這部分正確），但 `logs/` 資料夾本身從未被使用，屬死設定，可清除或補上實際用途 |
-| N10 | 金流／webhook 模組零測試覆蓋（**delivery 部分已完成 2026-07-17**） | ~~`delivery`~~ 已補 `tests/unit/test_delivery.py` 22 條（webhook 歸屬/自動接單、對應解析三層順序、linked_products 跨倉扣庫存、庫存不足、防重複、API 權限），並同批完成 view 拆分（`app/delivery/views/` 套件）與菜單品項對應功能。**尚缺**：`invoice`（598 行 view + 132 行 model，ECPay 電子發票開立/作廢）、`analytics`（240 行，儀表板統計）仍無測試，invoice 涉稅務合規，風險最高 |
+| N10 | 金流／webhook 模組零測試覆蓋（**delivery 已完成 2026-07-17；invoice 已完成 2026-10-24，`tests/unit/test_invoice.py`**） | ~~`delivery`~~ 已補 `tests/unit/test_delivery.py` 22 條（webhook 歸屬/自動接單、對應解析三層順序、linked_products 跨倉扣庫存、庫存不足、防重複、API 權限），並同批完成 view 拆分（`app/delivery/views/` 套件）與菜單品項對應功能。**尚缺**：`invoice`（598 行 view + 132 行 model，ECPay 電子發票開立/作廢）、`analytics`（240 行，儀表板統計）仍無測試，invoice 涉稅務合規，風險最高 |
 
 **查證後排除的疑似項目**（避免誤導，記錄於此供参考）：
 - ~~JWT secret（`conf/flask.json`）被提交進 git~~ — 已用 `git ls-files` 與 `git check-ignore` 驗證，該檔案有被 `conf/.gitignore` 正確排除，**不是真實問題**
@@ -108,19 +108,62 @@
 |---|---|---|---|
 | ~~D1~~ | ~~外送平台訂單狀態無轉換層~~（✅ 2026-10-09 完成，見 FIXES.md） | `app/delivery/adapters/ubereats.py`／`foodpanda.py` 的 `normalize_order`、`src/models/delivery.py` `create_from_normalized` | 平台狀態只轉小寫就寫入（UberEats `CREATED`/`ACCEPTED`/`CANCELED`），系統只認 `new`/`confirmed`/`cancelled`：新單狀態成為未知值 `created`；後續平台狀態更新被 `update_status` 視為非法值靜默忽略，**平台端取消永遠不會同步**。另外終態以外的轉移不設限（`confirmed` 可退回 `new`）。建議：各 adapter 加平台狀態 → 內部狀態對照表，並套用合法轉移表 |
 | ~~D2~~ | ~~三種銷售管道扣庫規則不一致~~（✅ 2026-10-09 完成，見 FIXES.md） | `src/services/pos_service.py`、`app/delivery/views/orders.py`、`src/models/pos.py` `create_from_cust_order` | POS 結帳扣庫、退款回補；外送 confirm 扣庫，**取消不回補、銷售紀錄保留**；掃碼點餐**完全不扣庫**（菜單品項 `linked_products` 未被使用）。庫存會逐漸偏離實際，營收也會多算已取消外送單。建議：統一「確認扣庫／取消或退款回沖」規則，外送取消時同步作廢對應 POS 單並回補 |
-| D3 | 有折扣的訂單無法開立電子發票 | `src/invoice_providers/ecpay.py` `build_ecpay_items`、`app/invoice/view.py` issue | Items 取折扣前單價，合計為小計；`SalesAmount` 為折扣後總額，依 ECPay 規格兩者須相等，會被拒。單價與總額另以 `int()` 截斷小數（例：9 折 139.5 → 139）。建議：折扣以負項或依比例分攤至品項，金額以四捨五入並確保合計相等 |
+| ~~D3~~ | ~~有折扣的訂單無法開立電子發票~~（✅ 2026-10-24 完成，見 FIXES.md） | `src/invoice_providers/ecpay.py` `build_ecpay_items`、`app/invoice/view.py` issue | Items 取折扣前單價，合計為小計；`SalesAmount` 為折扣後總額，依 ECPay 規格兩者須相等，會被拒。單價與總額另以 `int()` 截斷小數（例：9 折 139.5 → 139）。建議：折扣以負項或依比例分攤至品項，金額以四捨五入並確保合計相等 |
 | D4 | 營收報表以 UTC 分日 | `src/models/pos.py` summary 的 `$dateToString`、`app/pos/view.py` 日期參數 | 未指定 `timezone`，查詢日期亦當 UTC：台灣 00:00–08:00 的銷售歸到前一天，08:00 前「今天」顯示昨天；單號日期亦為 UTC。建議：報表與查詢一律以 `Asia/Taipei` 換算（`$dateToString` 加 `timezone`、查詢區間轉 UTC），儲存維持 UTC 不變 |
 
 **架構**
 
 | # | 問題 | 位置 | 說明 |
 |---|---|---|---|
-| D5 | SSE 長連線佔用請求執行緒且無心跳 | `app/customer_order/view.py` `stream_orders`、`customer_stream` | 每支顧客手機、每台廚房看板固定佔一條 gthread（全站預設 2 程序 × 4 執行緒 = 8）；只在資料變動時寫出、無心跳，客人關頁後偵測不到斷線，需等該桌有變動或結帳才釋放。**數桌客人同時在線即可佔滿執行緒，後台與 POS 請求排隊卡住**。短期：每 15 秒送 `: ping` 心跳讓斷線可被偵測；長期：SSE 拆到獨立 async/gevent 服務或改 Redis pub/sub |
+| ~~D5~~ | ~~SSE 長連線佔用請求執行緒且無心跳~~（✅ 2026-10-24 心跳完成；SSE 拆獨立服務仍待做） | `app/customer_order/view.py` `stream_orders`、`customer_stream` | 每支顧客手機、每台廚房看板固定佔一條 gthread（全站預設 2 程序 × 4 執行緒 = 8）；只在資料變動時寫出、無心跳，客人關頁後偵測不到斷線，需等該桌有變動或結帳才釋放。**數桌客人同時在線即可佔滿執行緒，後台與 POS 請求排隊卡住**。短期：每 15 秒送 `: ping` 心跳讓斷線可被偵測；長期：SSE 拆到獨立 async/gevent 服務或改 Redis pub/sub |
 | D6 | 庫位（location）只做一半 | `src/models/pos.py` 結帳扣庫與回滾、`app/inventory/view.py` adjust | 僅盤點會寫入 `location_id`，入庫/出庫/POS/外送皆忽略。扣庫只找「同商品同倉、單筆數量足夠」的任一列，庫存分散於多庫位時總量足夠仍判定不足；結帳失敗回滾的 `update_one` 未指定庫位，**可能補到其他庫位列**。建議：決定庫位是否為正式功能——是則各流程補齊並以總量判斷、回滾依實際扣減列；否則移除庫位維度 |
 | D7 | 銷售／外送單號隨機產生 | `src/models/pos.py` `_gen_order_no`、`src/models/delivery.py` `_gen_order_no` | 「日期＋4 碼隨機」，無唯一索引、非連號，不利對帳與稽核；已有 `counters` 連號機制但僅用於出入庫與點單。建議：改用 `counters` 產生連號並加 `order_no` 唯一索引 |
 | D8 | 每店設定兩套存法 | `delivery_settings`（專屬 collection）vs `system_settings`（`invoice_settings_{store_id}` 等字串拼接 key） | 驗證、遷移、店家隔離需各寫一套。建議：每店設定統一為專屬 collection（`store_id` + 類型），全域設定才留在 `system_settings` |
 
 **建議順序**：D1、D2（庫存與營收長期失真）→ D5 心跳（改動小、營業尖峰即會發生）→ D3、D4（稅務與日結）→ D6–D8。
+
+## 第五輪盤點：架構與資料庫（2026-10-08 盤點，2026-10-24 補登）
+
+盤點當時只在對話中回報，此處補登。與前四輪不重複；2026-10-24 以程式重新確認，除標示完成者外皆仍存在。A1 以測試實際重現，其餘為讀程式碼確認。
+
+**正確性與資安（P0）**
+
+| # | 問題 | 位置 | 說明 |
+|---|---|---|---|
+| ~~A1~~ | ~~掃碼點餐銷售從第 2 筆起漏建~~（✅ 2026-10-09 隨 D2 完成，見 FIXES.md） | `app/__init__.py` `pos_delivery_order` 索引 | unique + sparse 複合索引只要有任一欄位就收錄，`source='cust_order'`、無 `delivery_order_id` 的銷售從第 2 筆起撞重複鍵；`bulk_import` 多筆同 source 同樣失敗。已改 `partialFilterExpression` |
+| ~~A2~~ | ~~多店家隔離缺漏~~（✅ 2026-10-24 完成，見 FIXES.md） | `app/inventory/view.py`、`app/common/order_views.py`（出入庫）、`app/invoice/view.py`、`app/delivery/views/*`、`app/analytics/view.py`、`app/log/view.py` | 只有 pos、menu、warehouse、customer_order 使用 `get_store_filter()`，違反 CLAUDE.md 硬規則。例：A 店 operator 可帶 B 店倉庫 ID 呼叫 `POST /inventory/adjust` 改 B 店庫存（`inventory/view.py` adjust 的 `Warehouse.find_by_id` 未帶 store_filter），可確認／完成 B 店出入庫單，可看全部店家發票。建議：依 warehouse／store 驗證所有權，補 `test_store_isolation_api.py` 對應案例 |
+| ~~A3~~ | ~~同一訂單可能重複開立電子發票~~（✅ 2026-10-24 完成） | `app/invoice/view.py` issue、`src/models/invoice.py` `find_by_order` | 先查再建無鎖，且只擋 `issued`，送出中（`pending`）的不擋；`find_by_order` 無排序，訂單有多筆發票時可能取到 error／voided 那筆而放行；每次 RelateNumber 後綴不同，ECPay 端也不會擋。建議：`invoices` 加「排除 voided／error」的 `order_id` 部分唯一索引，建立改為原子寫入 |
+| ~~A4~~ | ~~店家專屬 ECPay 設定從未生效~~（✅ 2026-10-24 完成） | `app/invoice/view.py` issue／void 呼叫 `_get_ecpay()` 未帶參數 | 開立與作廢永遠用全域金鑰，店家設定與機台金鑰覆寫無效；發票紀錄未存開立時的商店代號，店家換商店代號後作廢會對不上。建議：依銷售單 `store_id`（與機台）取設定，發票記錄 `merchant_id`，作廢用同一組 |
+| ~~A5~~ | ~~外送訂單可能重複建立~~（✅ 2026-10-24 完成） | `delivery_orders` 無 `(platform, external_order_id)` 唯一索引；`src/services/delivery_service.py` `ingest_normalized` 先查再建 | 平台重送 webhook 與主動拉單同時發生時建出兩筆，各自建銷售、扣兩次庫存；每次 webhook 亦需掃整個 collection。建議：加唯一索引，建立改 upsert 或捕捉重複鍵 |
+| ~~A6~~ | ~~操作紀錄權限過寬與正規表達式注入~~（✅ 2026-10-24 店家過濾＋關鍵字跳脫完成；`logs_username_time`／`logs_action_time` 仍用不到，待評估移除） | `src/models/log.py` `_build_query`、`app/log/view.py` `GET /log/` | `GET /log/` 任何登入角色（含 cashier）皆可看所有店家的紀錄；username／action 以未跳脫、不分大小寫的正規表達式查詢，可送出極耗資源的表達式；也因此 `logs_username_time`／`logs_action_time` 兩個索引實際用不到。建議：限 admin（或依店家過濾）、輸入 `re.escape`、改前綴比對或移除無用索引 |
+
+**資料庫結構與索引（P1）**
+
+| # | 問題 | 說明 |
+|---|---|---|
+| ~~A7~~ | ~~常用查詢缺索引~~（✅ 2026-10-24 完成） | 缺 `delivery_mappings(platform, external_product_id)`（每次接單都查）、`invoices.order_id`（見 A3）、`system_settings.key`（應 unique）、`warehouse_locations.warehouse_id`；`logs`／`stock_movements` 依 `created_at` 清除過期資料時無以它開頭的索引而整表掃描（`GET /log/` 每次開啟都會觸發） |
+| A8 | 跨集合參照型別不一致 | `invoices.order_id`、`pos_orders.delivery_order_id`／`cust_order_id`、`stock_movements.reference_id`、`delivery_settings.mapping_template_id` 存字串，對應的 `_id` 為 ObjectId，無法用 `$lookup` 關聯，報表與資料修復困難 |
+| A9 | 外送平台原始資料永久保存 | `delivery_orders.raw_payload` 保存完整平台 JSON 且無期限；列表已排除此欄位（2026-10-08 記憶體優化），但儲存量仍持續成長。建議：TTL 或只保留必要欄位 |
+
+**架構（P1）**
+
+| # | 問題 | 說明 |
+|---|---|---|
+| A10 | 每次啟動自動刪資料、遷移無版本 | `app/__init__.py` `_ensure_indexes` 啟動時刪除重複 inventory 文件，保留哪筆不確定，可能刪掉數量正確的那筆；其餘資料遷移每次開機都跑、無版本紀錄。建議：改為有版本紀錄、手動執行的遷移腳本，刪除前人工確認 |
+| A11 | 名義上的 app factory | `app` 於模組載入時建立，Swagger／JWT／限流在 import 時初始化，`config_object` 最後才套用；`create_app` 只能呼叫一次（conftest 亦註明），測試無法切換設定（例如 `ENABLE_SWAGGER=True` 的情況測不到） |
+| A12 | 外送平台金鑰只有一組全域設定 | `config.ini` 只能設一組 UberEats store ID／foodpanda vendor code；webhook 可依平台店家代號歸屬分店，但接單、拉單、菜單同步等主動呼叫平台 API 的動作只能對一家店 |
+| A13 | 付款與發票金鑰明文存於資料庫 | ECPay `hash_key`／`hash_iv`、LINE Pay secret 明文存在 `system_settings`；API 回應有遮罩，但資料庫備份或 dump 外流即曝光。建議：加密儲存或改環境變數 |
+
+**介面小項**
+
+| # | 問題 | 說明 |
+|---|---|---|
+| U1 | 側欄「開啟收銀台」連到舊版 | `frontend/src/config/nav.ts` 連 `/pos/`（結尾斜線）→ nginx 送到舊版 Flask 模板 `app/templates/pos/index.html`；持續維護的 Vue 版 `PosView.vue` 在 `/pos`。與快速出入庫已修正的情況相同（見 FIXES.md 2026-10-23） |
+| U2 | 搜尋框缺清除按鈕 | 目前只有快速出入庫有；產品、庫存、菜單、操作紀錄等頁面的搜尋框尚未加 |
+
+**建議順序**：D5 心跳（改動最小）→ A2 多店隔離（範圍最大）→ A3、A4、D3 發票 → A5、A7 索引 → 其餘。
+
+**2026-10-24 進度**：D5、A2、A3、A4、D3、A5、A6、A7 已完成（見 FIXES.md 同日條目）。剩餘：D4、D6–D8、A8–A13、U1、U2，以及 N5–N7、N9、N10（invoice 已補測試，analytics 仍無專屬測試）。
 
 ## P0 — 高優先（建議立即修復）
 

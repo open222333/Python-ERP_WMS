@@ -51,8 +51,9 @@ class DeliveryOrder:
     @classmethod
     def find_all(cls, platform: str = None, status: str = None,
                  date_from: datetime = None, date_to: datetime = None,
-                 limit: int = 200) -> list:
-        q = {}
+                 limit: int = 200, store_filter: dict = None) -> list:
+        """store_filter：[A2] 例 {'store_ref': ObjectId}；未歸屬分店（store_ref=None）的訂單只有總部看得到"""
+        q = dict(store_filter or {})
         if platform:
             q['platform'] = platform
         if status:

@@ -16,7 +16,17 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.models.log import Log
 from src.models.settings import SystemSettings
-from src.permissions import require_role
+from src.permissions import require_role, require_hq, allowed_store_ids
+
+
+def _scoped_usernames():
+    """[A2] 店家帳號只看本店使用者的紀錄；總部回傳 None（不限）"""
+    oids = allowed_store_ids()
+    if oids is None:
+        return None
+    from src.mongo import get_db
+    return [u['username'] for u in get_db()['users'].find(
+        {'store_ids': {'$in': oids}}, {'username': 1})]
 
 logger    = logging.getLogger(__name__)
 app_log   = Blueprint('app_log', __name__)
@@ -79,13 +89,17 @@ def list_logs():
     start_date = request.args.get('start_date', '')
     end_date   = request.args.get('end_date',   '')
 
-    logs = Log.find_all(
-        limit      = limit,
-        username   = username   or None,
-        action     = action     or None,
-        start_date = start_date or None,
-        end_date   = end_date   or None,
-    )
+    try:
+        logs = Log.find_all(
+            limit      = limit,
+            username   = username   or None,
+            action     = action     or None,
+            start_date = start_date or None,
+            end_date   = end_date   or None,
+            usernames  = _scoped_usernames(),
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     return jsonify({'success': True, 'data': logs})
 
 
@@ -107,13 +121,14 @@ def log_stats():
       200:
         description: 成功
     """
-    total = Log.count_all()
+    scoped = _scoped_usernames()   # [A2]
+    total = Log.count_all(scoped)
     s = SystemSettings.get_all()
     days = request.args.get('preview_days', None, type=int)
     if days is None:
         days = int(s.get('log_retention_days', 0) or 0)
 
-    older_count = Log.count_older_than(days) if days > 0 else 0
+    older_count = Log.count_older_than(days, scoped) if days > 0 else 0
     last_cleanup = s.get('log_last_cleanup_at', None)
     return jsonify({
         'success':      True,
@@ -159,6 +174,7 @@ def export_logs():
             action     = action     or None,
             start_date = start_date or None,
             end_date   = end_date   or None,
+            usernames  = _scoped_usernames(),   # [A2]
         )
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
@@ -194,6 +210,7 @@ def export_logs():
 @app_log.route('/import', methods=['POST'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 匯入／清除作用於全部店家的紀錄
 def import_logs():
     """
     批次匯入操作紀錄（CSV 或 JSON）
@@ -267,6 +284,7 @@ def import_logs():
 @app_log.route('/cleanup', methods=['POST'])
 @jwt_required()
 @require_role('admin')
+@require_hq
 def cleanup_logs():
     """
     立即清除超齡操作紀錄（需 admin）

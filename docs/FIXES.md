@@ -1,5 +1,20 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-10-24 多店隔離、電子發票、SSE 心跳、索引（`# [A2]` `# [A3]` `# [A4]` `# [A5]` `# [A6]` `# [A7]` `# [D3]` `# [D5]` 標記）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `app/customer_order/view.py` | [D5] SSE 只在資料變動時寫出，客人關頁後偵測不到斷線，執行緒要等到該桌有變動或結帳才釋放；廚房串流不分店家 | 資料沒變時每 15 秒送 `: ping` 心跳，斷線時寫入失敗即結束迴圈；廚房串流依 ticket 內 store_ids 過濾 |
+| `src/permissions.py` | [A2] 隔離邏輯散落、只有 4 個模組使用 | 新增 `store_filter_from_claims`、`is_hq`、`require_hq`、`store_allowed`、`allowed_store_ids`、`allowed_warehouse_ids`、`warehouse_allowed`；`get_store_filter` 支援指定欄位（如外送的 `store_ref`） |
+| `app/inventory/view.py`、`app/common/order_views.py`、`app/analytics/view.py` | [A2] 庫存、異動、出入庫、儀表板不分店家：A 店可改 B 店庫存、確認／完成 B 店出入庫單 | 依倉庫所屬店家過濾與驗證；他店資料回 404 或空清單 |
+| `app/delivery/views/*` | [A2] 外送訂單與店家設定不分店家；全域設定、品項對應、拉單、菜單同步任何店家 admin 都能改 | 訂單依 `store_ref` 過濾（未歸屬分店限總部）；全域設定、對應、模板、拉單、菜單同步限總部（403） |
+| `app/log/view.py`、`src/models/log.py` | [A2][A6] 任何角色可看全部店家紀錄；關鍵字直接當正規表達式 | 店家帳號只看本店使用者的紀錄；關鍵字 `re.escape` 後才比對；匯入與清除限總部 |
+| `app/invoice/view.py`、`src/models/invoice.py` | [A2] 發票不分店家；[A3] 先查再建無鎖、只擋 issued、`find_by_order` 不排序，可能重複開立；[A4] 開立／作廢永遠用全域金鑰，店家設定與機台覆寫無效 | 依店家過濾（舊發票由銷售單推得店家）；`active_order_id` 唯一索引＋開立中回 409，error／voided 後可重開；依店家（啟用且有商店代號）→ 全域回退＋機台覆寫決定金鑰，發票記錄 `store_id`／`terminal_id`／`merchant_id`，作廢須同一商店代號；設定有誤時不建立發票紀錄 |
+| `src/invoice_providers/ecpay.py` | [D3] 品項用折扣前單價，合計 ≠ 發票金額；金額用 `int()` 捨去 | 依比例分攤（最大餘數法）使合計精確等於四捨五入後的發票金額，且數量 × 單價 = 金額皆為整數（無法整除時拆兩行）；2 萬筆隨機案例驗證 |
+| `app/__init__.py`、`src/services/delivery_service.py` | [A5] 外送訂單無唯一索引，並發推播可建出兩筆；[A7] 常用查詢缺索引 | `delivery_orders(platform, external_order_id)` 部分唯一索引，建立撞鍵時改走既有單；補 `invoices`、`delivery_mappings`、`warehouse_locations`、`logs.created_at`、`stock_movements.created_at`、`system_settings.key`（unique，失敗降級）索引 |
+
+測試：`test_sse_heartbeat.py`、`test_store_isolation_more.py`、`test_invoice.py`、`test_delivery_race.py`（新增 33 條；隔離 15 條在修改前的程式上全數失敗）。
+
 ## 2026-10-23 快速出入庫／庫存移動紀錄手機版（`// [MOBILE]` 標記）
 
 | 檔案 | 問題 | 修復說明 |

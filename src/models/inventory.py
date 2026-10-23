@@ -26,10 +26,13 @@ class Inventory:
 
     @classmethod
     def find_all(cls, warehouse_id: str = None, product_id: str = None,
-                 limit: int = 2000) -> list:
+                 limit: int = 2000, warehouse_ids: list = None) -> list:
+        """warehouse_ids：[A2] 店家帳號可存取的倉庫清單（None = 不限）"""
         q = {}
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
+        elif warehouse_ids is not None:
+            q['warehouse_id'] = {'$in': list(warehouse_ids)}
         if product_id:
             q['product_id'] = ObjectId(product_id)
         docs = cls._col().find(q).limit(limit)
@@ -169,10 +172,13 @@ class StockMovement:
     def find_all(cls, warehouse_id: str = None, product_id: str = None,
                  movement_type: str = None, limit: int = 200,
                  product_only: bool = False,
-                 date_from: datetime = None, date_to: datetime = None) -> list:
+                 date_from: datetime = None, date_to: datetime = None,
+                 warehouse_ids: list = None) -> list:
         q = {}
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
+        elif warehouse_ids is not None:
+            q['warehouse_id'] = {'$in': list(warehouse_ids)}
         if product_id:
             q['product_id'] = ObjectId(product_id)
         if movement_type:

@@ -163,6 +163,24 @@ def _ensure_indexes():
         # customer_orders: 廚房看板依 status 篩選
         ('customer_orders', [('status', ASCENDING), ('created_at', DESCENDING)],
          {'name': 'cust_order_status_time'}),
+        # [A5] 外送訂單：同平台同外部單號只能有一筆（webhook 重送與主動拉單同時發生時防重複建單）
+        ('delivery_orders', [('platform', ASCENDING), ('external_order_id', ASCENDING)],
+         {'name': 'delivery_platform_external', 'unique': True,
+          'partialFilterExpression': {'external_order_id': {'$type': 'string', '$gt': ''}}}),
+        ('delivery_orders', [('store_ref', ASCENDING), ('placed_at', DESCENDING)],
+         {'name': 'delivery_store_placed'}),
+        # [A3] 同一訂單同時只能有一張開立中／已開立的發票（error / voided 會移除此欄位）
+        ('invoices',        [('active_order_id', ASCENDING)],
+         {'name': 'invoices_active_order', 'unique': True, 'sparse': True}),
+        # [A7] 常用查詢補索引
+        ('invoices',        [('order_id', ASCENDING)],             {'name': 'invoices_order_id'}),
+        ('invoices',        [('store_id', ASCENDING), ('created_at', DESCENDING)],
+         {'name': 'invoices_store_time'}),
+        ('delivery_mappings', [('platform', ASCENDING), ('external_product_id', ASCENDING)],
+         {'name': 'delivery_mappings_external'}),
+        ('warehouse_locations', [('warehouse_id', ASCENDING)],     {'name': 'locations_warehouse'}),
+        ('logs',            [('created_at', DESCENDING)],          {'name': 'logs_created_at'}),
+        ('stock_movements', [('created_at', DESCENDING)],          {'name': 'mv_created_at'}),
         # [OPT] 補缺失索引：products.barcode、warehouses.code、stores.code
         ('products',        [('barcode', ASCENDING)],
          {'name': 'products_barcode'}),
@@ -192,6 +210,8 @@ def _ensure_indexes():
     _unique_indexes = [
         ('users',    [('username', ASCENDING)], 'users_username_unique'),
         ('products', [('sku', ASCENDING)],      'products_sku_unique'),
+        # [A7] 系統設定以 key 查詢，key 應唯一
+        ('system_settings', [('key', ASCENDING)], 'system_settings_key_unique'),
     ]
     for col_name, keys, idx_name in _unique_indexes:
         try:

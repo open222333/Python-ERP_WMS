@@ -9,7 +9,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from src.models.delivery import DeliveryMapping, DeliveryMappingTemplate
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, require_hq
 from app.delivery.views.base import app_delivery
 
 
@@ -28,6 +28,7 @@ def list_mappings():
 @app_delivery.route('/mappings', methods=['POST'])
 @jwt_required()
 @require_role('admin', 'operator')
+@require_hq   # [A2] 品項對應與模板為全域資料，跨店共用
 def create_mapping():
     """
     建立/更新平台品項映射。
@@ -64,6 +65,7 @@ def create_mapping():
 @app_delivery.route('/mappings/<mid>', methods=['DELETE'])
 @jwt_required()
 @require_role('admin', 'operator')
+@require_hq   # [A2] 品項對應與模板為全域資料，跨店共用
 def delete_mapping(mid):
     ok = DeliveryMapping.delete(mid)
     return jsonify({'success': ok})
@@ -83,6 +85,7 @@ def list_mapping_templates():
 @app_delivery.route('/mapping-templates/', methods=['POST'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 品項對應與模板為全域資料，跨店共用
 def create_mapping_template():
     body = request.get_json(silent=True) or {}
     name = (body.get('name') or '').strip()
@@ -100,6 +103,7 @@ def create_mapping_template():
 @app_delivery.route('/mapping-templates/<tid>/', methods=['PUT'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 品項對應與模板為全域資料，跨店共用
 def update_mapping_template(tid):
     body = request.get_json(silent=True) or {}
     name = (body.get('name') or '').strip()
@@ -120,6 +124,7 @@ def update_mapping_template(tid):
 @app_delivery.route('/mapping-templates/<tid>/', methods=['DELETE'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 品項對應與模板為全域資料，跨店共用
 def delete_mapping_template(tid):
     ok = DeliveryMappingTemplate.delete(tid)
     if not ok:

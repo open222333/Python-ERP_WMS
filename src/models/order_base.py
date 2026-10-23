@@ -62,12 +62,15 @@ class OrderBase:
 
     @classmethod
     def find_all(cls, status: str = None, warehouse_id: str = None,
-                 limit: int = 100, offset: int = 0) -> list:
+                 limit: int = 100, offset: int = 0, warehouse_ids: list = None) -> list:
+        """warehouse_ids：[A2] 店家帳號可存取的倉庫清單（None = 不限）"""
         q = {}
         if status:
             q['status'] = status
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
+        elif warehouse_ids is not None:
+            q['warehouse_id'] = {'$in': list(warehouse_ids)}
         docs = cls._col().find(q).sort('created_at', -1).skip(offset).limit(limit)
         return [_fmt_order(d) for d in docs]
 

@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from src.mongo import get_db
 
@@ -38,13 +39,14 @@ class Log:
                  username: str = None,
                  action: str = None,
                  start_date: str = None,
-                 end_date: str = None) -> list:
+                 end_date: str = None,
+                 usernames: list = None) -> list:
         """
         查詢紀錄（列表頁用），limit 限制在 1~10000。
         匯出全部請用 iter_all()，逐筆讀取不整批載入記憶體。
         start_date / end_date 格式：'YYYY-MM-DD'
         """
-        q = cls._build_query(username, action, start_date, end_date)
+        q = cls._build_query(username, action, start_date, end_date, usernames)
         limit = max(1, min(int(limit), 10000))
         cursor = cls._col().find(q, cls._PROJECTION).sort('created_at', -1).limit(limit)
         return [cls._fmt_row(log) for log in cursor]
@@ -52,26 +54,34 @@ class Log:
     @classmethod
     def iter_all(cls, username: str = None, action: str = None,
                  start_date: str = None, end_date: str = None,
-                 batch_size: int = 500):
+                 batch_size: int = 500, usernames: list = None):
         """
         [OPT-MEM] 匯出用：逐筆 yield，無筆數上限。
         cursor 每批只從 MongoDB 取 batch_size 筆，記憶體用量與總筆數無關。
         """
         # 查詢條件在呼叫當下建立（非 generator 內），日期格式錯誤會立即拋 ValueError，
         # 讓 view 在開始串流前就能回 400，而不是串流到一半才失敗。
-        q = cls._build_query(username, action, start_date, end_date)
+        q = cls._build_query(username, action, start_date, end_date, usernames)
         cursor = cls._col().find(q, cls._PROJECTION).sort('created_at', -1) \
                            .batch_size(batch_size)
         return (cls._fmt_row(log) for log in cursor)
 
     @staticmethod
     def _build_query(username: str = None, action: str = None,
-                     start_date: str = None, end_date: str = None) -> dict:
+                     start_date: str = None, end_date: str = None,
+                     usernames: list = None) -> dict:
+        """
+        username / action：關鍵字部分比對（不分大小寫）。[A6] 輸入先 re.escape，
+        只當一般文字比對，避免使用者送出極耗資源的正規表達式。
+        usernames：[A2] 店家帳號只看本店使用者的紀錄（None = 不限）。
+        """
         q: dict = {}
         if username:
-            q['username'] = {'$regex': username, '$options': 'i'}
+            q['username'] = {'$regex': re.escape(username), '$options': 'i'}
+        if usernames is not None:
+            q.setdefault('username', {})['$in'] = list(usernames)
         if action:
-            q['action'] = {'$regex': action, '$options': 'i'}
+            q['action'] = {'$regex': re.escape(action), '$options': 'i'}
         if start_date or end_date:
             dt_q: dict = {}
             if start_date:
@@ -90,15 +100,20 @@ class Log:
         return q
 
     @classmethod
-    def count_all(cls) -> int:
-        """傳回 logs collection 的總筆數。"""
+    def count_all(cls, usernames: list = None) -> int:
+        """傳回 logs collection 的總筆數；usernames 有值時只算這些使用者（[A2]）。"""
+        if usernames is not None:
+            return cls._col().count_documents({'username': {'$in': list(usernames)}})
         return cls._col().estimated_document_count()
 
     @classmethod
-    def count_older_than(cls, days: int) -> int:
+    def count_older_than(cls, days: int, usernames: list = None) -> int:
         """傳回超過 days 天的紀錄數（預覽用）。"""
         cutoff = datetime.utcnow() - timedelta(days=days)
-        return cls._col().count_documents({'created_at': {'$lt': cutoff}})
+        q = {'created_at': {'$lt': cutoff}}
+        if usernames is not None:
+            q['username'] = {'$in': list(usernames)}
+        return cls._col().count_documents(q)
 
     @classmethod
     def cleanup_old(cls, days: int) -> int:

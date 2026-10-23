@@ -45,7 +45,14 @@ from src.models.menu import Menu
 from src.models.settings import SystemSettings
 from src.cache import cached_json  # [OPT-N3] 菜單 payload Redis 快取
 from src.models.log import Log
-from src.permissions import require_role, get_store_filter, get_current_store_id
+from src.permissions import (require_role, get_store_filter, get_current_store_id,
+                             store_filter_from_claims)
+
+# [D5] SSE：每 2 秒檢查資料；資料沒變時每 15 秒送一次心跳註解（': ping'）。
+# 每條 SSE 連線佔用一條 gunicorn 執行緒，原本只在資料變動時寫出，客人關頁後
+# 偵測不到斷線，執行緒要等到該桌有變動或結帳才釋放。
+SSE_POLL_SECONDS = 2
+SSE_HEARTBEAT_SECONDS = 15
 
 app_customer_order = Blueprint('app_customer_order', __name__)
 logger = logging.getLogger(__name__)
@@ -325,15 +332,14 @@ def stream_orders():
     再以 ?ticket= 連線（EventSource 不支援自訂 header）。
     舊 ?token=JWT 路徑保留向下相容（deprecated，避免部署期間新舊前端不匹配）。
     """
-    # kitchen stream: intentionally open to all authenticated users
     ticket = request.args.get('ticket', '')
     if ticket:
         # [REFACTOR] 一次性 ticket：GETDEL 取出即失效；無效/過期/重複使用 → 401
         ticket_data = SseTicket.consume(ticket)
         if not ticket_data:
             return jsonify({'success': False, 'message': '未授權'}), 401
-        # 原 JWT claims（identity / role / store_ids）由 ticket 內容還原；
-        # 目前 stream 不依 store 過濾（開放給所有已登入使用者），行為不變
+        # [A2] 依 ticket 內的 role / store_ids 過濾：店家帳號只看本店訂單，總部看全部
+        store_filter = store_filter_from_claims(ticket_data.get('claims') or ticket_data)
     elif request.args.get('token', ''):
         # [REFACTOR] deprecated：舊版 JWT query string 相容路徑，前端已改用 ticket，日後移除
         try:
@@ -341,23 +347,30 @@ def stream_orders():
         except Exception as e:
             logger.warning('SSE /stream JWT 驗證失敗: %s', e)  # [OPT] 補記錄，不再無聲吞例外
             return jsonify({'success': False, 'message': '未授權'}), 401
+        store_filter = get_store_filter()
     else:
         return jsonify({'success': False, 'message': '未授權'}), 401
 
     def generate():
         last_hash = None
+        last_write = time.monotonic()
         while True:
             try:
-                orders = CustomerOrder.find_active()
-                stats  = CustomerOrder.today_stats()
+                orders = CustomerOrder.find_active(store_filter=store_filter)
+                stats  = CustomerOrder.today_stats(store_filter=store_filter)
                 payload = {'orders': orders, 'stats': stats}
                 h = hashlib.md5(
                     json.dumps(payload, sort_keys=True, default=str).encode()
                 ).hexdigest()
                 if h != last_hash:
                     last_hash = h
+                    last_write = time.monotonic()
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
-                time.sleep(2)
+                elif time.monotonic() - last_write >= SSE_HEARTBEAT_SECONDS:
+                    # [D5] 心跳：資料沒變也定期寫出，連線已斷時寫入會失敗而結束迴圈、釋放執行緒
+                    last_write = time.monotonic()
+                    yield ': ping\n\n'
+                time.sleep(SSE_POLL_SECONDS)
             except GeneratorExit:
                 break
             except Exception as e:
@@ -520,6 +533,7 @@ def customer_stream():
 
     def generate():
         last_hash = None
+        last_write = time.monotonic()
         while True:
             try:
                 if TableSession.is_closed(table_no):
@@ -532,10 +546,15 @@ def customer_stream():
                 ).hexdigest()
                 if h != last_hash:
                     last_hash = h
+                    last_write = time.monotonic()
                     payload = {'orders': orders, 'table_no': table_no}
                     yield f"event: order_update\ndata: {json.dumps(payload, default=str)}\n\n"
+                elif time.monotonic() - last_write >= SSE_HEARTBEAT_SECONDS:
+                    # [D5] 心跳：客人關掉頁面後，下次寫入失敗即結束，不再佔住執行緒到結帳
+                    last_write = time.monotonic()
+                    yield ': ping\n\n'
 
-                time.sleep(2)
+                time.sleep(SSE_POLL_SECONDS)
             except GeneratorExit:
                 break
             except Exception as e:

@@ -2,6 +2,8 @@
 
 > 所有路由均**無 `/api/` 前綴**。JWT 帶於 `Authorization: Bearer <token>` header。
 >
+> **多店家隔離**：綁定店家的帳號只能存取本店資料（庫存、異動、出入庫、儀表板依倉庫所屬店家；外送訂單依 `store_ref`；發票依銷售單店家；操作紀錄依使用者所屬店家），他店資料回 404 或空清單。標示「限總部」的端點影響所有店家，店家帳號呼叫回 403。總部 = 未綁定店家的帳號或 super_admin。
+>
 > **`/apidocs`（Swagger UI）預設僅開發/測試環境開啟**：`FLASK_ENV=production` 時
 > `src.ENABLE_SWAGGER` 預設為 `False`，`/apidocs`、`/apidocs/`、`/apispec_*.json`
 > 皆回 404（未註冊路由），根路由 `/` 改回傳 `{"success": true, "service": "wms-api"}`
@@ -197,13 +199,13 @@
 | GET | `/delivery/orders` | 列出外送訂單（可篩：platform/status/date） | admin/operator/cashier |
 | GET | `/delivery/orders/<oid>` | 取得單一外送訂單 | admin/operator/cashier |
 | PUT | `/delivery/orders/<oid>/status` | 更新狀態（同步至平台）。只能往前推進，非法轉移 400、並發衝突 409、相同狀態回 `changed: false`；進入已接單狀態建 POS 單並扣庫存，已接單後取消作廢 POS 單並回補（回傳 `voided_sale_id`、`restored_items`） | admin/operator |
-| POST | `/delivery/sync/<platform>` | 從平台拉取最新訂單 | admin/operator |
-| POST | `/delivery/menu/sync/<platform>` | 同步平台菜單至 WMS 菜單管理 | admin/operator |
+| POST | `/delivery/sync/<platform>` | 從平台拉取最新訂單 | admin/operator（限總部） |
+| POST | `/delivery/menu/sync/<platform>` | 同步平台菜單至 WMS 菜單管理 | admin/operator（限總部） |
 | GET | `/delivery/mappings` | 列出平台品項對照 | admin/operator |
-| POST | `/delivery/mappings` | 新增/更新對照（upsert）；目標二擇一：`product_id` 或 `menu_id`+`menu_item_id`（菜單品項對應，依 linked_products 扣庫存） | admin/operator |
+| POST | `/delivery/mappings` | 新增/更新對照（upsert）；目標二擇一：`product_id` 或 `menu_id`+`menu_item_id`（菜單品項對應，依 linked_products 扣庫存） | admin/operator（限總部；刪除與對應模板寫入亦同） |
 | DELETE | `/delivery/mappings/<mid>` | 刪除對照 | admin/operator |
 | GET | `/delivery/settings/<platform>` | 取得平台設定 | admin |
-| PUT | `/delivery/settings/<platform>` | 更新平台設定 | admin |
+| PUT | `/delivery/settings/<platform>` | 更新全域平台設定 | admin（限總部） |
 | GET | `/delivery/store/` | 列出所有店家的外送設定 | admin |
 | GET | `/delivery/store/<store_id>/settings/<platform>` | 取得指定店家平台設定 | admin |
 | PUT | `/delivery/store/<store_id>/settings/<platform>` | 更新指定店家平台設定（mapping_template_id / item_mappings / store_id / vendor_code） | admin |
@@ -217,7 +219,7 @@
 | 方法 | 路徑 | 說明 | Auth |
 |------|------|------|------|
 | GET | `/invoice/settings` | 取得 ECPay 設定（key 遮罩） | admin/operator |
-| PUT | `/invoice/settings` | 更新 ECPay 設定 | admin |
+| PUT | `/invoice/settings` | 更新全域 ECPay 設定 | admin（限總部） |
 | GET | `/invoice/store/` | 列出各店家發票設定摘要 | admin |
 | GET | `/invoice/store/<store_id>/settings` | 取得店家發票設定 | admin |
 | PUT | `/invoice/store/<store_id>/settings` | 更新店家發票設定 | admin |
@@ -226,7 +228,7 @@
 | POST | `/invoice/store/<store_id>/terminals/` | 新增終端機（自動產生 ID） | admin |
 | PUT | `/invoice/store/<store_id>/terminals/<tid>` | 修改終端機 | admin |
 | DELETE | `/invoice/store/<store_id>/terminals/<tid>` | 刪除終端機 | admin |
-| POST | `/invoice/issue` | 對已完成 POS 單開立電子發票（ECPay） | admin/operator/cashier |
+| POST | `/invoice/issue` | 對已完成 POS 單開立電子發票（ECPay）。選填 `terminal_id` 指定機台；金鑰：店家設定（啟用且有商店代號）→ 全域，機台可覆寫；品項依比例分攤折扣使合計等於發票金額。已開立回 400、開立中回 409 | admin/operator/cashier |
 | POST | `/invoice/<inv_id>/void` | 作廢已開發票（ECPay） | admin/operator |
 | GET | `/invoice/` | 列出發票（可篩：status/date） | admin/operator/cashier |
 | GET | `/invoice/<inv_id>` | 取得單一發票 | admin/operator/cashier |
@@ -235,11 +237,11 @@
 
 | 方法 | 路徑 | 說明 | Auth |
 |------|------|------|------|
-| GET | `/log/` | 列出紀錄（可篩：username/action/date）；觸發自動清理 | JWT |
+| GET | `/log/` | 列出紀錄（可篩：username/action/date，關鍵字為一般文字比對）；店家帳號只看本店使用者；觸發自動清理 | JWT |
 | GET | `/log/stats` | 紀錄總數 + 超過 N 天的數量 | JWT |
 | GET | `/log/export` | 匯出 CSV（streaming） | JWT |
-| POST | `/log/import` | 批次匯入 CSV/JSON | admin |
-| POST | `/log/cleanup` | 刪除 N 天前的紀錄 | admin |
+| POST | `/log/import` | 批次匯入 CSV/JSON | admin（限總部） |
+| POST | `/log/cleanup` | 刪除 N 天前的紀錄 | admin（限總部） |
 
 ## `/settings` — 系統設定
 

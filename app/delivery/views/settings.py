@@ -9,7 +9,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from src.models.delivery import DeliverySettings
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, require_hq, store_allowed, allowed_store_ids
 from app.delivery.views.base import app_delivery, DELIVERY_PLATFORMS
 
 
@@ -32,6 +32,7 @@ def get_settings(platform):
 @app_delivery.route('/settings/<platform>', methods=['PUT'])
 @jwt_required()
 @require_role('admin')
+@require_hq   # [A2] 全域平台設定影響所有店家
 def update_settings(platform):
     """
     更新平台設定
@@ -73,6 +74,10 @@ def update_settings(platform):
 def list_store_delivery_settings():
     from src.models.store import Store
     stores = Store.find_all()
+    oids = allowed_store_ids()                       # [A2] 店家帳號只看本店
+    if oids is not None:
+        allowed = {str(o) for o in oids}
+        stores = [st for st in stores if st['_id'] in allowed]
     result = []
     for s in stores:
         platforms = DeliverySettings.get_store_platforms(s['_id'])
@@ -89,6 +94,8 @@ def list_store_delivery_settings():
 @jwt_required()
 @require_role('admin')
 def get_store_delivery_settings(store_id, platform):
+    if not store_allowed(store_id):   # [A2]
+        return jsonify({'success': False, 'message': '店家不存在'}), 404
     if platform not in DELIVERY_PLATFORMS:
         return jsonify({'success': False, 'message': '不支援的平台'}), 400
     data = DeliverySettings.get(platform, store_ref=store_id)
@@ -103,6 +110,8 @@ def update_store_delivery_settings(store_id, platform):
     更新店家專屬平台設定。
     store_id / vendor_code 為平台端店家代號，供 webhook 依訂單來源自動歸屬分店。
     """
+    if not store_allowed(store_id):   # [A2]
+        return jsonify({'success': False, 'message': '店家不存在'}), 404
     if platform not in DELIVERY_PLATFORMS:
         return jsonify({'success': False, 'message': '不支援的平台'}), 400
     data = request.get_json(silent=True) or {}

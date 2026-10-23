@@ -10,7 +10,7 @@ from src.models.log import Log
 from src.schemas.base import validate_payload, apply_coerced  # [REFACTOR] pydantic 驗證層
 from src.schemas.domain import InventoryAdjust, InventoryBatch
 from src.models.settings import SystemSettings
-from src.permissions import require_role
+from src.permissions import require_role, allowed_warehouse_ids, warehouse_allowed
 
 app_inventory = Blueprint('app_inventory', __name__)
 logger = logging.getLogger(__name__)
@@ -43,10 +43,14 @@ def list_inventory():
     warehouse_id = request.args.get('warehouse_id', '')
     product_id = request.args.get('product_id', '')
     limit = min(int(request.args.get('limit', 500)), 2000)
+    # [A2] 店家帳號只看本店倉庫；指定他店倉庫視同不存在
+    if warehouse_id and not warehouse_allowed(warehouse_id):
+        return jsonify({'success': True, 'data': []})
     rows = Inventory.find_all(
         warehouse_id=warehouse_id or None,
         product_id=product_id or None,
         limit=limit,
+        warehouse_ids=allowed_warehouse_ids(),
     )
     # 補充 product / warehouse 名稱
     # [OPT] 先收集所有 id 用 $in 批次查回，消除迴圈逐筆 find_by_id 的 N+1 查詢
@@ -83,7 +87,7 @@ def adjust_inventory():
         return jsonify({'success': False, 'message': '缺少必要參數 product_id / warehouse_id / quantity'}), 400
 
     p = Product.find_by_id(product_id)
-    w = Warehouse.find_by_id(warehouse_id)
+    w = Warehouse.find_by_id(warehouse_id) if warehouse_allowed(warehouse_id) else None  # [A2]
     if not p:
         return jsonify({'success': False, 'message': '產品不存在'}), 404
     if not w:
@@ -170,7 +174,7 @@ def batch_move():
     if not items:
         return jsonify({'success': False, 'message': '品項清單不能為空'}), 400
 
-    w = Warehouse.find_by_id(warehouse_id)
+    w = Warehouse.find_by_id(warehouse_id) if warehouse_allowed(warehouse_id) else None  # [A2]
     if not w:
         return jsonify({'success': False, 'message': '倉庫不存在'}), 404
 
@@ -287,6 +291,8 @@ def list_movements():
         date_to   = datetime.strptime(dt + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if dt else None
     except ValueError:
         return jsonify({'success': False, 'message': '日期格式錯誤，請使用 YYYY-MM-DD'}), 400
+    if warehouse_id and not warehouse_allowed(warehouse_id):   # [A2]
+        return jsonify({'success': True, 'data': []})
     data = StockMovement.find_all(
         warehouse_id=warehouse_id or None,
         product_id=product_id or None,
@@ -294,5 +300,6 @@ def list_movements():
         limit=limit,
         product_only=product_only,
         date_from=date_from, date_to=date_to,
+        warehouse_ids=allowed_warehouse_ids(),
     )
     return jsonify({'success': True, 'data': data})

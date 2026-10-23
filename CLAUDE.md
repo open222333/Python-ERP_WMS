@@ -44,7 +44,7 @@ Flask + MongoDB + Vue 3 的多店家 WMS / POS 系統。
 
 ## 專案級硬規則
 
-- **多店家隔離**：資料隔離靠 `get_store_filter()` — 所有依 ID 讀寫的端點都必須帶 store_filter 驗證所有權（新增端點時務必檢查）
+- **多店家隔離**：資料隔離靠 `src/permissions.py`（`get_store_filter`／`warehouse_allowed`／`store_allowed`／`require_hq`）— 所有依 ID 讀寫的端點都必須驗證所有權，影響全店的全域寫入加 `@require_hq`（新增端點時務必檢查並補隔離測試）
 - **Flask route 順序**：`/batch` 必須在 `/<pid>` 之前，否則 `batch` 會被當作 pid
 - **NAV_CONFIG**：`frontend/src/config/nav.ts` 是側欄與模板設定頁面的唯一資料來源；新增頁面只需在 nav.ts 加一筆（`AppSidebar.vue` 為廢棄空殼）
 - 其餘實作備忘（IME/Vue Set/Docker volume/Vite cache 等）見 `docs/ARCHITECTURE.md`

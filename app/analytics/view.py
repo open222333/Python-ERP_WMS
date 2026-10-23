@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from src.mongo import get_db
 # [REFACTOR] 狀態字串改由 src/constants.py 統一管理
 from src.constants import OrderStatus
+from src.permissions import allowed_warehouse_ids
 
 app_analytics = Blueprint('app_analytics', __name__)
 
@@ -23,19 +24,25 @@ def _period_start(period: str) -> datetime:
     raise ValueError(f'unknown period: {period}')
 
 
-def _count(collection: str, start: datetime, status: str = None) -> int:
-    q = {'created_at': {'$gte': start}}
+def _scope() -> dict:
+    """[A2] 店家帳號只統計本店倉庫；總部不限"""
+    wids = allowed_warehouse_ids()
+    return {} if wids is None else {'warehouse_id': {'$in': wids}}
+
+
+def _count(collection: str, start: datetime, status: str = None, scope: dict = None) -> int:
+    q = {'created_at': {'$gte': start}, **(scope or {})}
     if status:
         q['status'] = status
     return get_db()[collection].count_documents(q)
 
 
-def _completed_count(collection: str, start: datetime) -> int:
+def _completed_count(collection: str, start: datetime, scope: dict = None) -> int:
     return get_db()[collection].count_documents(
-        {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED})
+        {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED, **(scope or {})})
 
 
-def _completed_stats(collection: str, start: datetime) -> dict:
+def _completed_stats(collection: str, start: datetime, scope: dict = None) -> dict:
     """
     單次 aggregation 同時計算：
       qty    — 實際數量（received_qty / shipped_qty）
@@ -44,7 +51,7 @@ def _completed_stats(collection: str, start: datetime) -> dict:
     """
     qty_field = 'received_qty' if collection == 'inbound_orders' else 'shipped_qty'
     pipeline = [
-        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED}},
+        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED, **(scope or {})}},
         {'$unwind': '$items'},
         {'$group': {
             '_id': None,
@@ -58,7 +65,7 @@ def _completed_stats(collection: str, start: datetime) -> dict:
     return {'qty': 0, 'amount': 0.0}
 
 
-def _outbound_gross_profit(start: datetime) -> float:
+def _outbound_gross_profit(start: datetime, scope: dict = None) -> float:
     """
     計算毛利：sum of (sell_price - cost_price) * shipped_qty
     sell_price  = outbound_orders.items.unit_price（出庫時填入的銷售單價）
@@ -66,7 +73,7 @@ def _outbound_gross_profit(start: datetime) -> float:
     僅計算該期間內 status='completed' 的出庫單。
     """
     pipeline = [
-        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED}},
+        {'$match': {'completed_at': {'$gte': start}, 'status': OrderStatus.COMPLETED, **(scope or {})}},
         {'$unwind': '$items'},
         {'$lookup': {
             'from': 'products',
@@ -96,7 +103,7 @@ def _outbound_gross_profit(start: datetime) -> float:
     return 0.0
 
 
-def _stock_alerts() -> list:
+def _stock_alerts(scope: dict = None) -> list:
     """
     回傳庫存異常清單（低庫存 / 超量）。
     以 inventory 為主表，lookup products & warehouses，
@@ -104,6 +111,7 @@ def _stock_alerts() -> list:
     """
     db = get_db()
     pipeline = [
+        {'$match': dict(scope or {})},   # [A2]
         # join products
         {'$lookup': {
             'from': 'products',
@@ -182,7 +190,7 @@ def stock_alerts():
                   max_stock:      {type: integer}
                   alert:          {type: string, enum: [low, high]}
     """
-    return jsonify({'success': True, 'data': _stock_alerts()})
+    return jsonify({'success': True, 'data': _stock_alerts(_scope())})
 
 
 @app_analytics.route('/summary', methods=['GET'])
@@ -205,7 +213,8 @@ def summary():
               type: object
               description: "key = day|week|month|year，每個 period 包含 inbound / outbound 統計"
     """
-    alerts = _stock_alerts()
+    scope = _scope()
+    alerts = _stock_alerts(scope)
     alert_count = {'low': 0, 'high': 0}
     for a in alerts:
         alert_count[a['alert']] += 1
@@ -217,21 +226,21 @@ def summary():
     for period in ('day', 'week', 'month', 'year'):
         start = _period_start(period)
 
-        ib_stats = _completed_stats('inbound_orders',  start)
-        ob_stats = _completed_stats('outbound_orders', start)
+        ib_stats = _completed_stats('inbound_orders',  start, scope)
+        ob_stats = _completed_stats('outbound_orders', start, scope)
 
-        gross_profit = _outbound_gross_profit(start)
+        gross_profit = _outbound_gross_profit(start, scope)
 
         result[period] = {
             'inbound': {
-                'orders':    _count('inbound_orders', start),
-                'completed': _completed_count('inbound_orders', start),
+                'orders':    _count('inbound_orders', start, scope=scope),
+                'completed': _completed_count('inbound_orders', start, scope),
                 'qty':       ib_stats['qty'],
                 'amount':    ib_stats['amount'],
             },
             'outbound': {
-                'orders':    _count('outbound_orders', start),
-                'completed': _completed_count('outbound_orders', start),
+                'orders':    _count('outbound_orders', start, scope=scope),
+                'completed': _completed_count('outbound_orders', start, scope),
                 'qty':       ob_stats['qty'],
                 'amount':    ob_stats['amount'],
             },

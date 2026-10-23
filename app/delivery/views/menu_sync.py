@@ -6,7 +6,7 @@ from flask import jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from src.models.log import Log
-from src.permissions import require_role
+from src.permissions import require_role, require_hq
 from app.delivery.views.base import (
     app_delivery, logger, _get_ubereats_client, _get_foodpanda_client,
 )
@@ -20,6 +20,7 @@ _PLATFORM_MENU_LABEL = {
 @app_delivery.route('/menu/sync/<platform>', methods=['POST'])
 @jwt_required()
 @require_role('admin', 'operator')
+@require_hq   # [A2] 平台金鑰為全域設定，菜單同步寫入的是平台共用菜單
 def sync_menu(platform):
     """
     從外送平台拉取菜單，在「菜單管理」中建立或更新品項。

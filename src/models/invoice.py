@@ -14,6 +14,9 @@ def _fmt(doc) -> dict:
         return None
     d = {k: v for k, v in doc.items() if k != '_id'}
     d['_id'] = str(doc['_id'])
+    if d.get('store_id'):
+        d['store_id'] = str(d['store_id'])
+    d.pop('active_order_id', None)
     for key in ('created_at', 'issued_at', 'voided_at'):
         if key in d and d[key]:
             d[key] = d[key].isoformat() + 'Z'
@@ -40,11 +43,23 @@ class Invoice:
                items: list, carrier_type: str = '', carrier_num: str = '',
                buyer_id: str = '', love_code: str = '',
                customer_name: str = '', customer_email: str = '',
-               remark: str = '', created_by: str = '') -> str:
+               remark: str = '', created_by: str = '',
+               store_id: str = None, terminal_id: str = '',
+               merchant_id: str = '') -> str:
+        """
+        [A3] 寫入 active_order_id（唯一索引）：同一訂單同時只能有一張開立中／已開立的發票，
+        並發重複開立時第二筆會撞 DuplicateKeyError，由 view 回 409。
+        開立失敗（error）或作廢（voided）時移除 active_order_id，才能重新開立。
+        [A4] 記錄開立時的店家、機台與商店代號，作廢必須用同一組金鑰。
+        """
         doc = {
             'order_id':       order_id,
+            'active_order_id': order_id,
             'order_no':       order_no,
-            'total_amount':   int(total_amount),
+            'store_id':       ObjectId(store_id) if store_id else None,
+            'terminal_id':    terminal_id or '',
+            'merchant_id':    merchant_id or '',
+            'total_amount':   int(round(float(total_amount))),
             'items':          items,
             'carrier_type':   carrier_type,
             'carrier_num':    carrier_num,
@@ -89,7 +104,8 @@ class Invoice:
     def mark_error(cls, inv_id: str, error_msg: str):
         cls._col().update_one(
             {'_id': ObjectId(inv_id)},
-            {'$set': {'status': InvoiceStatus.ERROR, 'error_msg': error_msg}},
+            {'$set': {'status': InvoiceStatus.ERROR, 'error_msg': error_msg},
+             '$unset': {'active_order_id': ''}},
         )
 
     @classmethod
@@ -101,7 +117,7 @@ class Invoice:
                 'void_reason': reason,
                 'voided_by':  operator,
                 'voided_at':  datetime.utcnow(),
-            }},
+            }, '$unset': {'active_order_id': ''}},
         )
 
     # ── 查詢 ──────────────────────────────────────────────
@@ -114,12 +130,24 @@ class Invoice:
 
     @classmethod
     def find_by_order(cls, order_id: str) -> dict:
-        return _fmt(cls._col().find_one({'order_id': order_id}))
+        """
+        [A3] 優先回傳開立中／已開立的那張；沒有時回傳最新一筆（error／voided）。
+        原本 find_one 不排序，訂單有多筆發票時可能取到作廢那筆而讓重複開立通過檢查。
+        """
+        active = cls._col().find_one(
+            {'order_id': order_id,
+             'status': {'$in': [InvoiceStatus.PENDING, InvoiceStatus.ISSUED]}},
+            sort=[('created_at', -1)])
+        if active:
+            return _fmt(active)
+        return _fmt(cls._col().find_one({'order_id': order_id}, sort=[('created_at', -1)]))
 
     @classmethod
     def find_all(cls, status: str = None, date_from: datetime = None,
-                 date_to: datetime = None, limit: int = 100) -> list:
-        q = {}
+                 date_to: datetime = None, limit: int = 100,
+                 store_filter: dict = None) -> list:
+        """store_filter：[A2] 例 {'store_id': ...} 或含舊資料的 $or 條件"""
+        q = dict(store_filter or {})
         if status:
             q['status'] = status
         if date_from or date_to:
