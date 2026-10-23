@@ -1,0 +1,16 @@
+{
+  "name": "快速出入庫",
+  "short_name": "出入庫",
+  "description": "WMS 快速出入庫（手機掃碼入庫、出庫、消耗）",
+  "lang": "zh-Hant-TW",
+  "start_url": "/quick-io",
+  "scope": "/quick-io",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fb",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/quick-io-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/quick-io-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

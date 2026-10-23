@@ -168,7 +168,8 @@ class StockMovement:
     @classmethod
     def find_all(cls, warehouse_id: str = None, product_id: str = None,
                  movement_type: str = None, limit: int = 200,
-                 product_only: bool = False) -> list:
+                 product_only: bool = False,
+                 date_from: datetime = None, date_to: datetime = None) -> list:
         q = {}
         if warehouse_id:
             q['warehouse_id'] = ObjectId(warehouse_id)
@@ -176,6 +177,12 @@ class StockMovement:
             q['product_id'] = ObjectId(product_id)
         if movement_type:
             q['movement_type'] = movement_type
+        if date_from or date_to:
+            q['created_at'] = {}
+            if date_from:
+                q['created_at']['$gte'] = date_from
+            if date_to:
+                q['created_at']['$lte'] = date_to
         if product_only:
             # 排除菜單品項觸發的移動（只紀錄，不在後台顯示）
             q['reference_type'] = {'$nin': list(cls._MENU_REF_TYPES)}

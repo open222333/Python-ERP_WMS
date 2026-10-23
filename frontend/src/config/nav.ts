@@ -52,7 +52,8 @@ export const NAV_CONFIG: NavSection[] = [
       { key: 'inventory',  label: '庫存查詢',  icon: 'bi-archive',           to: '/admin/inventory' },
       { key: 'inout',      label: '庫存管理',  icon: 'bi-box-arrow-in-down', to: '/admin/inbound' },
       { key: 'movements',  label: '庫存移動',  icon: 'bi-arrow-left-right',  to: '/admin/movements' },
-      { key: 'quick-io',   label: '快速出入庫', icon: 'bi-lightning-charge', href: '/quick-io/' },
+      // [MOBILE] 改連 Vue 版（/quick-io，無結尾斜線）；/quick-io/ 為舊版 Flask 模板（強制橫向），保留但不再從側欄進入
+      { key: 'quick-io',   label: '快速出入庫', icon: 'bi-lightning-charge', href: '/quick-io' },
     ],
   },
   {

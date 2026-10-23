@@ -109,7 +109,7 @@
 | GET | `/inventory/` | 列出庫存（可篩：warehouse_id/product_id） | JWT |
 | POST | `/inventory/adjust` | 盤點調整（設定絕對數量，記錄異動） | admin/operator |
 | POST | `/inventory/batch` | 批次快速出入庫/消耗 | admin/operator |
-| GET | `/inventory/movement/` | 列出庫存異動紀錄 | JWT |
+| GET | `/inventory/movement/` | 列出庫存異動紀錄（可篩：warehouse_id/product_id/movement_type/date_from/date_to，日期 YYYY-MM-DD 含當日） | JWT |
 
 ## `/inbound` — 入庫單
 

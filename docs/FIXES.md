@@ -1,5 +1,15 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-10-23 快速出入庫／庫存移動紀錄手機版（`// [MOBILE]` 標記）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `frontend/src/config/nav.ts` | 側欄「快速出入庫」連到 `/quick-io/`（結尾斜線），經 nginx 送到舊版 Flask 模板，該頁強制橫向，手機直拿只顯示「請旋轉」；Vue 版 `/quick-io` 沒有入口 | 改連 `/quick-io`（Vue 版）；舊模板保留不刪 |
+| `frontend/src/views/QuickIoView.vue`、`components/BarcodeScanner.vue`（新增） | 手機上無法掃條碼；按鈕小；iOS 長按不會觸發 contextmenu，無法開數量輸入 | 相機掃條碼（原生 BarcodeDetector 優先，不支援才動態載入 `@zxing/browser`，不影響其他頁打包大小）；掃描槍輸入＋Enter；手機版商品／清單分頁＋底部確認鈕、44px 觸控目標、輸入框 16px 防 iOS 放大；長按自行計時開數量視窗（含 +5/+10/+20/+50）；搜尋框清除鈕 |
+| `frontend/public/quick-io.webmanifest`、`public/icons/quick-io-*.png`（新增） | 不能加入主畫面 | 本頁掛載時注入 manifest 與 iOS meta，離開時移除（不影響其他頁） |
+| `frontend/src/views/admin/MovementsView.vue` | 讀取 `sku`／`before_quantity`／`after_quantity`，但後端欄位是 `product_sku`／`before_qty`／`after_qty`，**SKU 與調整前後一直是空白**；手機上只能左右捲動表格 | 改讀正確欄位；小螢幕改卡片、篩選列可收合 |
+| `app/inventory/view.py`、`src/models/inventory.py` | 前端送出 `date_from`／`date_to`，**後端完全忽略，日期篩選沒有作用** | 支援日期區間（含當日），格式錯誤回 400；與其他列表相同以 UTC 日界線判斷（見 OPTIMIZATION_REPORT D4） |
+
 ## 2026-10-09 外送狀態轉換與銷售管道扣庫一致（`# [D1]` `# [D2]` 標記，OPTIMIZATION_REPORT 第四輪 D1、D2）
 
 | 檔案 | 問題 | 修復說明 |

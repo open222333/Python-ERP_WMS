@@ -278,11 +278,21 @@ def list_movements():
     limit         = min(int(request.args.get('limit', 200)), 1000)
     # product_only=1（預設）：後台只顯示產品資料操作，菜單品項觸發的只紀錄不顯示
     product_only  = request.args.get('product_only', '1') != '0'
+    # 日期區間（YYYY-MM-DD，含當日）。前端一直有送，但原本後端忽略，篩選日期沒有作用。
+    # 與其他列表端點相同以 UTC 日界線判斷（台灣時區分日見 OPTIMIZATION_REPORT D4）
+    try:
+        df = request.args.get('date_from', '')
+        dt = request.args.get('date_to', '')
+        date_from = datetime.strptime(df, '%Y-%m-%d') if df else None
+        date_to   = datetime.strptime(dt + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if dt else None
+    except ValueError:
+        return jsonify({'success': False, 'message': '日期格式錯誤，請使用 YYYY-MM-DD'}), 400
     data = StockMovement.find_all(
         warehouse_id=warehouse_id or None,
         product_id=product_id or None,
         movement_type=movement_type or None,
         limit=limit,
         product_only=product_only,
+        date_from=date_from, date_to=date_to,
     )
     return jsonify({'success': True, 'data': data})

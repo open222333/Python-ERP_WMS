@@ -6,7 +6,7 @@
 |------|------|------|
 | `/login` | `LoginView.vue` | 帳密登入，JWT access token（8h）+ refresh token（30d） |
 | `/pos` | `PosView.vue` | POS 收銀台（PWA，橫向），支援 LINE Pay / ZPay / 現金 / 刷卡 |
-| `/quick-io` | `QuickIoView.vue` | 快速出入庫，不走完整採購單流程，直接批次調整庫存 |
+| `/quick-io` | `QuickIoView.vue` | 快速出入庫，不走完整採購單流程，直接批次調整庫存。手機版：商品／清單分頁＋底部確認鈕、相機掃條碼（`components/BarcodeScanner.vue`）、掃描槍輸入＋Enter、長按輸入數量、可加入主畫面（`public/quick-io.webmanifest`）。側欄連到此頁；`/quick-io/`（有結尾斜線）是舊版 Flask 模板 `app/templates/quick_io/index.html`，強制橫向，僅保留未再連結 |
 | `/kitchen` | `KitchenView.vue` | 備餐顯示（SSE 即時），無需登入 |
 | `/order` | `OrderView.vue` | 顧客點餐頁（掃 QR 進入），session token 驗證桌號 |
 
@@ -20,7 +20,7 @@
 | `/admin/warehouses` | `WarehousesView.vue` | 倉庫 CRUD，含庫位子管理 |
 | `/admin/inventory` | `InventoryView.vue` | 庫存查詢（依倉庫篩選），即時盤點調整 |
 | `/admin/inbound` | `InOutboundView.vue` | 出入庫管理（tab 切換）：入庫建立 → 確認 → 完成（增庫存）；出庫建立 → 確認（驗庫存）→ 完成（扣庫存）；`/admin/outbound` 自動導向此頁 |
-| `/admin/movements` | `MovementsView.vue` | 庫存異動紀錄，依倉庫/類型/日期篩選 |
+| `/admin/movements` | `MovementsView.vue` | 庫存異動紀錄，依倉庫/類型/日期篩選；小螢幕改卡片顯示、篩選列可收合 |
 | `/admin/cust-orders` | `CustOrdersView.vue` | 顧客訂單管理，SSE 即時推送，狀態流轉自動產生 POS 單 |
 | `/admin/pos-sales` | `PosSalesView.vue` | POS 銷售紀錄，CSV 匯出/匯入，退款 |
 | `/admin/pos-report` | `PosReportView.vue` | POS 銷售報表，日/週/月/年圖表 |
