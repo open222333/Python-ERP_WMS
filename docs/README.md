@@ -8,6 +8,7 @@
 | [`API.md`](API.md) | 全部後端 API 端點參考表：方法、路徑、說明、權限（admin/operator/cashier/JWT/公開）。依 Blueprint 分節 | 新增或改動任何 API 端點時**同步更新** |
 | [`PAGES.md`](PAGES.md) | 前端頁面對照表：路由、對應 Vue 檔案、功能說明。分「獨立頁面」與「後台 `/admin/*`」兩節 | 新增頁面或改動路由時更新（記得同步 `frontend/src/config/nav.ts`） |
 | [`FIXES.md`](FIXES.md) | Bug / 安全修復歷史記錄。**這些問題已修復，做程式碼審查或掃描時勿重複回報**。修改處在程式碼中以 `# [OPT]` / `// [OPT]` 註解標記 | 每次修復 bug 或安全問題時追加一筆 |
+| [`測試資料.md`](測試資料.md) | 測試用真實品牌資料（來一碗大腸麵線台中 5 店）：分店、供應矩陣、價格、套餐、平台價差，附可直接複製的原始 JSON 與對應本系統的匯入建議、測試情境 | 取得新版資料時整份覆寫（保留原始 JSON 區塊） |
 | [`OPTIMIZATION_REPORT.md`](OPTIMIZATION_REPORT.md) | 優化項目追蹤：已完成的定點修復與大型重構（`# [REFACTOR]` 標記）、**未完成項目的實作規格**（pydantic 驗證層、Change Streams、虛擬滾動）、收尾與部署注意事項 | 完成或新增優化項目時更新狀態；接續未完成工作前先讀此檔 |
 
 ## 快速導引
