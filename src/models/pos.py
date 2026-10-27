@@ -85,9 +85,10 @@ class PosOrder:
     @classmethod
     def find_all(cls, date_from: datetime = None, date_to: datetime = None,
                  cashier: str = None, status: str = None, source: str = None,
-                 limit: int = 200, store_filter: dict = None) -> list:
+                 limit: int = 200, store_filter: dict = None, offset: int = 0) -> list:
         q = cls._build_query(date_from, date_to, cashier, status, source, store_filter)
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
+        # [U3] offset 分頁；_id 作次排序確保同一時間的資料翻頁時順序穩定
+        docs = cls._col().find(q).sort([('created_at', -1), ('_id', -1)]).skip(max(0, offset)).limit(limit)
         return [_fmt(d) for d in docs]
 
     # [OPT-MEM] 匯出只需要的欄位；items 只取 quantity（計算 items_count 用），

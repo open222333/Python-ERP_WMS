@@ -80,8 +80,9 @@ def list_products():
     category_id = request.args.get('category_id', '')
     status_str = request.args.get('status', '')
     status = int(status_str) if status_str.isdigit() else None
-    limit = min(int(request.args.get('limit', 200)), 1000)
-    data = Product.find_all(keyword=keyword, category_id=category_id, status=status, limit=limit)
+    limit = max(1, min(int(request.args.get('limit', 200)), 1000))   # limit=0 在 pymongo 代表不限筆數，需擋下
+    data = Product.find_all(keyword=keyword, category_id=category_id, status=status, limit=limit,
+                            offset=max(0, request.args.get('offset', 0, type=int) or 0))   # [U3]
     return jsonify({'success': True, 'data': data})
 
 
@@ -190,7 +191,7 @@ def delete_product(pid):
 def export_menu():
     """匯出全部分類與產品為 JSON 檔"""
     categories = ProductCategory.find_all()
-    products   = Product.find_all()
+    products   = Product.find_all(limit=0)   # [U3] 匯出不截斷（pymongo limit(0) = 不限）
 
     # 建立 id → name 對照表（讓產品使用分類名稱，跨系統可攜）
     cat_id_to_name = {c['_id']: c['name'] for c in categories}

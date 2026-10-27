@@ -396,7 +396,7 @@ def list_orders():
     status = request.args.get('status', '')
     date   = request.args.get('date', '')
     try:
-        limit = min(int(request.args.get('limit', 100)), 500)
+        limit = max(1, min(int(request.args.get('limit', 100)), 500))   # limit=0 在 pymongo 代表不限筆數，需擋下
     except (ValueError, TypeError):
         limit = 100
     data = CustomerOrder.find_all(
@@ -404,6 +404,7 @@ def list_orders():
         date=date or None,
         limit=limit,
         store_filter=get_store_filter(),
+        offset=max(0, request.args.get('offset', 0, type=int) or 0),   # [U3]
     )
     return jsonify({'success': True, 'data': data})
 

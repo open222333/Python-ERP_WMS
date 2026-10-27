@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { parseServerDate } from '@/utils/format'
 import { ref, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { useThemeStore, THEMES } from '@/stores/theme'
 import { useAuthStore } from '@/stores/auth'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 const themeStore = useThemeStore()
@@ -349,7 +351,7 @@ async function cleanupLogs() {
     toast.show('請先設定保留天數', 'danger')
     return
   }
-  if (!confirm(`確認清除 ${logRetentionDays.value} 天前的操作紀錄？此操作無法復原。`)) return
+  if (!(await appConfirm(`確認清除 ${logRetentionDays.value} 天前的操作紀錄？此操作無法復原。`, { danger: true }))) return
   cleaningLog.value = true
   try {
     const { data } = await http.post('/log/cleanup', { days: logRetentionDays.value })
@@ -364,7 +366,7 @@ async function cleanupLogs() {
 
 function fmtCleanup(iso: string | null) {
   if (!iso) return '從未清除'
-  return new Date(iso).toLocaleString('zh-TW', {
+  return (parseServerDate(iso) ?? new Date(iso)).toLocaleString('zh-TW', {   // [U4]
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
   })
@@ -497,7 +499,7 @@ onMounted(async () => {
                 type="button"
                 class="btn btn-sm btn-outline-danger py-0 px-1"
                 @click="removeDiscountRow(i)"
-              >
+               aria-label="移除" title="移除">
                 <i class="bi bi-x-lg"></i>
               </button>
             </div>
@@ -564,7 +566,7 @@ onMounted(async () => {
                 type="button"
                 class="btn btn-sm btn-outline-danger py-0 px-1"
                 @click="removePayMethod(i)"
-              >
+               aria-label="移除" title="移除">
                 <i class="bi bi-x-lg"></i>
               </button>
             </div>
@@ -683,7 +685,7 @@ onMounted(async () => {
 
             <!-- 統計資訊 -->
             <div class="col-12 col-md-4">
-              <div class="p-3 bg-light rounded border">
+              <div class="p-3 bg-body-tertiary rounded border">
                 <div class="small text-muted mb-1">紀錄統計</div>
                 <div class="d-flex justify-content-between">
                   <span class="text-muted small">總筆數：</span>

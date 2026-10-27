@@ -83,7 +83,7 @@ def list_logs():
     """
     _maybe_auto_cleanup()   # 懶觸發：若設定保留天數且距上次 ≥ 1 天則自動清除
 
-    limit      = request.args.get('limit',      200,  type=int)
+    limit      = max(1, min(request.args.get('limit', 200, type=int) or 200, 2000))   # 原本無上限，?limit=0 會撈全部
     username   = request.args.get('username',   '')
     action     = request.args.get('action',     '')
     start_date = request.args.get('start_date', '')

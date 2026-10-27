@@ -247,8 +247,8 @@ onBeforeUnmount(() => mql?.removeEventListener('change', onMql))
 
 .mv-cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .mv-card {
-  border: 1px solid #e9ecef; border-radius: 10px;
-  padding: 10px 12px; background: #fff;
+  border: 1px solid var(--table-border, #e9ecef); border-radius: 10px;
+  padding: 10px 12px; background: var(--card-bg, #fff);   /* [U8] 深色模式 */
 }
 .mv-qty { font-size: 1.15rem; font-weight: 700; line-height: 1.2; }
 .mv-meta {
@@ -256,8 +256,8 @@ onBeforeUnmount(() => mql?.removeEventListener('change', onMql))
   font-size: .8rem; color: #6c757d; margin-top: 4px;
 }
 .mv-remark {
-  font-size: .8rem; color: #495057; margin-top: 6px;
-  background: #f8f9fa; border-radius: 6px; padding: 4px 8px;
+  font-size: .8rem; color: var(--bs-secondary-color, #495057); margin-top: 6px;
+  background: var(--bs-tertiary-bg, #f8f9fa); border-radius: 6px; padding: 4px 8px;
 }
 .min-w-0 { min-width: 0; }
 </style>

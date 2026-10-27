@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { warehouseApi } from '@/api/warehouse'
 import { productApi }   from '@/api/product'
+import { fetchAllPages } from '@/api/paging'
 
 export const useCacheStore = defineStore('cache', () => {
   const warehouses  = ref<any[]>([])
@@ -15,8 +16,8 @@ export const useCacheStore = defineStore('cache', () => {
   }
 
   async function loadProducts() {
-    const { data } = await productApi.getProducts()
-    products.value = data.data || data || []
+    // [U3] 分批取完整產品清單（原本只拿到前 200 筆，選單會找不到後面的產品）
+    products.value = await fetchAllPages('/product/')
   }
 
   async function loadCategories() {

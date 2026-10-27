@@ -34,6 +34,9 @@ body {
   margin: 0;
   background: #f4f6fb;
   font-size: .93rem;
+  /* [MOBILE] 手機橫拿時避開瀏海（配合 index.html 的 viewport-fit=cover） */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* ── Tables ── */
@@ -103,3 +106,87 @@ body {
 @media (pointer: coarse) {
   select, select option { font-size: 16px !important; }
 }
+
+/* ══ [MOBILE] 手機版共用規則（< 768px，僅螢幕；列印不套用，避免 QR 桌卡等列印版面變卡片）══ */
+@media screen and (max-width: 767.98px) {
+  /* iOS：輸入框字級小於 16px 會在聚焦時自動放大畫面 */
+  input.form-control, textarea.form-control, .form-select { font-size: 16px; }
+
+  /* 列表卡片頭：標題與工具列各占一列，篩選欄位平均分配寬度（覆寫頁面內的固定寬度） */
+  .table-card { border-radius: 10px; }
+  .table-card .table-header { padding: 12px; }
+  .table-card .table-header > h6 { width: 100%; }
+  .table-card .table-header .toolbar { width: 100%; }
+  .table-card .table-header > div { flex-wrap: wrap; max-width: 100%; }
+  .toolbar > .form-control, .toolbar > .form-select, .toolbar > .input-group,
+  .table-card .table-header .form-control, .table-card .table-header .form-select {
+    flex: 1 1 140px; width: auto !important; min-width: 0;
+  }
+  .toolbar > .btn { min-height: 36px; }
+
+  /* 統計卡 */
+  .stat-card { padding: 14px; gap: 12px; }
+  .stat-num  { font-size: 1.4rem; }
+
+  /* 大型彈窗（modal-lg / modal-xl）在手機改全螢幕；小確認框維持原樣 */
+  .modal-dialog.modal-lg, .modal-dialog.modal-xl {
+    margin: 0; max-width: none; width: 100%; min-height: 100%;
+  }
+  .modal-dialog.modal-lg .modal-content, .modal-dialog.modal-xl .modal-content {
+    min-height: 100vh; min-height: 100dvh; border-radius: 0; border: 0;
+  }
+  .modal-dialog.modal-lg .modal-footer, .modal-dialog.modal-xl .modal-footer {
+    position: sticky; bottom: 0; background: var(--bs-modal-bg, #fff);
+    padding-bottom: calc(.75rem + env(safe-area-inset-bottom));
+  }
+  .modal-footer .btn { min-height: 42px; }
+
+  /* ── v-stack-table：表格每列改為卡片（見 src/directives/stackTable.ts）── */
+  .table-responsive:has(> .table-stack) { overflow: visible; }
+  .table-stack { border-collapse: separate; }
+  .table-stack thead { display: none; }
+  .table-stack, .table-stack tbody, .table-stack tr, .table-stack td { display: block; width: 100%; }
+  .table-stack tbody { padding: 8px; }
+  .table-stack tr {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--table-border, #e9ecef);
+    border-radius: 10px;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+  }
+  .table-stack td {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    border: 0 !important; padding: 6px 0 !important;
+    text-align: right !important; max-width: none !important;
+    white-space: normal !important; word-break: break-word;
+    background: transparent !important;
+  }
+  .table-stack td + td { border-top: 1px dashed var(--table-border, #eee) !important; }
+  .table-stack td::before {
+    content: attr(data-label);
+    flex-shrink: 0; max-width: 40%;
+    text-align: left; font-size: .78rem; font-weight: 600;
+    color: var(--table-th-color, #6c757d);
+  }
+  .table-stack td[data-label=""]::before, .table-stack td:not([data-label])::before { content: none; }
+  .table-stack td[data-label=""] { justify-content: flex-end; }
+  /* 載入中／無資料等跨欄的列 */
+  .table-stack td[colspan] { justify-content: center; text-align: center !important; }
+  .table-stack tr:has(> td[colspan]:only-child) { border-style: dashed; }
+  /* 操作按鈕在卡片內放大 */
+  .table-stack td .btn-sm { min-height: 34px; min-width: 34px; }
+}
+
+/* [U6] 有自製彈窗開啟時鎖住背景捲動（由 plugins/modalEnhancer.ts 切換） */
+body.app-modal-open { overflow: hidden; overscroll-behavior: contain; }
+
+/* [U2] 搜尋框清除鈕：統一用 <input type="search"> 的原生「×」（點擊或按 Esc 即清空，並觸發 input／search 事件，v-model 自動同步）
+   Bootstrap 未特別樣式化，這裡讓它在淺色／深色模式都看得見、手機上好點 */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none; appearance: none;
+  width: 1em; height: 1em; margin-left: .35em; cursor: pointer; opacity: .55;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zM5.35 4.65 8 7.29l2.65-2.64.7.7L8.71 8l2.64 2.65-.7.7L8 8.71l-2.65 2.64-.7-.7L7.29 8 4.65 5.35z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zM5.35 4.65 8 7.29l2.65-2.64.7.7L8.71 8l2.64 2.65-.7.7L8 8.71l-2.65 2.64-.7-.7L7.29 8 4.65 5.35z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+input[type="search"]::-webkit-search-cancel-button:hover { opacity: .85; }

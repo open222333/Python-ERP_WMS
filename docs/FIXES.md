@@ -1,5 +1,34 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-10-25 UI 第六輪（`[U1]`–`[U11]` 標記，項目見 OPTIMIZATION_REPORT 第六輪）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `src/models/{pos,product,customer_order,invoice,delivery}.py`、對應 view、`components/LoadMore.vue`（新增）、`api/paging.ts`（新增） | [U3] 銷售紀錄、出入庫、顧客訂單、發票、外送訂單只顯示最新 N 筆，更早的資料在畫面上看不到；產品清單（快取、產品頁、菜單選品、快速出入庫）超過 1000 筆後被截斷 | 列表 API 加 `offset`（排序固定 `created_at, _id` 遞減，頁與頁不重疊）；各頁底部加「載入更多」。需要完整產品清單的地方改用 `fetchAllPages()` 逐頁取齊（上限 2 萬筆） |
+| `app/product/view.py` `/product/export` | 匯出只含前 1000 個產品 | 改 `find_all(limit=0)` 取全部 |
+| 8 個列表 API（product／pos／customer-order／order／inventory×2／delivery／invoice）、`app/log/view.py` | `?limit=0` 在 pymongo 等於「不限筆數」，可繞過上限一次撈全部；操作紀錄 API 完全沒上限 | 一律 `max(1, min(limit, 上限))`；操作紀錄上限 2000 |
+| `frontend/src/views/admin/DeliveryOrdersView.vue` | 頁面使用的狀態值（pending 等）與後端（new／confirmed／preparing／ready／picked_up／delivered／cancelled）不符：狀態篩選永遠空白、操作按鈕一律回 400 | 依後端狀態重寫篩選與「下一步」按鈕，取消改用確認框，加分頁 |
+| `frontend/src/utils/format.ts` 等 | [U4] 後端回傳不帶時區的 UTC 字串，部分頁面直接 `new Date()` 當本地時間解析，台灣時間差 8 小時 | 新增 `parseServerDate()`：無時區字串補 `Z`；`fmtDate`／`fmtDay` 與顧客訂單紀錄、設定頁清除時間、發票頁、出入庫日期統一使用 |
+| 5 個設定／列表頁 | [U8] 深色模式下仍是白底（`bg-light`、`#f8f9fa`、淺色 badge） | 改用 Bootstrap 主題變數類別（`bg-body-tertiary`、`bg-body-secondary text-body`）與 CSS 變數 |
+| `composables/useConfirm.ts`、`components/AppConfirm.vue`（新增）、`App.vue`、14 個頁面 | [U5] 26 處瀏覽器原生 `confirm()`、點餐頁 2 處 `alert()`：樣式無法控制、手機上體驗差、無法區分危險操作 | 全站共用確認框 `appConfirm()`／`appAlert()`；刪除、清除、退款、結束等操作確認鈕為紅色 |
+| `plugins/modalEnhancer.ts`（新增）、`main.ts`、`style.css` | [U6] 自製彈窗（`.modal.d-block`、POS／點餐頁遮罩）不能按 Esc 關閉、開啟時背景仍可捲動、焦點留在背景 | 全域偵測開啟中的彈窗（含 v-show）：鎖背景捲動、焦點移入並於關閉後還原、Tab 限制在最上層彈窗、Esc 點其關閉鈕（無則觸發遮罩的 @click.self）。各頁不需修改 |
+| `config/nav.ts` | [U1] 側欄「開啟收銀台」連 `/pos/`，被 nginx 轉給舊版 Flask 模板 | 改為 `/pos`（Vue 版） |
+| 6 個搜尋框（產品、庫存、操作紀錄×2、外送模板×2、POS 商品） | [U2] 搜尋框無法一鍵清除 | 改 `type="search"` 使用原生清除鈕（`style.css` 統一外觀）；產品與操作紀錄清除後自動重新查詢；彈窗內搜尋框有字時 Esc 先清字、不關彈窗。Firefox 桌面版無原生「×」，但 Esc 可清除 |
+| 13 個頁面 41 個按鈕 | [U7] 純圖示按鈕（編輯／刪除／移除／查詢等）沒有可讀名稱 | 補 `aria-label` 與 `title`；登入頁顯示密碼鈕依狀態切換文字 |
+| `composables/useFieldErrors.ts`（新增）、`ProductsView.vue` | [U9] 表單錯誤只靠 3 秒就消失的 toast，看不出是哪一欄 | 新增欄位錯誤 composable；產品表單先套用（SKU、名稱必填，價格不可負，SKU 重複 409 標在 SKU 欄）。其他表單待逐步套用 |
+| 刪除 `components/HelloWorld.vue`、`components/AppSidebar.vue`、`views/admin/InboundView.vue`、`OutboundView.vue` | [U11] 無引用的死檔 | 刪除；CLAUDE.md 的 AppSidebar 說明改為指向 `AdminLayout.vue` |
+
+測試：`tests/unit/test_pagination.py`（offset 不重疊／超出範圍／負數、limit=0 不可不限、匯出不截斷）；彈窗增強器與確認框以 jsdom 驗證 13 項行為（開啟鎖定、焦點移入與還原、Tab 循環、Esc 關閉、v-show 遮罩、搜尋框 Esc、確認框 Promise）。
+
+## 2026-10-24 後台與點餐頁手機版（`[MOBILE]` 標記）
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `frontend/src/layouts/AdminLayout.vue` | 側欄預設為展開，手機一進後台側欄就蓋住整個畫面；瀏覽器返回換頁時不會收起；側欄展開時背景仍可捲動 | 寬度 < 992px 預設收起、換頁自動收起、展開時鎖住背景捲動；側欄寬度不超過畫面 82%、選單項目加大；手機內容邊距縮小 |
+| `frontend/src/directives/stackTable.ts`（新增）、`src/main.ts`、`src/style.css` | 後台列表在手機只能左右捲動表格 | 新增全域指令 `v-stack-table`：自動把表頭欄位名稱寫入每格 `data-label`，寬度 < 768px（僅螢幕，不影響列印）時每列改成卡片；列表變動自動重新標記。已套用到 18 個頁面共 36 個表格（不含已停用的 InboundView／OutboundView，MovementsView 已有專用卡片版） |
+| `frontend/src/style.css` | 手機上工具列篩選欄位被頁面固定寬度撐開；輸入框小於 16px 時 iOS 聚焦會放大畫面；大型彈窗在手機上擠成一小塊 | 卡片頭工具列欄位平均分配寬度（覆寫固定寬度）；手機輸入框 16px；`modal-lg`／`modal-xl` 在手機改全螢幕且底部按鈕列固定 |
+| `frontend/index.html`、`src/views/OrderView.vue` | 未設 `viewport-fit=cover`，`env(safe-area-inset-*)` 一律為 0，iPhone 底部橫條會擋住浮動購物車與按鈕；點餐頁購物車加減鈕只有 24px | 加上 `viewport-fit=cover`、body 左右安全區；點餐頁浮動購物車與底部操作列避開安全區；觸控裝置加減鈕 36px、輸入框 16px |
+
 ## 2026-10-24 多店隔離、電子發票、SSE 心跳、索引（`# [A2]` `# [A3]` `# [A4]` `# [A5]` `# [A6]` `# [A7]` `# [D3]` `# [D5]` 標記）
 
 | 檔案 | 問題 | 修復說明 |

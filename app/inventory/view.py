@@ -42,7 +42,7 @@ def list_inventory():
     """查詢庫存（含產品名稱、倉庫名稱）"""
     warehouse_id = request.args.get('warehouse_id', '')
     product_id = request.args.get('product_id', '')
-    limit = min(int(request.args.get('limit', 500)), 2000)
+    limit = max(1, min(int(request.args.get('limit', 500)), 2000))   # limit=0 在 pymongo 代表不限筆數，需擋下
     # [A2] 店家帳號只看本店倉庫；指定他店倉庫視同不存在
     if warehouse_id and not warehouse_allowed(warehouse_id):
         return jsonify({'success': True, 'data': []})
@@ -279,7 +279,7 @@ def list_movements():
     warehouse_id  = request.args.get('warehouse_id', '')
     product_id    = request.args.get('product_id', '')
     movement_type = request.args.get('movement_type', '')
-    limit         = min(int(request.args.get('limit', 200)), 1000)
+    limit         = max(1, min(int(request.args.get('limit', 200)), 1000))   # limit=0 在 pymongo 代表不限筆數，需擋下
     # product_only=1（預設）：後台只顯示產品資料操作，菜單品項觸發的只紀錄不顯示
     product_only  = request.args.get('product_only', '1') != '0'
     # 日期區間（YYYY-MM-DD，含當日）。前端一直有送，但原本後端忽略，篩選日期沒有作用。

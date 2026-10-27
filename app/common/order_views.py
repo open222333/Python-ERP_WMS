@@ -55,7 +55,7 @@ class OrderViewConfig:
 def list_orders(cfg):
     status = request.args.get('status', '')
     warehouse_id = request.args.get('warehouse_id', '')
-    limit = min(int(request.args.get('limit', 50)), 200)
+    limit = max(1, min(int(request.args.get('limit', 50)), 200))   # limit=0 在 pymongo 代表不限筆數，需擋下
     offset = int(request.args.get('offset', 0))
     if warehouse_id and not warehouse_allowed(warehouse_id):   # [A2]
         return jsonify({'success': True, 'data': []})

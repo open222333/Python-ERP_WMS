@@ -300,7 +300,7 @@ onMounted(load)
       </div>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0 table-sm">
+      <table v-stack-table class="table mb-0 table-sm">
         <thead>
           <tr>
             <th>SKU</th><th>產品名稱</th><th>倉庫</th>
@@ -352,7 +352,7 @@ onMounted(load)
           <h6><i class="bi bi-clock-history me-1 text-warning"></i>最新入庫單</h6>
         </div>
         <div class="table-responsive">
-          <table class="table mb-0">
+          <table v-stack-table class="table mb-0">
             <thead><tr><th>單號</th><th>倉庫</th><th>狀態</th><th>日期</th></tr></thead>
             <tbody>
               <tr v-if="!recentInbound.length">
@@ -379,7 +379,7 @@ onMounted(load)
           <h6><i class="bi bi-clock-history me-1 text-danger"></i>最新出庫單</h6>
         </div>
         <div class="table-responsive">
-          <table class="table mb-0">
+          <table v-stack-table class="table mb-0">
             <thead><tr><th>單號</th><th>倉庫</th><th>狀態</th><th>日期</th></tr></thead>
             <tbody>
               <tr v-if="!recentOutbound.length">

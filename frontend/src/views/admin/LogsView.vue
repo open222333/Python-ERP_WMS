@@ -107,7 +107,8 @@ onMounted(load)
         <!-- 搜尋條件 -->
         <input
           v-model="fUser"
-          type="text"
+          type="search"
+          @search="load()"
           class="form-control form-control-sm"
           style="width:110px"
           placeholder="使用者"
@@ -115,7 +116,8 @@ onMounted(load)
         />
         <input
           v-model="fAction"
-          type="text"
+          type="search"
+          @search="load()"
           class="form-control form-control-sm"
           style="width:110px"
           placeholder="操作類型"
@@ -145,7 +147,7 @@ onMounted(load)
           <option :value="500">500 筆</option>
           <option :value="1000">1000 筆</option>
         </select>
-        <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="load">
+        <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="load" aria-label="查詢" title="查詢">
           <i class="bi bi-search"></i>
         </button>
         <!-- 匯出 -->
@@ -180,7 +182,7 @@ onMounted(load)
     </div>
 
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>使用者</th>

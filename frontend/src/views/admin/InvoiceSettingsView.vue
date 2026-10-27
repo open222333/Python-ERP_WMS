@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast   = useToastStore()
 const loading = ref(false)
@@ -180,7 +181,7 @@ async function saveTerminal() {
 }
 
 async function deleteTerminal(tid: string, name: string) {
-  if (!confirm(`確定刪除機台「${name}」？`)) return
+  if (!(await appConfirm(`確定刪除機台「${name}」？`, { danger: true }))) return
   try {
     await http.delete(`/invoice/store/${editingStoreId.value}/terminals/${tid}`)
     toast.show('已刪除')
@@ -204,7 +205,7 @@ onMounted(load)
     </div>
 
     <div v-else class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>店家</th>
@@ -257,7 +258,7 @@ onMounted(load)
           <div class="modal-body">
 
             <!-- ── 共用憑證設定 ──────────────────────────────── -->
-            <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-light rounded">
+            <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-body-tertiary rounded">
               <div>
                 <div class="fw-semibold">啟用電子發票</div>
                 <small class="text-muted">關閉時不顯示發票相關選項</small>
@@ -347,7 +348,7 @@ onMounted(load)
               <div class="spinner-border spinner-border-sm text-secondary"></div>
             </div>
             <div v-else-if="!terminals.length && !showTerminalForm"
-                 class="text-muted small text-center py-3 border rounded bg-light mb-3">
+                 class="text-muted small text-center py-3 border rounded bg-body-tertiary mb-3">
               尚未新增機台。各機台可設定獨立 ECPay 憑證，或共用店家憑證。
             </div>
             <div v-else-if="terminals.length" class="list-group mb-3">
@@ -356,17 +357,17 @@ onMounted(load)
                 <code class="badge bg-secondary" style="font-size:.75rem">{{ t.id }}</code>
                 <span class="flex-grow-1 fw-semibold small">{{ t.name }}</span>
                 <span v-if="t.device_model"
-                      class="badge bg-light text-dark border small">
+                      class="badge bg-body-secondary text-body border small">
                   <i class="bi bi-printer me-1"></i>{{ t.device_model }}
                 </span>
                 <span v-if="t.ecpay_override" class="badge bg-info text-dark small">獨立憑證</span>
                 <span v-else class="badge bg-secondary small">共用憑證</span>
                 <button class="btn btn-sm btn-outline-secondary btn-icon"
-                        @click="openTerminalForm(t)">
+                        @click="openTerminalForm(t)" aria-label="編輯" title="編輯">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger btn-icon"
-                        @click="deleteTerminal(t.id, t.name)">
+                        @click="deleteTerminal(t.id, t.name)" aria-label="刪除" title="刪除">
                   <i class="bi bi-trash"></i>
                 </button>
               </div>
@@ -374,7 +375,7 @@ onMounted(load)
 
             <!-- Terminal add/edit form -->
             <div v-if="showTerminalForm"
-                 class="border rounded p-3 mb-3" style="background:#f8f9fa">
+                 class="border rounded p-3 mb-3 bg-body-tertiary">
               <div class="fw-semibold mb-3 small text-uppercase text-muted" style="letter-spacing:.05em">
                 {{ editingTerminalId ? '編輯機台' : '新增機台' }}
               </div>

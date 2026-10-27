@@ -202,7 +202,7 @@ onUnmounted(() => {
       <span class="ms-auto now-clock">{{ nowStr }}</span>
 
       <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-light" :class="{ disabled: loading }" @click="loadOrders">
+        <button class="btn btn-sm btn-outline-light" :class="{ disabled: loading }" @click="loadOrders" aria-label="重新整理" title="重新整理">
           <i class="bi bi-arrow-clockwise" :class="{ 'spin': loading }"></i>
         </button>
         <a href="/admin/cust-orders" class="btn btn-sm btn-outline-secondary">

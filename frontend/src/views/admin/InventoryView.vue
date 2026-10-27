@@ -78,7 +78,7 @@ onMounted(async () => {
         <!-- Keyword search -->
         <input
           v-model="searchKw"
-          type="text"
+          type="search"
           class="form-control form-control-sm"
           style="width: 180px"
           placeholder="搜尋產品名稱/SKU"
@@ -90,7 +90,7 @@ onMounted(async () => {
     </div>
 
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>產品名稱</th>

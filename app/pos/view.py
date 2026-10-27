@@ -131,7 +131,7 @@ def list_sales():
     status        = request.args.get('status',     '')
     source        = request.args.get('source',     '')
     try:
-        limit = min(int(request.args.get('limit', 50)), 500)
+        limit = max(1, min(int(request.args.get('limit', 50)), 500))   # limit=0 在 pymongo 代表不限筆數，需擋下
     except ValueError:
         return jsonify({'success': False, 'message': 'limit 必須為整數'}), 400
 
@@ -146,6 +146,7 @@ def list_sales():
         cashier=cashier or None, status=status or None,
         source=source or None, limit=limit,
         store_filter=get_store_filter(),
+        offset=max(0, request.args.get('offset', 0, type=int) or 0),   # [U3]
     )
     return jsonify({'success': True, 'data': data})
 

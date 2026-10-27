@@ -2,7 +2,11 @@
 import { ref, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
 import http from '@/api'
+import { fmtDay } from '@/utils/format'
+import LoadMore from '@/components/LoadMore.vue'
+import { fetchAllPages } from '@/api/paging'
 import type { Warehouse } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 
@@ -76,10 +80,10 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 async function loadDeps() {
   const [wRes, pRes] = await Promise.allSettled([
     http.get('/warehouse/'),
-    http.get('/product/'),
+    fetchAllPages('/product/'),   // [U3]
   ])
   if (wRes.status === 'fulfilled') warehouses.value = wRes.value.data.data ?? wRes.value.data ?? []
-  if (pRes.status === 'fulfilled') products.value   = pRes.value.data.data ?? pRes.value.data ?? []
+  if (pRes.status === 'fulfilled') products.value   = pRes.value
 }
 
 // ── Inbound State ──────────────────────────────────────────
@@ -96,13 +100,22 @@ const inDetailItems   = ref<InboundItem[]>([])
 const showInItemModal = ref(false)
 const inItemForm      = ref({ product_id: '', quantity: 1, unit_price: 0 })
 
-async function loadInbound() {
+// [U3] 分頁：原本只拿到後端預設最新 50 筆
+const PAGE_SIZE = 100
+const inHasMore  = ref(false)
+const outHasMore = ref(false)
+
+async function loadInbound(append = false) {
   inLoading.value = true
   try {
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE), offset: String(append ? inOrders.value.length : 0),
+    }
     if (inStatusFilter.value) params.status = inStatusFilter.value
     const { data } = await http.get('/inbound/', { params })
-    inOrders.value = data.data ?? data ?? []
+    const page = data.data ?? data ?? []
+    inOrders.value = append ? [...inOrders.value, ...page] : page
+    inHasMore.value = page.length === PAGE_SIZE
   } catch {
     toast.show('載入入庫單失敗', 'danger')
   } finally {
@@ -170,7 +183,7 @@ async function addInItem() {
 }
 
 async function removeInItem(itemId: string) {
-  if (!confirm('確定要移除此品項？') || !inDetailOrder.value) return
+  if (!(await appConfirm('確定要移除此品項？', { danger: true })) || !inDetailOrder.value) return
   try {
     await http.delete(`/inbound/${inDetailOrder.value._id}/item/${itemId}`)
     toast.show('已移除', 'success')
@@ -194,13 +207,17 @@ const outDetailItems   = ref<OutboundItem[]>([])
 const showOutItemModal = ref(false)
 const outItemForm      = ref({ product_id: '', quantity: 1, unit_price: 0 })
 
-async function loadOutbound() {
+async function loadOutbound(append = false) {
   outLoading.value = true
   try {
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE), offset: String(append ? outOrders.value.length : 0),
+    }
     if (outStatusFilter.value) params.status = outStatusFilter.value
     const { data } = await http.get('/outbound/', { params })
-    outOrders.value = data.data ?? data ?? []
+    const page = data.data ?? data ?? []
+    outOrders.value = append ? [...outOrders.value, ...page] : page
+    outHasMore.value = page.length === PAGE_SIZE
   } catch {
     toast.show('載入出庫單失敗', 'danger')
   } finally {
@@ -268,7 +285,7 @@ async function addOutItem() {
 }
 
 async function removeOutItem(itemId: string) {
-  if (!confirm('確定要移除此品項？') || !outDetailOrder.value) return
+  if (!(await appConfirm('確定要移除此品項？', { danger: true })) || !outDetailOrder.value) return
   try {
     await http.delete(`/outbound/${outDetailOrder.value._id}/item/${itemId}`)
     toast.show('已移除', 'success')
@@ -307,7 +324,7 @@ onMounted(async () => {
 
       <!-- Inbound toolbar -->
       <div v-if="activeTab === 'inbound'" class="d-flex gap-2 align-items-center">
-        <select v-model="inStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadInbound">
+        <select v-model="inStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadInbound()">
           <option value="">全部狀態</option>
           <option v-for="(v, k) in STATUS_MAP" :key="k" :value="k">{{ v.label }}</option>
         </select>
@@ -318,7 +335,7 @@ onMounted(async () => {
 
       <!-- Outbound toolbar -->
       <div v-if="activeTab === 'outbound'" class="d-flex gap-2 align-items-center">
-        <select v-model="outStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadOutbound">
+        <select v-model="outStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadOutbound()">
           <option value="">全部狀態</option>
           <option v-for="(v, k) in STATUS_MAP" :key="k" :value="k">{{ v.label }}</option>
         </select>
@@ -330,7 +347,7 @@ onMounted(async () => {
 
     <!-- ── 入庫 Tab ── -->
     <div v-if="activeTab === 'inbound'" class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>單號</th><th>供應商</th><th>倉庫</th><th>狀態</th>
@@ -355,7 +372,7 @@ onMounted(async () => {
             </td>
             <td class="text-end">${{ Number(o.total_amount ?? 0).toFixed(2) }}</td>
             <td>{{ o.creator || '—' }}</td>
-            <td><small class="text-muted">{{ o.created_at?.slice(0, 10) || '—' }}</small></td>
+            <td><small class="text-muted">{{ fmtDay(o.created_at) }}</small></td>
             <td>
               <button class="btn btn-sm btn-outline-primary" @click="openInDetail(o)" title="查看">
                 <i class="bi bi-eye"></i>
@@ -364,11 +381,12 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      <LoadMore :count="inOrders.length" :has-more="inHasMore" :loading="inLoading" @more="loadInbound(true)" />
     </div>
 
     <!-- ── 出庫 Tab ── -->
     <div v-if="activeTab === 'outbound'" class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>單號</th><th>客戶</th><th>倉庫</th><th>狀態</th>
@@ -393,7 +411,7 @@ onMounted(async () => {
             </td>
             <td class="text-end">${{ Number(o.total_amount ?? 0).toFixed(2) }}</td>
             <td>{{ o.creator || '—' }}</td>
-            <td><small class="text-muted">{{ o.created_at?.slice(0, 10) || '—' }}</small></td>
+            <td><small class="text-muted">{{ fmtDay(o.created_at) }}</small></td>
             <td>
               <button class="btn btn-sm btn-outline-primary" @click="openOutDetail(o)" title="查看">
                 <i class="bi bi-eye"></i>
@@ -402,6 +420,7 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      <LoadMore :count="outOrders.length" :has-more="outHasMore" :loading="outLoading" @more="loadOutbound(true)" />
     </div>
   </div>
 
@@ -460,7 +479,7 @@ onMounted(async () => {
               <div class="col-md-3"><i class="bi bi-building me-1"></i>{{ inDetailOrder.warehouse_name }}</div>
               <div class="col-md-3"><i class="bi bi-truck me-1"></i>{{ inDetailOrder.supplier || '未填' }}</div>
               <div class="col-md-3"><i class="bi bi-person-circle me-1"></i>{{ inDetailOrder.creator }}</div>
-              <div class="col-md-3"><i class="bi bi-calendar me-1"></i>{{ inDetailOrder.created_at?.slice(0, 10) }}</div>
+              <div class="col-md-3"><i class="bi bi-calendar me-1"></i>{{ fmtDay(inDetailOrder.created_at) }}</div>
             </div>
             <div class="mb-3 d-flex gap-2 flex-wrap">
               <button v-if="inDetailOrder.status === 'pending'" class="btn btn-sm btn-success" @click="doInAction('confirm')">
@@ -478,7 +497,7 @@ onMounted(async () => {
               </button>
             </div>
             <div class="table-responsive">
-              <table class="table table-sm mb-0">
+              <table v-stack-table class="table table-sm mb-0">
                 <thead>
                   <tr>
                     <th>SKU</th><th>產品</th><th>單位</th>
@@ -500,7 +519,7 @@ onMounted(async () => {
                     <td class="text-end">${{ Number((item.received_qty || item.expected_qty) * (item.unit_price ?? 0)).toFixed(2) }}</td>
                     <td>
                       <button v-if="['pending','confirmed'].includes(inDetailOrder.status)"
-                              class="btn btn-sm btn-outline-danger" @click="removeInItem(item._id)">
+                              class="btn btn-sm btn-outline-danger" @click="removeInItem(item._id)" aria-label="移除" title="移除">
                         <i class="bi bi-trash"></i>
                       </button>
                     </td>
@@ -615,7 +634,7 @@ onMounted(async () => {
               <div class="col-md-3"><i class="bi bi-building me-1"></i>{{ outDetailOrder.warehouse_name }}</div>
               <div class="col-md-3"><i class="bi bi-person me-1"></i>{{ outDetailOrder.customer || '未填' }}</div>
               <div class="col-md-3"><i class="bi bi-person-circle me-1"></i>{{ outDetailOrder.creator }}</div>
-              <div class="col-md-3"><i class="bi bi-calendar me-1"></i>{{ outDetailOrder.created_at?.slice(0, 10) }}</div>
+              <div class="col-md-3"><i class="bi bi-calendar me-1"></i>{{ fmtDay(outDetailOrder.created_at) }}</div>
             </div>
             <div class="mb-3 d-flex gap-2 flex-wrap">
               <button v-if="outDetailOrder.status === 'pending'" class="btn btn-sm btn-success" @click="doOutAction('confirm')">
@@ -633,7 +652,7 @@ onMounted(async () => {
               </button>
             </div>
             <div class="table-responsive">
-              <table class="table table-sm mb-0">
+              <table v-stack-table class="table table-sm mb-0">
                 <thead>
                   <tr>
                     <th>SKU</th><th>產品</th><th>單位</th>
@@ -655,7 +674,7 @@ onMounted(async () => {
                     <td class="text-end">${{ Number(item.expected_qty * (item.unit_price ?? 0)).toFixed(2) }}</td>
                     <td>
                       <button v-if="['pending','confirmed'].includes(outDetailOrder.status)"
-                              class="btn btn-sm btn-outline-danger" @click="removeOutItem(item._id)">
+                              class="btn btn-sm btn-outline-danger" @click="removeOutItem(item._id)" aria-label="移除" title="移除">
                         <i class="bi bi-trash"></i>
                       </button>
                     </td>

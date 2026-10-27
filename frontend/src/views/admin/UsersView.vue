@@ -54,6 +54,7 @@ const tplForm = ref({
 
 // ── Nav pages — 從 nav.ts 取得，與側欄同步 ──────────────────
 import { CONFIGURABLE_PAGES } from '@/config/nav'
+import { appConfirm } from '@/composables/useConfirm'
 
 const pageGroups = computed(() => {
   const map: Record<string, typeof CONFIGURABLE_PAGES> = {}
@@ -143,7 +144,7 @@ async function saveUser() {
 }
 
 async function deleteUser(id: string, uname: string) {
-  if (!confirm(`確定刪除使用者 ${uname}？`)) return
+  if (!(await appConfirm(`確定刪除使用者 ${uname}？`, { danger: true }))) return
   try {
     await http.delete(`/user/${id}`)
     toast.show('已刪除')
@@ -204,7 +205,7 @@ async function saveStore() {
 }
 
 async function deleteStore(s: Store) {
-  if (!confirm(`確定刪除店家「${s.name}」？`)) return
+  if (!(await appConfirm(`確定刪除店家「${s.name}」？`, { danger: true }))) return
   try {
     await storeApi.delete(s._id)
     toast.show('已刪除')
@@ -244,7 +245,7 @@ async function saveStoreRole() {
 
 async function deleteStoreRole(r: StoreRole) {
   if (r.is_system) { toast.show('系統預設角色不可刪除', 'danger'); return }
-  if (!confirm(`確定刪除店家角色「${r.name}」？`)) return
+  if (!(await appConfirm(`確定刪除店家角色「${r.name}」？`, { danger: true }))) return
   try {
     await storeApi.roleDelete(r._id)
     toast.show('已刪除')
@@ -324,7 +325,7 @@ async function saveTpl() {
 }
 
 async function deleteTpl(id: string, name: string) {
-  if (!confirm(`確定刪除使用者模板「${name}」？\n已指派此模板的使用者角色與頁面設定將不再受此模板控制。`)) return
+  if (!(await appConfirm(`確定刪除使用者模板「${name}」？\n已指派此模板的使用者角色與頁面設定將不再受此模板控制。`, { danger: true }))) return
   try {
     await http.delete(`/user/templates/${id}`)
     toast.show('模板已刪除')
@@ -375,7 +376,7 @@ onMounted(load)
       </button>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr><th>帳號</th><th>角色</th><th>使用者模板</th><th>所屬店家</th><th>建立時間</th><th>操作</th></tr>
         </thead>
@@ -418,7 +419,7 @@ onMounted(load)
             <td>
               <button class="btn btn-sm btn-outline-primary me-1"
                       :disabled="u.locked"
-                      @click="openUserModal(u)">
+                      @click="openUserModal(u)" aria-label="編輯" title="編輯">
                 <i class="bi bi-pencil"></i>
               </button>
               <button v-if="u.locked" class="btn btn-sm btn-outline-secondary" disabled
@@ -426,7 +427,7 @@ onMounted(load)
                 <i class="bi bi-lock-fill"></i>
               </button>
               <button v-else class="btn btn-sm btn-outline-danger"
-                      @click="deleteUser(u._id, u.username)">
+                      @click="deleteUser(u._id, u.username)" aria-label="刪除" title="刪除">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
@@ -450,7 +451,7 @@ onMounted(load)
       標記的模板為預設模板，不可刪除。
     </div>
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr><th>模板名稱</th><th>角色</th><th>說明</th><th>已指派使用者</th><th>操作</th></tr>
         </thead>
@@ -473,11 +474,11 @@ onMounted(load)
             <td class="text-muted small">{{ t.description || '—' }}</td>
             <td class="text-center">{{ tplUsageMap[t._id] || 0 }}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary me-1" @click="openTplModal(t)">
+              <button class="btn btn-sm btn-outline-primary me-1" @click="openTplModal(t)" aria-label="編輯" title="編輯">
                 <i class="bi bi-pencil"></i>
               </button>
               <button v-if="!t.is_system" class="btn btn-sm btn-outline-danger"
-                      @click="deleteTpl(t._id, t.name)">
+                      @click="deleteTpl(t._id, t.name)" aria-label="刪除" title="刪除">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
@@ -496,7 +497,7 @@ onMounted(load)
       </button>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr><th>店家名稱</th><th>代碼</th><th>角色</th><th>狀態</th><th>建立時間</th><th>操作</th></tr>
         </thead>
@@ -522,10 +523,10 @@ onMounted(load)
             </td>
             <td class="text-muted small">{{ fmtDate(s.created_at) }}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary me-1" @click="openEditStore(s)">
+              <button class="btn btn-sm btn-outline-primary me-1" @click="openEditStore(s)" aria-label="編輯" title="編輯">
                 <i class="bi bi-pencil"></i>
               </button>
-              <button class="btn btn-sm btn-outline-danger" @click="deleteStore(s)">
+              <button class="btn btn-sm btn-outline-danger" @click="deleteStore(s)" aria-label="刪除" title="刪除">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
@@ -544,7 +545,7 @@ onMounted(load)
       </button>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr><th>名稱</th><th>說明</th><th>操作</th></tr>
         </thead>
@@ -571,14 +572,14 @@ onMounted(load)
                 class="btn btn-sm btn-outline-primary me-1"
                 :disabled="r.is_system"
                 @click="openStoreRoleModal(r)"
-              >
+               aria-label="編輯" title="編輯">
                 <i class="bi bi-pencil"></i>
               </button>
               <button
                 class="btn btn-sm btn-outline-danger"
                 :disabled="r.is_system"
                 @click="deleteStoreRole(r)"
-              >
+               aria-label="刪除" title="刪除">
                 <i class="bi bi-trash"></i>
               </button>
             </td>

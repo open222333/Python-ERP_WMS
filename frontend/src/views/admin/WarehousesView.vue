@@ -4,6 +4,7 @@ import { useToastStore } from '@/stores/toast'
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import type { Warehouse, Store } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 const auth  = useAuthStore()
@@ -113,7 +114,7 @@ async function save() {
 
 // ── Delete ─────────────────────────────────────────────────
 async function del(id: string) {
-  if (!confirm('確定要刪除此倉庫？此操作無法復原。')) return
+  if (!(await appConfirm('確定要刪除此倉庫？此操作無法復原。', { danger: true }))) return
   try {
     await http.delete(`/warehouse/${id}`)
     toast.show('已刪除', 'success')
@@ -136,7 +137,7 @@ onMounted(load)
     </div>
 
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>代碼</th>

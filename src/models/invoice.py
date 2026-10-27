@@ -145,7 +145,7 @@ class Invoice:
     @classmethod
     def find_all(cls, status: str = None, date_from: datetime = None,
                  date_to: datetime = None, limit: int = 100,
-                 store_filter: dict = None) -> list:
+                 store_filter: dict = None, offset: int = 0) -> list:
         """store_filter：[A2] 例 {'store_id': ...} 或含舊資料的 $or 條件"""
         q = dict(store_filter or {})
         if status:
@@ -156,5 +156,5 @@ class Invoice:
                 q['created_at']['$gte'] = date_from
             if date_to:
                 q['created_at']['$lte'] = date_to
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
+        docs = cls._col().find(q).sort([('created_at', -1), ('_id', -1)]).skip(max(0, offset)).limit(limit)   # [U3]
         return [_fmt(d) for d in docs]

@@ -19,7 +19,7 @@
             <input v-model="form.password" :type="showPwd ? 'text' : 'password'"
                    class="form-control" placeholder="password"
                    autocomplete="current-password" required />
-            <button type="button" class="btn btn-outline-secondary" @click="showPwd = !showPwd">
+            <button type="button" class="btn btn-outline-secondary" @click="showPwd = !showPwd" :aria-label="showPwd ? '隱藏密碼' : '顯示密碼'" :title="showPwd ? '隱藏密碼' : '顯示密碼'">
               <i class="bi" :class="showPwd ? 'bi-eye-slash' : 'bi-eye'"></i>
             </button>
           </div>

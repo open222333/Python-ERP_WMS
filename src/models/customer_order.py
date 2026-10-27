@@ -84,14 +84,14 @@ class CustomerOrder:
     # ── 查詢 ──────────────────────────────────────
     @classmethod
     def find_all(cls, status: str = None, date: str = None,
-                 limit: int = 100, store_filter: dict = None) -> list:
-        """查詢訂單，預設最新100筆"""
+                 limit: int = 100, store_filter: dict = None, offset: int = 0) -> list:
+        """查詢訂單，預設最新100筆；offset 分頁（[U3]）"""
         q = dict(store_filter or {})
         if status and status in ORDER_STATUS:
             q['status'] = status
         if date:
             q['order_date'] = date
-        docs = cls._col().find(q).sort('created_at', -1).limit(limit)
+        docs = cls._col().find(q).sort([('created_at', -1), ('_id', -1)]).skip(max(0, offset)).limit(limit)
         return [_fmt(d) for d in docs]
 
     @classmethod

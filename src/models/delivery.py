@@ -51,7 +51,7 @@ class DeliveryOrder:
     @classmethod
     def find_all(cls, platform: str = None, status: str = None,
                  date_from: datetime = None, date_to: datetime = None,
-                 limit: int = 200, store_filter: dict = None) -> list:
+                 limit: int = 200, store_filter: dict = None, offset: int = 0) -> list:
         """store_filter：[A2] 例 {'store_ref': ObjectId}；未歸屬分店（store_ref=None）的訂單只有總部看得到"""
         q = dict(store_filter or {})
         if platform:
@@ -67,7 +67,8 @@ class DeliveryOrder:
         # [OPT-MEM] 列表排除 raw_payload（平台原始訂單 JSON，單筆可達數 KB～數十 KB）：
         # 列表最多 200 筆，原本每次都整批載入 worker 記憶體並回傳給前端，前端完全沒用到。
         # 單筆詳情（find_by_id）維持完整資料，供除錯追查。
-        docs = cls._col().find(q, {'raw_payload': 0}).sort('placed_at', -1).limit(limit)
+        docs = cls._col().find(q, {'raw_payload': 0}).sort([('placed_at', -1), ('_id', -1)]) \
+                       .skip(max(0, offset)).limit(limit)   # [U3]
         return [_fmt(d) for d in docs]
 
     @classmethod

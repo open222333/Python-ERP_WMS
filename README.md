@@ -1765,6 +1765,7 @@ from src.permissions import require_role
 | `invoice`／`analytics` 模組零測試覆蓋 | `delivery` 已補測試（2026-07-17），`invoice`（ECPay 開立/作廢）與 `analytics`（儀表板統計）仍無對應測試；`invoice` 涉稅務合規，風險最高 |
 | SSE 改 MongoDB Change Streams | 需 replica set；現行 2 秒輪詢已有去重與筆數上限，非急迫 |
 | 大列表虛擬滾動 | 待單列表資料量 >1000 筆時再處理（ProductsView / MovementsView / LogsView） |
+| UI 待改善（U9–U13） | U1–U8 已於 2026-10-25 完成（分頁、時區、確認框、彈窗 Esc、深色模式等，見 `docs/FIXES.md`）；剩餘：欄位錯誤提示僅產品表單套用（U9）、大元件拆分與行內樣式（U10、U12）、Flask 舊模板（U11）、手機實機確認（U13），詳見 `docs/OPTIMIZATION_REPORT.md` 第六輪 |
 | Backlog（未排程，依價值排序） | CI/CD（pytest + vue-tsc + build 自動化）、公開端點 rate limit、MongoDB 備份、nginx 靜態資源快取、E2E 測試（Playwright）、依賴弱點掃描（pip-audit/npm audit）、swagger docstring 抽 YAML |
 
 ---

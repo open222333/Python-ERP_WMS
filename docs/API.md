@@ -9,6 +9,8 @@
 > 皆回 404（未註冊路由），根路由 `/` 改回傳 `{"success": true, "service": "wms-api"}`
 > 而不轉址。需在正式環境暫時查閱時，於 `conf/config.ini` 明確設定
 > `[SETTING] ENABLE_SWAGGER=true`（見 `docs/FIXES.md` 2026-09-18 條目）。
+>
+> **列表分頁**（2026-10-25）：`GET /product/`、`/pos/sales`、`/customer-order/`、`/invoice/`、`/delivery/orders` 支援 `?limit=&offset=`，依建立時間（同時間依 `_id`）遞減排序，頁與頁不重疊。所有列表 API 的 `limit` 一律夾在 1 ～ 各自上限之間（`limit=0` 不再代表不限筆數）；`/log/` 上限 2000。
 
 ## `/auth` — 認證
 

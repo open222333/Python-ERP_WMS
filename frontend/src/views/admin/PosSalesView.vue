@@ -3,6 +3,8 @@ import { ref, onMounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { fmtDate } from '@/utils/format'
+import LoadMore from '@/components/LoadMore.vue'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 
@@ -119,17 +121,25 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
-async function loadSales() {
+// [U3] 分頁：原本未帶 limit，只拿到後端預設最新 50 筆且無提示
+const PAGE_SIZE = 100
+const hasMore = ref(false)
+
+async function loadSales(append = false) {
   loading.value = true
   try {
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE), offset: String(append ? sales.value.length : 0),
+    }
     if (dateFrom.value) params.date_from = dateFrom.value
     if (dateTo.value) params.date_to = dateTo.value
     if (cashierFilter.value) params.cashier = cashierFilter.value
     if (statusFilter.value) params.status = statusFilter.value
     if (sourceFilter.value) params.source = sourceFilter.value
     const res = await http.get('/pos/sales', { params })
-    sales.value = res.data.data || []
+    const page = res.data.data || []
+    sales.value = append ? [...sales.value, ...page] : page
+    hasMore.value = page.length === PAGE_SIZE
   } catch {
     toast.show('載入失敗', 'danger')
   } finally {
@@ -150,7 +160,7 @@ function closeModal() {
 
 async function doRefund() {
   if (!selectedSale.value) return
-  if (!confirm('確定要退款此訂單？')) return
+  if (!(await appConfirm('確定要退款此訂單？', { danger: true }))) return
   refunding.value = true
   try {
     await http.post(`/pos/sales/${selectedSale.value._id}/refund`, {
@@ -200,7 +210,7 @@ onMounted(() => {
             <option value="completed">已完成</option>
             <option value="refunded">已退款</option>
           </select>
-          <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="loadSales">
+          <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="loadSales()" aria-label="查詢" title="查詢">
             <i class="bi bi-search"></i>
           </button>
           <!-- 匯出 -->
@@ -234,7 +244,7 @@ onMounted(() => {
       </div>
 
       <div class="table-responsive">
-        <table class="table mb-0">
+        <table v-stack-table class="table mb-0">
           <thead>
             <tr>
               <th>單號</th>
@@ -285,7 +295,7 @@ onMounted(() => {
               </td>
               <td class="small text-muted">{{ fmtDate(s.created_at) }}</td>
               <td>
-                <button class="btn btn-xs btn-outline-secondary" @click="openDetail(s)">
+                <button class="btn btn-xs btn-outline-secondary" @click="openDetail(s)" aria-label="檢視明細" title="檢視明細">
                   <i class="bi bi-eye"></i>
                 </button>
               </td>
@@ -293,6 +303,7 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+      <LoadMore :count="sales.length" :has-more="hasMore" :loading="loading" @more="loadSales(true)" />
     </div>
 
     <!-- Detail Modal -->
@@ -310,7 +321,7 @@ onMounted(() => {
             <button type="button" class="btn-close" @click="closeModal"></button>
           </div>
           <div class="modal-body">
-            <table class="table table-sm mb-3">
+            <table v-stack-table class="table table-sm mb-3">
               <thead>
                 <tr>
                   <th>商品</th>

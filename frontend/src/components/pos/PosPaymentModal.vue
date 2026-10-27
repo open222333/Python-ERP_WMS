@@ -86,7 +86,7 @@
                      :placeholder="selectedPayMethod === 'zpay'
                        ? '請掃描顧客全支付 App 出示的條碼…'
                        : '請掃描顧客 LINE Pay 出示的付款條碼…'" />
-              <button v-if="linePayKey" class="inv-clear-btn" @click="linePayKey = ''">
+              <button v-if="linePayKey" class="inv-clear-btn" @click="linePayKey = ''" aria-label="清除" title="清除">
                 <i class="bi bi-x-circle"></i>
               </button>
             </div>
@@ -132,7 +132,7 @@
                 <input ref="invScanRef" v-model="invScanRaw" type="text"
                        class="inv-scan-input" placeholder="掃描或輸入載具條碼，按 Enter 確認"
                        @keydown.enter="onInvScan" @input="onInvInput" />
-                <button v-if="invScanRaw" class="inv-clear-btn" @click="clearInvScan">
+                <button v-if="invScanRaw" class="inv-clear-btn" @click="clearInvScan" aria-label="清除" title="清除">
                   <i class="bi bi-x-circle"></i>
                 </button>
               </div>

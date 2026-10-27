@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
 import { useCacheStore } from '@/stores/cache'
 import http from '@/api'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 const cache = useCacheStore()
@@ -125,7 +126,7 @@ async function saveTpl() {
 }
 
 async function delTpl(tpl: Template) {
-  if (!confirm(`確定要刪除模板「${tpl.name}」？`)) return
+  if (!(await appConfirm(`確定要刪除模板「${tpl.name}」？`, { danger: true }))) return
   tplDeleting.value = tpl._id
   try {
     await http.delete(`/delivery/mapping-templates/${tpl._id}/`)
@@ -311,7 +312,7 @@ onMounted(async () => {
         <div class="spinner-border spinner-border-sm text-primary"></div>
       </div>
       <div v-else class="table-responsive">
-        <table class="table mb-0">
+        <table v-stack-table class="table mb-0">
           <thead>
             <tr>
               <th>店家</th>
@@ -357,7 +358,7 @@ onMounted(async () => {
         <div class="spinner-border spinner-border-sm text-primary"></div>
       </div>
       <div v-else class="table-responsive">
-        <table class="table mb-0">
+        <table v-stack-table class="table mb-0">
           <thead>
             <tr>
               <th>模板名稱</th>
@@ -380,7 +381,7 @@ onMounted(async () => {
               </td>
               <td>{{ tpl.items?.length || 0 }} 筆</td>
               <td>
-                <button class="btn btn-sm btn-outline-secondary me-1" @click="openTplModal(tpl)">
+                <button class="btn btn-sm btn-outline-secondary me-1" @click="openTplModal(tpl)" aria-label="編輯" title="編輯">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger"
@@ -424,7 +425,7 @@ onMounted(async () => {
             <template v-for="p in PLATFORMS" :key="p.key">
               <div v-if="activePlatform === p.key">
                 <!-- 啟用 -->
-                <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-light rounded">
+                <div class="d-flex align-items-center justify-content-between mb-3 p-3 bg-body-tertiary rounded">
                   <div>
                     <div class="fw-semibold">啟用整合</div>
                     <div class="text-muted small">開啟後系統會接收此平台的 Webhook 通知</div>
@@ -566,7 +567,7 @@ onMounted(async () => {
                       <i class="bi bi-arrow-right mx-2 text-muted"></i>
                       <template v-if="m.system_items.length">
                         <span v-for="(si, si_idx) in m.system_items" :key="si_idx"
-                              class="badge bg-light text-dark border me-1">
+                              class="badge bg-body-secondary text-body border me-1">
                           {{ si.product_name }}
                           <span class="text-muted ms-1">×{{ si.qty }}</span>
                         </span>
@@ -574,7 +575,7 @@ onMounted(async () => {
                       <span v-else class="text-muted small">（無品項）</span>
                     </div>
                     <button class="btn btn-sm btn-outline-danger flex-shrink-0"
-                            @click="tplRemoveMapping(idx)">
+                            @click="tplRemoveMapping(idx)" aria-label="移除" title="移除">
                       <i class="bi bi-trash"></i>
                     </button>
                   </div>
@@ -585,7 +586,7 @@ onMounted(async () => {
               </div>
 
               <!-- 新增對應表單 -->
-              <div v-if="tplAddingMapping" class="border rounded p-3 bg-light">
+              <div v-if="tplAddingMapping" class="border rounded p-3 bg-body-tertiary">
                 <div class="mb-2">
                   <label class="form-label fw-semibold small mb-1">平台品項名稱</label>
                   <input v-model="tplNewMapping.platform_item_name" type="text"
@@ -628,7 +629,7 @@ onMounted(async () => {
                 <!-- 搜尋產品 -->
                 <div v-if="tplSourceTab === 'product'" class="mb-2">
                   <label class="form-label fw-semibold small mb-1">搜尋系統產品</label>
-                  <input v-model="tplProductSearch" type="text" class="form-control form-control-sm"
+                  <input v-model="tplProductSearch" type="search" class="form-control form-control-sm"
                          placeholder="輸入名稱或 SKU 搜尋..." />
                   <div class="border rounded mt-1" style="max-height:160px;overflow-y:auto">
                     <div v-if="!filteredTplProducts.length" class="text-muted small p-2">無符合產品</div>
@@ -648,7 +649,7 @@ onMounted(async () => {
                 <!-- 搜尋菜單品項 -->
                 <div v-else class="mb-2">
                   <label class="form-label fw-semibold small mb-1">搜尋菜單品項</label>
-                  <input v-model="tplMenuSearch" type="text" class="form-control form-control-sm"
+                  <input v-model="tplMenuSearch" type="search" class="form-control form-control-sm"
                          placeholder="輸入品項名稱搜尋..." />
                   <div class="border rounded mt-1" style="max-height:160px;overflow-y:auto">
                     <div v-if="!filteredTplMenuItems.length" class="text-muted small p-2">無符合菜單品項</div>
@@ -661,7 +662,7 @@ onMounted(async () => {
                          v-if="tplNewMapping.system_items.find(s => s.menu_item_id === mi._id)"></i>
                       {{ mi.name }}
                       <span class="text-secondary ms-1" style="font-size:.7rem">{{ mi.menu_name }}</span>
-                      <span v-if="mi.linked_products?.length" class="badge bg-light text-dark border ms-1"
+                      <span v-if="mi.linked_products?.length" class="badge bg-body-secondary text-body border ms-1"
                             style="font-size:.65rem">扣 {{ mi.linked_products.length }} 項原料</span>
                     </button>
                   </div>
@@ -698,13 +699,13 @@ onMounted(async () => {
     <div class="row g-2">
       <div class="col-12 col-md-6">
         <div class="fw-semibold small mb-1">UberEats</div>
-        <code class="d-block p-2 bg-light rounded small text-break">
+        <code class="d-block p-2 bg-body-tertiary rounded small text-break">
           https://{{ window?.location?.hostname || 'yourdomain.com' }}/delivery/webhook/ubereats
         </code>
       </div>
       <div class="col-12 col-md-6">
         <div class="fw-semibold small mb-1">foodpanda</div>
-        <code class="d-block p-2 bg-light rounded small text-break">
+        <code class="d-block p-2 bg-body-tertiary rounded small text-break">
           https://{{ window?.location?.hostname || 'yourdomain.com' }}/delivery/webhook/foodpanda
         </code>
       </div>

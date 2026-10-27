@@ -50,7 +50,8 @@
       <!-- Topbar -->
       <header id="topbar">
         <div class="d-flex align-items-center gap-2">
-          <button class="btn btn-sm btn-outline-secondary d-lg-none" @click="sidebarCollapsed = !sidebarCollapsed">
+          <button class="btn btn-sm btn-outline-secondary d-lg-none btn-menu" @click="sidebarCollapsed = !sidebarCollapsed"
+                  aria-label="開啟選單">
             <i class="bi bi-list"></i>
           </button>
           <button class="btn btn-sm btn-outline-secondary d-none d-lg-block" @click="sidebarCollapsed = !sidebarCollapsed" title="折疊側邊欄">
@@ -86,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCacheStore } from '@/stores/cache'
@@ -100,7 +101,18 @@ const theme  = useThemeStore()
 const router = useRouter()
 const route  = useRoute()
 
-const sidebarCollapsed = ref(false)
+// [MOBILE] 手機（< 992px）預設收起側欄；原本固定為展開，手機一進後台側欄就蓋住整個畫面
+const MOBILE_BP = 992
+const isNarrow = () => window.innerWidth < MOBILE_BP
+const sidebarCollapsed = ref(isNarrow())
+
+// 換頁（含瀏覽器返回）時手機版自動收起
+watch(() => route.fullPath, () => { if (isNarrow()) sidebarCollapsed.value = true })
+
+// 側欄展開時鎖住背景捲動，避免手指滑動時後面的頁面跟著捲
+watch(sidebarCollapsed, (c) => {
+  document.body.style.overflow = (!c && isNarrow()) ? 'hidden' : ''
+})
 
 function isVisible(item: any) {
   if (item.adminOnly)  return auth.isAdmin
@@ -147,11 +159,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('app:unauthorized', _onUnauthorized)
+  document.body.style.overflow = ''
 })
 
 function closeMobile() {
   // 手機版點選後收起
-  if (window.innerWidth < 992) sidebarCollapsed.value = true
+  if (isNarrow()) sidebarCollapsed.value = true
 }
 
 // 頁面標題從 nav.ts 自動產生，避免與 nav.ts 不一致
@@ -301,10 +314,20 @@ function handleLogout() {
   #sidebar {
     position: fixed;
     top: 0; left: 0;
-    height: 100vh;
+    height: 100vh; height: 100dvh;
+    width: min(var(--sidebar-w, 230px), 82vw); min-width: 0;
     transform: translateX(0);
     transition: transform .25s;
+    box-shadow: 4px 0 24px rgba(0,0,0,.25);
   }
-  #sidebar.collapsed { transform: translateX(-100%); width: var(--sidebar-w); min-width: var(--sidebar-w); }
+  #sidebar.collapsed { transform: translateX(-100%); width: min(var(--sidebar-w, 230px), 82vw); min-width: 0; box-shadow: none; }
+  .nav-link { padding: 11px 16px; font-size: .95rem; }     /* 手指點按目標加大 */
+  .btn-menu { width: 40px; height: 36px; font-size: 1.15rem; padding: 0; }
+}
+/* [MOBILE] 手機：內容邊距縮小、頂列精簡 */
+@media (max-width: 767.98px) {
+  #topbar { padding: 0 10px; height: 50px; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+  #content { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .page-title { font-size: 1rem; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 </style>

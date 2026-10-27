@@ -2,9 +2,13 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
 import http from '@/api'
+import { fetchAllPages } from '@/api/paging'
 import type { Category, Product } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
+import { useFieldErrors } from '@/composables/useFieldErrors'
 
 const toast = useToastStore()
+const fe    = useFieldErrors()   // [U9]
 
 // ── Tab ────────────────────────────────────────────────────
 const activeTab = ref<'products' | 'categories'>('products')
@@ -50,7 +54,7 @@ async function saveCat() {
 }
 
 async function delCat(id: string) {
-  if (!confirm('確定要刪除此分類？')) return
+  if (!(await appConfirm('確定要刪除此分類？', { danger: true }))) return
   try {
     await http.delete(`/product/category/${id}`)
     toast.show('已刪除', 'success')
@@ -145,7 +149,7 @@ async function batchApply(updates: Record<string, unknown>) {
 async function batchDelete() {
   const ids = [...selectedIds.value]
   if (!ids.length) return
-  if (!confirm(`確定刪除選取的 ${ids.length} 個產品？此操作無法復原。`)) return
+  if (!(await appConfirm(`確定刪除選取的 ${ids.length} 個產品？此操作無法復原。`, { danger: true }))) return
   batchSaving.value = true
   try {
     const { data } = await http.delete('/product/batch', { data: { ids } })
@@ -204,8 +208,7 @@ async function loadCategories() {
 async function loadProducts() {
   loading.value = true
   try {
-    const { data } = await http.get('/product/')
-    products.value = data.data ?? data ?? []
+    products.value = await fetchAllPages('/product/')   // [U3] 原本只顯示前 200 筆
   } catch {
     toast.show('載入產品失敗', 'danger')
   } finally {
@@ -232,15 +235,19 @@ function openModal(p?: Product) {
   } else if (form.value._id) {
     form.value = emptyForm()
   }
+  fe.clear()
   showModal.value = true
 }
 
 // ── Save ───────────────────────────────────────────────────
 async function save() {
-  if (!form.value.name.trim() || !form.value.sku.trim()) {
-    toast.show('名稱與 SKU 不得為空', 'danger')
-    return
-  }
+  // [U9] 錯誤標在欄位旁，不再只靠 toast
+  if (!fe.check({
+    sku:        [!form.value.sku.trim(),  '請填寫 SKU'],
+    name:       [!form.value.name.trim(), '請填寫名稱'],
+    sell_price: [Number(form.value.sell_price) < 0, '售價不可為負數'],
+    cost_price: [Number(form.value.cost_price) < 0, '成本不可為負數'],
+  })) return
   saving.value = true
   const isNew = !form.value._id
   try {
@@ -266,7 +273,9 @@ async function save() {
     if (isNew) form.value = emptyForm()
     await loadProducts()
   } catch (e: any) {
-    toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
+    const msg = e?.response?.data?.message ?? '儲存失敗'
+    if (e?.response?.status === 409 && msg.includes('SKU')) fe.set('sku', msg)   // SKU 已存在
+    toast.show(msg, 'danger')
   } finally {
     saving.value = false
   }
@@ -274,7 +283,7 @@ async function save() {
 
 // ── Delete ─────────────────────────────────────────────────
 async function del(id: string) {
-  if (!confirm('確定要刪除此產品？')) return
+  if (!(await appConfirm('確定要刪除此產品？', { danger: true }))) return
   try {
     await http.delete(`/product/${id}`)
     toast.show('已刪除', 'success')
@@ -319,7 +328,7 @@ async function handleImport(e: Event) {
   }
   const catCount  = (payload.categories || []).length
   const prodCount = (payload.products   || []).length
-  if (!confirm(`即將匯入：${catCount} 個分類、${prodCount} 個產品\n確定繼續？`)) return
+  if (!(await appConfirm(`即將匯入：${catCount} 個分類、${prodCount} 個產品\n確定繼續？`))) return
   try {
     const { data } = await http.post('/product/import', payload)
     const res = data.result
@@ -373,7 +382,8 @@ onMounted(async () => {
         <!-- Keyword search -->
         <input
           v-model="keyword"
-          type="text"
+          type="search"
+          @search="loadProducts()"
           class="form-control form-control-sm"
           style="width: 180px"
           placeholder="搜尋名稱/SKU"
@@ -471,7 +481,7 @@ onMounted(async () => {
     </Transition>
 
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th style="width:36px">
@@ -564,7 +574,7 @@ onMounted(async () => {
       </button>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr><th>名稱</th><th>排序</th><th>操作</th></tr>
         </thead>
@@ -576,10 +586,10 @@ onMounted(async () => {
             <td class="fw-semibold">{{ c.name }}</td>
             <td class="text-muted">{{ c.sort_order ?? 0 }}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary me-1" @click="openCatModal(c)">
+              <button class="btn btn-sm btn-outline-primary me-1" @click="openCatModal(c)" aria-label="編輯" title="編輯">
                 <i class="bi bi-pencil"></i>
               </button>
-              <button class="btn btn-sm btn-outline-danger" @click="delCat(c._id)">
+              <button class="btn btn-sm btn-outline-danger" @click="delCat(c._id)" aria-label="刪除" title="刪除">
                 <i class="bi bi-trash"></i>
               </button>
             </td>
@@ -652,7 +662,8 @@ onMounted(async () => {
                   SKU <span class="text-danger">*</span>
                 </label>
                 <div class="input-group">
-                  <input v-model="form.sku" type="text" class="form-control" />
+                  <input v-model="form.sku" type="text" class="form-control" data-field="sku"
+                         :class="{ 'is-invalid': fe.errors.sku }" @input="fe.clear('sku')" />
                   <button
                     type="button"
                     class="btn btn-outline-secondary"
@@ -661,6 +672,7 @@ onMounted(async () => {
                   >
                     <i class="bi bi-arrow-clockwise"></i>
                   </button>
+                  <div class="invalid-feedback">{{ fe.errors.sku }}</div>
                 </div>
               </div>
 
@@ -669,7 +681,9 @@ onMounted(async () => {
                 <label class="form-label fw-semibold">
                   名稱 <span class="text-danger">*</span>
                 </label>
-                <input v-model="form.name" type="text" class="form-control" />
+                <input v-model="form.name" type="text" class="form-control" data-field="name"
+                       :class="{ 'is-invalid': fe.errors.name }" @input="fe.clear('name')" />
+                <div class="invalid-feedback">{{ fe.errors.name }}</div>
               </div>
 
               <!-- Barcode -->
@@ -708,7 +722,11 @@ onMounted(async () => {
                     step="0.01"
                     min="0"
                     class="form-control"
+                    data-field="sell_price"
+                    :class="{ 'is-invalid': fe.errors.sell_price }"
+                    @input="fe.clear('sell_price')"
                   />
+                  <div class="invalid-feedback">{{ fe.errors.sell_price }}</div>
                 </div>
               </div>
 
@@ -723,7 +741,11 @@ onMounted(async () => {
                     step="0.01"
                     min="0"
                     class="form-control"
+                    data-field="cost_price"
+                    :class="{ 'is-invalid': fe.errors.cost_price }"
+                    @input="fe.clear('cost_price')"
                   />
+                  <div class="invalid-feedback">{{ fe.errors.cost_price }}</div>
                 </div>
               </div>
 

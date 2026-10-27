@@ -12,6 +12,10 @@
 
 ## 後台頁面（`/admin/*`，需登入）
 
+> 手機版：寬度 < 992px 側欄預設收起；< 768px 時列表表格（加了 `v-stack-table` 的）每列改為卡片、工具列欄位自動分配寬度、大型彈窗全螢幕。新增列表表格時請加上 `v-stack-table`（見 `frontend/src/directives/stackTable.ts`）。
+>
+> 共用 UI（2026-10-25）：確認／提示用 `appConfirm()`／`appAlert()`（`composables/useConfirm.ts`），勿再用原生 `confirm`／`alert`；自製彈窗（`.modal.d-block`）自動支援 Esc 關閉、背景鎖捲動與焦點管理（`plugins/modalEnhancer.ts`），關閉鈕請用 `.btn-close`；長列表用 `<LoadMore>` ＋ API `offset`，需要完整清單用 `fetchAllPages()`；搜尋框用 `type="search"`；純圖示按鈕必須加 `aria-label`／`title`；表單錯誤用 `useFieldErrors()`。
+
 | 路由 | 檔案 | 功能 |
 |------|------|------|
 | `/admin/dashboard` | `DashboardView.vue` | 儀表板：出入庫統計（日/週/月/年）、低庫存警示、待處理訂單數 |

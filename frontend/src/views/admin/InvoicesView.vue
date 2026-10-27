@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import http from '@/api'
+import { fmtDate as fmtDateTZ } from '@/utils/format'
+import LoadMore from '@/components/LoadMore.vue'
 import { useToastStore } from '@/stores/toast'
 
 const toast = useToastStore()
@@ -21,15 +23,23 @@ const showDetailModal = ref(false)
 const detailItem      = ref<any>(null)
 
 // ── Load ─────────────────────────────────────────────────────
-async function load() {
+// [U3] 分頁：原本固定最多 200 筆且無提示
+const PAGE_SIZE = 100
+const hasMore = ref(false)
+
+async function load(append = false) {
   loading.value = true
   try {
-    const params: Record<string, string> = { limit: '200' }
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE), offset: String(append ? invoices.value.length : 0),
+    }
     if (filterStatus.value)   params.status    = filterStatus.value
     if (filterDateFrom.value) params.date_from = filterDateFrom.value
     if (filterDateTo.value)   params.date_to   = filterDateTo.value
     const r = await http.get('/invoice/', { params })
-    invoices.value = r.data.data || []
+    const page = r.data.data || []
+    invoices.value = append ? [...invoices.value, ...page] : page
+    hasMore.value = page.length === PAGE_SIZE
   } catch {
     toast.show('載入失敗', 'danger')
   } finally {
@@ -37,7 +47,7 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => load())
 
 // ── Computed ─────────────────────────────────────────────────
 const stats = computed(() => ({
@@ -97,9 +107,8 @@ function carrierLabel(type: string, num: string) {
   return num || '—'
 }
 
-function fmtDate(s: string) {
-  return s ? s.replace('T', ' ').slice(0, 16) : '—'
-}
+// [U4] 原本直接截字串，顯示的是 UTC 時間（早 8 小時）；改用共用的時區正確格式化
+const fmtDate = (s: string) => fmtDateTZ(s)
 </script>
 
 <template>
@@ -164,7 +173,7 @@ function fmtDate(s: string) {
             <input v-model="filterDateTo" type="date" class="form-control form-control-sm" />
           </div>
           <div class="col-auto">
-            <button class="btn btn-sm btn-primary" @click="load" :disabled="loading">
+            <button class="btn btn-sm btn-primary" @click="load()" :disabled="loading">
               <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
               <i v-else class="bi bi-search me-1"></i>查詢
             </button>
@@ -176,7 +185,7 @@ function fmtDate(s: string) {
     <!-- 發票列表 -->
     <div class="card shadow-sm">
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table v-stack-table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
               <th>發票號碼</th>
@@ -230,6 +239,7 @@ function fmtDate(s: string) {
           </tbody>
         </table>
       </div>
+      <LoadMore :count="invoices.length" :has-more="hasMore" :loading="loading" @more="load(true)" />
     </div>
   </div>
 

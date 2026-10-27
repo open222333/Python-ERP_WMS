@@ -160,7 +160,7 @@ onMounted(loadReport)
             </select>
           </template>
 
-          <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="loadReport">
+          <button class="btn btn-sm btn-outline-secondary" :disabled="loading" @click="loadReport" aria-label="查詢" title="查詢">
             <i class="bi bi-search"></i>
           </button>
         </div>
@@ -234,7 +234,7 @@ onMounted(loadReport)
             <h6 class="fw-semibold mb-2">
               <i class="bi bi-credit-card me-1 text-primary"></i>付款方式明細
             </h6>
-            <table class="table table-sm mb-0">
+            <table v-stack-table class="table table-sm mb-0">
               <thead>
                 <tr>
                   <th>付款方式</th>
@@ -265,7 +265,7 @@ onMounted(loadReport)
         </h6>
       </div>
       <div class="table-responsive">
-        <table class="table mb-0 table-sm">
+        <table v-stack-table class="table mb-0 table-sm">
           <thead>
             <tr>
               <th>日期</th>
@@ -292,7 +292,7 @@ onMounted(loadReport)
         <h6><i class="bi bi-calendar3 me-1"></i>{{ selYear }} 年每月銷售明細</h6>
       </div>
       <div class="table-responsive">
-        <table class="table mb-0 table-sm">
+        <table v-stack-table class="table mb-0 table-sm">
           <thead>
             <tr>
               <th>月份</th>
@@ -319,7 +319,7 @@ onMounted(loadReport)
         <h6><i class="bi bi-list-ul me-1"></i>當日訂單明細 — {{ report.date }}</h6>
       </div>
       <div class="table-responsive">
-        <table class="table mb-0 table-sm">
+        <table v-stack-table class="table mb-0 table-sm">
           <thead>
             <tr>
               <th>單號</th>

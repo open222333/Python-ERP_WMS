@@ -59,7 +59,7 @@ export const NAV_CONFIG: NavSection[] = [
   {
     label: '前台',
     items: [
-      { key: 'pos-link',        label: '開啟收銀台', icon: 'bi-display',        href: '/pos/' },
+      { key: 'pos-link',        label: '開啟收銀台', icon: 'bi-display',        href: '/pos' },  // [U1] 與 router 路徑一致（原 /pos/ 多一層斜線）
       { key: 'order-link',      label: '顧客點單頁', icon: 'bi-qr-code',        href: '/order/' },
       { key: 'kitchen-link',    label: '備餐顯示',   icon: 'bi-grid-3x3-gap',   href: '/kitchen/' },
       { key: 'cust-orders',     label: '訂單管理',   icon: 'bi-receipt',         to: '/admin/cust-orders' },

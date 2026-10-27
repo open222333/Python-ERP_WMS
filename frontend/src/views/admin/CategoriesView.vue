@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useToastStore } from '@/stores/toast'
 import http from '@/api'
 import type { Category } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 
@@ -72,7 +73,7 @@ async function save() {
 
 // ── Delete ─────────────────────────────────────────────────
 async function del(id: string) {
-  if (!confirm('確定要刪除此分類？')) return
+  if (!(await appConfirm('確定要刪除此分類？', { danger: true }))) return
   try {
     await http.delete(`/product/category/${id}`)
     toast.show('已刪除', 'success')
@@ -95,7 +96,7 @@ onMounted(load)
     </div>
 
     <div class="table-responsive">
-      <table class="table mb-0">
+      <table v-stack-table class="table mb-0">
         <thead>
           <tr>
             <th>名稱</th>

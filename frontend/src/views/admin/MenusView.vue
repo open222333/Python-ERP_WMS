@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import http from '@/api'
+import { fetchAllPages } from '@/api/paging'
 import { useToastStore } from '@/stores/toast'
 import { useAuthStore } from '@/stores/auth'
 import type { Store } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 const auth  = useAuthStore()
@@ -15,11 +17,11 @@ const products   = ref<SimpleProduct[]>([])
 const warehouses = ref<SimpleWarehouse[]>([])
 async function loadProductsAndWarehouses() {
   try {
-    const [pRes, wRes] = await Promise.all([
-      http.get('/product/'),
+    const [pList, wRes] = await Promise.all([
+      fetchAllPages('/product/', { status: 1 }),   // [U3] 原本只拿到前 200 筆，連結商品選單會缺
       http.get('/warehouse/'),
     ])
-    products.value   = (pRes.data.data   || []).filter((p: any) => p.status === 1)
+    products.value   = pList.filter((p: any) => p.status === 1)
     warehouses.value = wRes.data.data    || []
   } catch { /* 非關鍵，靜默失敗 */ }
 }
@@ -257,7 +259,7 @@ async function saveMenu() {
 }
 
 async function delMenu(id: string) {
-  if (!confirm('確定要刪除此菜單？此操作不可逆。')) return
+  if (!(await appConfirm('確定要刪除此菜單？此操作不可逆。', { danger: true }))) return
   try {
     await http.delete(`/menu/${id}`)
     toast.show('已刪除', 'success')
@@ -332,7 +334,7 @@ async function saveItem() {
 }
 
 async function delItem(itemId: string) {
-  if (!confirm('確定要刪除此品項？')) return
+  if (!(await appConfirm('確定要刪除此品項？', { danger: true }))) return
   try {
     await http.delete(`/menu/${selectedMenuId.value}/item/${itemId}`)
     toast.show('已刪除', 'success')
@@ -375,7 +377,7 @@ async function saveCat() {
 }
 
 async function delCat(catId: string) {
-  if (!confirm('確定要刪除此分類？')) return
+  if (!(await appConfirm('確定要刪除此分類？', { danger: true }))) return
   try {
     await http.delete(`/menu/${selectedMenuId.value}/category/${catId}`)
     toast.show('已刪除', 'success')
@@ -453,7 +455,7 @@ async function saveOg() {
 }
 
 async function delOg(gid: string) {
-  if (!confirm('確定要刪除此選項組？已套用的品項也將移除關聯。')) return
+  if (!(await appConfirm('確定要刪除此選項組？已套用的品項也將移除關聯。', { danger: true }))) return
   try {
     await http.delete(`/menu/${selectedMenuId.value}/option-group/${gid}`)
     toast.show('已刪除', 'success')
@@ -597,7 +599,7 @@ onMounted(() => {
           </button>
         </div>
         <div class="table-responsive">
-          <table class="table mb-0">
+          <table v-stack-table class="table mb-0">
             <thead>
               <tr>
                 <th>名稱</th>
@@ -634,10 +636,10 @@ onMounted(() => {
                 </td>
                 <td>
                   <div class="d-flex gap-1">
-                    <button class="btn btn-xs btn-outline-primary" @click.stop="openMenuModal(m)">
+                    <button class="btn btn-xs btn-outline-primary" @click.stop="openMenuModal(m)" aria-label="編輯" title="編輯">
                       <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-xs btn-outline-danger" @click.stop="delMenu(m._id)">
+                    <button class="btn btn-xs btn-outline-danger" @click.stop="delMenu(m._id)" aria-label="刪除" title="刪除">
                       <i class="bi bi-trash"></i>
                     </button>
                     <button
@@ -713,7 +715,7 @@ onMounted(() => {
         <!-- ── 品項 Tab ── -->
         <div v-if="activeTab === 'items'">
           <div class="table-responsive">
-            <table class="table mb-0 table-sm">
+            <table v-stack-table class="table mb-0 table-sm">
               <thead>
                 <tr>
                   <th style="width:36px">
@@ -754,7 +756,7 @@ onMounted(() => {
                   </td>
                   <td>
                     <span v-if="item.consume_inventory" class="badge bg-info text-dark">扣庫存</span>
-                    <span v-else class="badge bg-light text-secondary">不扣</span>
+                    <span v-else class="badge bg-body-secondary text-secondary">不扣</span>
                   </td>
                   <td>
                     <span :class="item.status === 1 ? 'badge bg-success' : 'badge bg-secondary'">
@@ -763,8 +765,8 @@ onMounted(() => {
                   </td>
                   <td>
                     <div class="d-flex gap-1">
-                      <button class="btn btn-xs btn-outline-primary"  @click="openItemModal(item)"><i class="bi bi-pencil"></i></button>
-                      <button class="btn btn-xs btn-outline-danger"   @click="delItem(item._id)"><i class="bi bi-trash"></i></button>
+                      <button class="btn btn-xs btn-outline-primary"  @click="openItemModal(item)" aria-label="編輯" title="編輯"><i class="bi bi-pencil"></i></button>
+                      <button class="btn btn-xs btn-outline-danger"   @click="delItem(item._id)" aria-label="刪除" title="刪除"><i class="bi bi-trash"></i></button>
                     </div>
                   </td>
                 </tr>
@@ -776,7 +778,7 @@ onMounted(() => {
         <!-- ── 分類 Tab ── -->
         <div v-if="activeTab === 'categories'">
           <div class="table-responsive">
-            <table class="table mb-0 table-sm">
+            <table v-stack-table class="table mb-0 table-sm">
               <thead>
                 <tr><th>名稱</th><th>排序</th><th>狀態</th><th></th></tr>
               </thead>
@@ -797,8 +799,8 @@ onMounted(() => {
                   </td>
                   <td>
                     <div class="d-flex gap-1">
-                      <button class="btn btn-xs btn-outline-primary"  @click="openCatModal(cat)"><i class="bi bi-pencil"></i></button>
-                      <button class="btn btn-xs btn-outline-danger"   @click="delCat(cat._id)"><i class="bi bi-trash"></i></button>
+                      <button class="btn btn-xs btn-outline-primary"  @click="openCatModal(cat)" aria-label="編輯" title="編輯"><i class="bi bi-pencil"></i></button>
+                      <button class="btn btn-xs btn-outline-danger"   @click="delCat(cat._id)" aria-label="刪除" title="刪除"><i class="bi bi-trash"></i></button>
                     </div>
                   </td>
                 </tr>
@@ -810,7 +812,7 @@ onMounted(() => {
         <!-- ── 客製化選項組 Tab ── -->
         <div v-if="activeTab === 'options'">
           <div class="table-responsive">
-            <table class="table mb-0 table-sm">
+            <table v-stack-table class="table mb-0 table-sm">
               <thead>
                 <tr><th>選項組名稱</th><th>類型</th><th>必選</th><th>選項數</th><th>套用品項數</th><th></th></tr>
               </thead>
@@ -843,8 +845,8 @@ onMounted(() => {
                   </td>
                   <td>
                     <div class="d-flex gap-1">
-                      <button class="btn btn-xs btn-outline-primary"  @click="openOgModal(og)"><i class="bi bi-pencil"></i></button>
-                      <button class="btn btn-xs btn-outline-danger"   @click="delOg(og._id)"><i class="bi bi-trash"></i></button>
+                      <button class="btn btn-xs btn-outline-primary"  @click="openOgModal(og)" aria-label="編輯" title="編輯"><i class="bi bi-pencil"></i></button>
+                      <button class="btn btn-xs btn-outline-danger"   @click="delOg(og._id)" aria-label="刪除" title="刪除"><i class="bi bi-trash"></i></button>
                     </div>
                   </td>
                 </tr>
@@ -987,7 +989,7 @@ onMounted(() => {
                   <input v-model.number="lp.consume_qty" type="number" min="1"
                          class="form-control form-control-sm lp-qty" placeholder="扣量" />
                   <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0"
-                          @click="removeLinkedProduct(idx)">
+                          @click="removeLinkedProduct(idx)" aria-label="移除" title="移除">
                     <i class="bi bi-trash"></i>
                   </button>
                 </div>
@@ -1126,7 +1128,7 @@ onMounted(() => {
                   </button>
                 </div>
                 <div>
-                  <button type="button" class="btn btn-sm btn-outline-danger" @click="removeChoice(idx)">
+                  <button type="button" class="btn btn-sm btn-outline-danger" @click="removeChoice(idx)" aria-label="移除" title="移除">
                     <i class="bi bi-trash"></i>
                   </button>
                 </div>

@@ -6,8 +6,10 @@ import { warehouseApi }    from '@/api/warehouse'
 import { productApi }      from '@/api/product'
 import { settingsApi }     from '@/api/settings'
 import { inventoryApi }    from '@/api/inventory'
+import { fetchAllPages }   from '@/api/paging'
 import AppToast       from '@/components/AppToast.vue'
 import BarcodeScanner from '@/components/BarcodeScanner.vue'
+import { appConfirm } from '@/composables/useConfirm'
 
 const auth    = useAuthStore()
 const toast   = useToastStore()
@@ -73,8 +75,8 @@ function removeItem(idx) {
   items.value.splice(idx, 1)
 }
 
-function clearItems() {
-  if (items.value.length && confirm('確定要清空清單？')) items.value = []
+async function clearItems() {
+  if (items.value.length && (await appConfirm('確定要清空清單？', { danger: true }))) items.value = []
 }
 
 function openQtyModal(product) {
@@ -196,7 +198,7 @@ function mountPwa() {
 async function init() {
   const [whRes, pdRes, catRes, setRes] = await Promise.allSettled([
     warehouseApi.getAll(),
-    productApi.getProducts({ status: 1 }),
+    fetchAllPages('/product/', { status: 1 }),   // [U3] 分批取完整清單
     productApi.getCategories(),
     settingsApi.get(),
   ])
@@ -204,7 +206,7 @@ async function init() {
     warehouses.value = whRes.value.data?.data || whRes.value.data || []
   }
   if (pdRes.status === 'fulfilled') {
-    products.value = pdRes.value.data?.data || pdRes.value.data || []
+    products.value = pdRes.value
   }
   if (catRes.status === 'fulfilled') {
     categories.value = catRes.value.data?.data || catRes.value.data || []

@@ -3,6 +3,7 @@ import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
+import { appAlert } from '@/composables/useConfirm'
 
 const auth  = useAuthStore()
 const route = useRoute()
@@ -202,7 +203,7 @@ async function submitOrder() {
     showSuccess.value  = true
     showCartDrawer.value = false
   } catch (e: any) {
-    alert(e?.response?.data?.message || '送出失敗，請重試')
+    appAlert(e?.response?.data?.message || '送出失敗，請重試')
   } finally {
     submitting.value = false
   }
@@ -268,7 +269,7 @@ function confirmCustom() {
   const groups: any[] = customTarget.value?.applied_groups || []
   for (const grp of groups) {
     if (grp.required && !(customSelections.value[grp._id]?.length)) {
-      alert(`請選擇「${grp.name}」`)
+      appAlert(`請選擇「${grp.name}」`)
       return
     }
   }
@@ -456,7 +457,7 @@ onUnmounted(() => {
               <span>{{ row.qty }}</span>
               <button @click="changeQty(idx, 1)">＋</button>
             </div>
-            <button class="cr-del" @click="removeFromCart(idx)">
+            <button class="cr-del" @click="removeFromCart(idx)" aria-label="移除" title="移除">
               <i class="bi bi-x"></i>
             </button>
           </div>
@@ -530,7 +531,7 @@ onUnmounted(() => {
               <span>{{ row.qty }}</span>
               <button @click="changeQty(idx, 1)">＋</button>
             </div>
-            <button class="cr-del" @click="removeFromCart(idx)">
+            <button class="cr-del" @click="removeFromCart(idx)" aria-label="移除" title="移除">
               <i class="bi bi-x"></i>
             </button>
           </div>
@@ -830,7 +831,7 @@ onUnmounted(() => {
 /* ── 手機浮動列 ────────────────────────────────── */
 #mobile-cart-bar {
   position: fixed;
-  bottom: 1.25rem;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));   /* [MOBILE] 避開 iPhone 底部橫條 */
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
@@ -905,6 +906,7 @@ onUnmounted(() => {
 }
 .bs-footer {
   padding: .75rem 1rem;
+  padding-bottom: calc(.75rem + env(safe-area-inset-bottom));   /* [MOBILE] */
   border-top: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
@@ -1012,5 +1014,13 @@ onUnmounted(() => {
   #order-body { height: 1px; flex: 1; } /* flex: 1 負責撐高，height: 1px 讓 overflow hidden 生效 */
   #panel-cart { display: flex; }
   #mobile-cart-bar { display: none !important; }
+}
+
+/* ── [MOBILE] 觸控裝置：購物車加減鈕加大（原 24px 太小）、輸入框 16px 防 iOS 聚焦放大 ── */
+@media (pointer: coarse) {
+  .cr-qty { gap: .35rem; }
+  .cr-qty button { width: 2.25rem; height: 2.25rem; font-size: 1.05rem; border-radius: 8px; }
+  .cr-del { padding: .45rem; font-size: 1.25rem; }
+  textarea.form-control, input.form-control { font-size: 16px; }
 }
 </style>

@@ -5,7 +5,7 @@
     <div id="product-toolbar">
       <div id="prod-search-wrap">
         <i class="bi bi-search"></i>
-        <input v-model="prodSearch" type="text" id="prod-search" placeholder="搜尋名稱…" />
+        <input v-model="prodSearch" type="search" id="prod-search" placeholder="搜尋名稱…" />
       </div>
     </div>
 

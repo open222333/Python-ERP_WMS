@@ -52,7 +52,7 @@ def list_orders():
     status       = request.args.get('status', '')
     date_from_s  = request.args.get('date_from', '')
     date_to_s    = request.args.get('date_to', '')
-    limit        = int(request.args.get('limit', 200))
+    limit        = max(1, min(int(request.args.get('limit', 200)), 500))   # limit=0 在 pymongo 代表不限筆數，需擋下
 
     date_from = datetime.strptime(date_from_s, '%Y-%m-%d') if date_from_s else None
     date_to   = datetime.strptime(date_to_s + ' 23:59:59', '%Y-%m-%d %H:%M:%S') if date_to_s else None
@@ -64,6 +64,7 @@ def list_orders():
         date_to=date_to,
         limit=limit,
         store_filter=get_store_filter('store_ref'),   # [A2] 店家帳號只看本店；未歸屬分店的訂單限總部
+        offset=max(0, request.args.get('offset', 0, type=int) or 0),   # [U3]
     )
     return jsonify({'success': True, 'data': data})
 

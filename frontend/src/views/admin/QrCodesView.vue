@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import QRCode from 'qrcode'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 
@@ -147,7 +148,7 @@ async function saveTables() {
 
 // ── 刷新所有 Token ───────────────────────────────────────
 async function refreshAllTokens() {
-  if (!confirm(`確定要刷新所有桌位的 QR Token 嗎？\n刷新後舊 QR Code 立即失效，需重新列印。`)) return
+  if (!(await appConfirm(`確定要刷新所有桌位的 QR Token 嗎？\n刷新後舊 QR Code 立即失效，需重新列印。`, { danger: true }))) return
   refreshing.value = true
   try {
     const res = await http.post('/customer-order/tokens/refresh', {
@@ -219,7 +220,7 @@ async function refreshSessions(manual = false) {
 
 // ── 桌況 Session 關閉 ─────────────────────────────────────
 async function closeSession(table_no: string, label: string) {
-  if (!confirm(`確定要結束「${label}」的桌況 session 嗎？\n顧客點餐頁面將立即顯示結束提示。`)) return
+  if (!(await appConfirm(`確定要結束「${label}」的桌況 session 嗎？\n顧客點餐頁面將立即顯示結束提示。`, { danger: true }))) return
   closingSession.value = table_no
   try {
     await http.delete(`/customer-order/session/${table_no}`)
@@ -457,7 +458,7 @@ onUnmounted(() => clearInterval(sessionPollTimer))
     <!-- ── 列表 ───────────────────────────────────────── -->
     <div v-else class="card shadow-sm">
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table v-stack-table class="table table-hover align-middle mb-0">
           <thead class="table-light no-print">
             <tr>
               <th style="width:110px">QR 圖片</th>

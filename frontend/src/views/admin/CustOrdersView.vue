@@ -2,7 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import http from '@/api'
 import { useToastStore } from '@/stores/toast'
-import { fmtDate, ORDER_STATUS_COLOR, ORDER_STATUS_LABEL } from '@/utils/format'
+import { fmtDate, parseServerDate, ORDER_STATUS_COLOR, ORDER_STATUS_LABEL } from '@/utils/format'
+import LoadMore from '@/components/LoadMore.vue'
 
 const toast = useToastStore()
 
@@ -55,17 +56,27 @@ const statusOptions = [
   { value: 'cancelled', label: '已取消' },
 ]
 
-async function loadOrders() {
+// [U3] 分頁：原本只拿到後端預設最新 100 筆
+const PAGE_SIZE = 100
+const hasMore = ref(false)
+
+async function loadOrders(append = false, keep = false) {
   loading.value = true
+  // keep：定時自動刷新時保留已載入的筆數，不把使用者「載入更多」的內容刷回第一頁
+  const size = keep ? Math.max(PAGE_SIZE, orders.value.length) : PAGE_SIZE
   try {
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = {
+      limit: String(Math.min(size, 500)), offset: String(append ? orders.value.length : 0),
+    }
     if (statusFilter.value) params.status = statusFilter.value
     if (dateFilter.value) params.date = dateFilter.value
     const [ordRes, statRes] = await Promise.all([
       http.get('/customer-order/', { params }),
       http.get('/customer-order/stats'),
     ])
-    orders.value = ordRes.data.data || []
+    const page = ordRes.data.data || []
+    orders.value = append ? [...orders.value, ...page] : page
+    hasMore.value = page.length === Math.min(size, 500)
     stats.value = statRes.data.raw || {}
   } catch {
     toast.show('載入失敗', 'danger')
@@ -91,8 +102,8 @@ const STATUS_LOG_LABEL: Record<string, string> = {
 }
 
 function fmtLogTime(iso: string) {
-  if (!iso) return ''
-  const d = new Date(iso)
+  const d = parseServerDate(iso)   // [U4]
+  if (!d) return ''
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -112,7 +123,7 @@ function formatItems(items: CustOrderItem[]): string {
 
 onMounted(() => {
   loadOrders()
-  refreshTimer = setInterval(loadOrders, 10000)
+  refreshTimer = setInterval(() => loadOrders(false, true), 10000)
 })
 
 onUnmounted(() => {
@@ -130,7 +141,7 @@ onUnmounted(() => {
             v-model="statusFilter"
             class="form-select form-select-sm"
             style="width:auto"
-            @change="loadOrders"
+            @change="loadOrders()"
           >
             <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -141,9 +152,9 @@ onUnmounted(() => {
             type="date"
             class="form-control form-control-sm"
             style="width:auto"
-            @change="loadOrders"
+            @change="loadOrders()"
           />
-          <button class="btn btn-sm btn-outline-secondary" @click="loadOrders">
+          <button class="btn btn-sm btn-outline-secondary" @click="loadOrders()" aria-label="重新整理" title="重新整理">
             <i class="bi bi-arrow-clockwise"></i>
           </button>
           <a href="/kitchen/" target="_blank" class="btn btn-sm btn-outline-primary">
@@ -172,7 +183,7 @@ onUnmounted(() => {
       </div>
 
       <div class="table-responsive">
-        <table class="table mb-0">
+        <table v-stack-table class="table mb-0">
           <thead>
             <tr>
               <th>訂單編號</th>
@@ -244,6 +255,7 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+      <LoadMore :count="orders.length" :has-more="hasMore" :loading="loading" @more="loadOrders(true)" />
     </div>
   </div>
 </template>

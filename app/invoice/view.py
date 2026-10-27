@@ -654,7 +654,7 @@ def list_invoices():
     status        = request.args.get('status', '')
     date_from_str = request.args.get('date_from', '')
     date_to_str   = request.args.get('date_to',   '')
-    limit         = int(request.args.get('limit', 100))
+    limit         = max(1, min(int(request.args.get('limit', 100)), 500))   # limit=0 在 pymongo 代表不限筆數，需擋下
 
     date_from = datetime.strptime(date_from_str, '%Y-%m-%d') if date_from_str else None
     date_to   = datetime.strptime(date_to_str + ' 23:59:59', '%Y-%m-%d %H:%M:%S') \
@@ -666,6 +666,7 @@ def list_invoices():
         date_to=date_to,
         limit=limit,
         store_filter=_invoice_store_filter(),   # [A2]
+        offset=max(0, request.args.get('offset', 0, type=int) or 0),   # [U3]
     )
     return jsonify({'success': True, 'data': data})
 

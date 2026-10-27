@@ -165,6 +165,56 @@
 
 **2026-10-24 進度**：D5、A2、A3、A4、D3、A5、A6、A7 已完成（見 FIXES.md 同日條目）。剩餘：D4、D6–D8、A8–A13、U1、U2，以及 N5–N7、N9、N10（invoice 已補測試，analytics 仍無專屬測試）。
 
+## 第六輪盤點：UI（2026-10-24 盤點，2026-10-25 處理，進度見本節末）
+
+接續第五輪的 U1、U2。數字為掃描 `frontend/src` 所得；手機版面尚未在實機或瀏覽器截圖確認（沙箱無瀏覽器），列為 U13。
+
+**資料正確性（使用者會看到錯的內容，P0）**
+
+| # | 問題 | 位置 | 說明 |
+|---|---|---|---|
+| U3 | 列表靜默截斷，無分頁 | `PosSalesView.vue`、`InOutboundView.vue`、`ProductsView.vue`、`stores/cache.ts`、`CustOrdersView.vue`、`DeliveryOrdersView.vue` | 這些頁面呼叫列表 API 時沒帶 limit／offset，只拿到後端預設筆數且沒有任何提示：POS 銷售只顯示最新 50 筆、出入庫單 50 筆、顧客訂單 100 筆、外送訂單 200 筆、產品 200 筆。產品清單同時是 `stores/cache.ts` 的共用快取，**超過 200 個產品時，入庫、菜單連結商品等選單會找不到後面的產品**。只有操作紀錄頁有「已達上限」提示。建議：列表加分頁或「載入更多」，產品選單改為搜尋式下拉 |
+| U4 | 部分時間顯示早 8 小時 | `src/models/{log,order_base,customer_order,store,store_role}.py` 輸出、`frontend/src/utils/format.ts` `fmtDate` | 這些 model 的時間以 `isoformat()` 輸出、**沒有加 `Z`**，前端 `new Date()` 會當成當地時間解讀，台灣使用者看到的操作紀錄、出入庫單、顧客訂單、分店建立時間都早 8 小時（POS、發票、外送、菜單有加 `Z`，顯示正確）。建議：後端統一輸出帶時區的 ISO 字串，或 `fmtDate` 對無時區字串一律當 UTC |
+
+**互動與一致性（P1）**
+
+| # | 問題 | 位置 | 說明 |
+|---|---|---|---|
+| U5 | 大量使用瀏覽器原生 confirm／alert | 10 個檔案共 28 處（UsersView、ProductsView、MenusView 各 4） | 樣式無法控制、手機上體驗差、無法說明後果。**顧客點餐頁 `OrderView.vue` 也用 `alert()`** 顯示送出失敗與必選提示，客人看到的是瀏覽器原生框。建議：做共用確認框元件＋點餐頁改頁內提示 |
+| U6 | 自製彈窗缺基本行為 | 11 個檔案的 `modal d-block` 自製彈窗 | 全部不支援 ESC 關閉、開啟時背景仍可捲動、沒有焦點移入與鎖定（鍵盤與螢幕閱讀器無法正確操作）。建議：抽共用 `<AppModal>` 元件統一處理 |
+| U7 | 純圖示按鈕缺可讀名稱 | 77 個純圖示按鈕中 46 個沒有 `aria-label`／`title`（MenusView 10、UsersView 8、DeliverySettingsView 4） | 螢幕閱讀器只讀出「按鈕」，滑鼠移上去也沒有提示 |
+| U8 | 深色模式有破圖 | `views/admin` 共 32 處寫死淺色（`#fff`、`bg-white`、`bg-light`、`text-dark` 等），最多為 DeliverySettingsView 8、InvoiceSettingsView 6 | 開啟深色模式時這些區塊仍是白底。**2026-10-23 新增的庫存移動紀錄手機卡片（`MovementsView.vue` `.mv-card`／`.mv-remark`）也寫死白底**。建議：改用 `--card-bg` 等既有 CSS 變數或 Bootstrap `bg-body-*` |
+| U9 | 表單沒有欄位層級的錯誤提示 | 後台頁面使用 `is-invalid`／`invalid-feedback` 的檔案為 0 | 驗證錯誤只靠右上角 toast，使用者看不出是哪個欄位錯；toast 3 秒後消失 |
+
+**維護性（P2）**
+
+| # | 問題 | 說明 |
+|---|---|---|
+| U10 | 超大頁面元件 | MenusView 1249 行、OrderView 1025 行、SettingsView 979 行、UsersView 835 行、ProductsView 799 行；PosView 已拆分可作為範例（OPTIMIZATION_REPORT 早期項目） |
+| U11 | 死檔與重複頁面 | `components/HelloWorld.vue`（Vite 樣板）、`components/AppSidebar.vue`（CLAUDE.md 註明為廢棄空殼）、`views/admin/InboundView.vue`／`OutboundView.vue`（router 已不引用）；另有 6 個 Flask 舊模板 `app/templates/{admin,docs,kitchen,order,pos,quick_io}/index.html` 與 Vue 版並存（U1 即為其造成的連結錯誤） |
+| U12 | 行內樣式過多 | `views` 內 150 處 `style="..."`，多為固定寬度；手機版需靠 `style.css` 以 `!important` 覆寫（2026-10-24 手機版修正），建議逐步改為 class |
+| U13 | 手機版面未經實際畫面確認 | 2026-10-23／24 的手機版修改（快速出入庫、移動紀錄、後台框架、`v-stack-table`）只做了 jsdom 行為檢查；需在 iPhone／Android 實機或瀏覽器手機模式逐頁確認，特別是有表單輸入的表格（出入庫明細、菜單品項）轉成卡片後的可用性 |
+
+**建議順序**：U3、U4（內容錯誤，影響決策）→ U8（自己新加的卡片先修）→ U5、U6（共用元件一次解決多頁）→ U1、U2、U7、U9 → U10–U13。
+
+**2026-10-25 進度**（詳見 FIXES.md 同日條目）
+
+| # | 狀態 | 備註 |
+|---|---|---|
+| U1 | ✅ 完成 | |
+| U2 | ✅ 完成 | 用原生 `type="search"`；Firefox 桌面版無「×」，但 Esc 可清除 |
+| U3 | ✅ 完成 | 另修正：外送訂單頁狀態值與後端不符、產品匯出上限 1000、`limit=0` 可不限筆數 |
+| U4 | ✅ 完成 | 採前端方案（無時區字串當 UTC）；後端輸出未改，新頁面請一律用 `fmtDate`／`parseServerDate` |
+| U5 | ✅ 完成 | |
+| U6 | ✅ 完成 | 採全域增強器而非 `<AppModal>` 元件，各頁免改；之後若拆共用元件可移除 |
+| U7 | ✅ 完成 | 41 個（掃描到的純圖示 `<button>`；`<a>` 或含其他元素的不在內） |
+| U8 | ✅ 完成 | |
+| U9 | 🔶 部分 | 已有 `useFieldErrors`，產品表單已套用；其餘表單（使用者、分店、菜單、倉庫）待逐步套用 |
+| U10 | ⏸ 延後 | 拆元件改動面大、需實機回歸，建議配合功能修改時逐頁進行 |
+| U11 | 🔶 部分 | 4 個死檔已刪；6 個 Flask 舊模板仍保留（nginx 仍有路徑會送到 Flask，刪除前需確認無人使用） |
+| U12 | ⏸ 延後 | 隨 U10 一起處理 |
+| U13 | ⏸ 待人工 | 沙箱無瀏覽器，需在手機或瀏覽器手機模式確認；本輪新增的確認框、Esc 關閉、載入更多也一併檢查 |
+
 ## P0 — 高優先（建議立即修復）
 
 ### 安全性

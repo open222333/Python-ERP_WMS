@@ -4,6 +4,7 @@ import { storeApi } from '@/api/store'
 import { useToastStore } from '@/stores/toast'
 import { fmtDate, ROLE_COLOR, ROLE_LABEL } from '@/utils/format'
 import type { Store, User } from '@/types'
+import { appConfirm } from '@/composables/useConfirm'
 
 const toast = useToastStore()
 
@@ -65,7 +66,7 @@ async function saveStore() {
 }
 
 async function deleteStore(s: Store) {
-  if (!confirm(`確定刪除分店「${s.name}」？此操作無法復原。`)) return
+  if (!(await appConfirm(`確定刪除分店「${s.name}」？此操作無法復原。`, { danger: true }))) return
   try {
     await storeApi.delete(s._id)
     toast.success('已刪除')
@@ -163,7 +164,7 @@ onMounted(loadStores)
       </div>
 
       <div v-else class="table-responsive">
-        <table class="table table-hover align-middle">
+        <table v-stack-table class="table table-hover align-middle">
           <thead class="table-light">
             <tr>
               <th>分店名稱</th>
@@ -190,10 +191,10 @@ onMounted(loadStores)
                 <button class="btn btn-outline-secondary btn-sm me-1" title="查看帳號" @click="selectStore(s)">
                   <i class="bi bi-people"></i>
                 </button>
-                <button class="btn btn-outline-primary btn-sm me-1" @click="openEditStore(s)">
+                <button class="btn btn-outline-primary btn-sm me-1" @click="openEditStore(s)" aria-label="編輯" title="編輯">
                   <i class="bi bi-pencil"></i>
                 </button>
-                <button class="btn btn-outline-danger btn-sm" @click="deleteStore(s)">
+                <button class="btn btn-outline-danger btn-sm" @click="deleteStore(s)" aria-label="刪除" title="刪除">
                   <i class="bi bi-trash"></i>
                 </button>
               </td>
@@ -233,7 +234,7 @@ onMounted(loadStores)
         </div>
 
         <div v-else class="table-responsive">
-          <table class="table table-hover align-middle">
+          <table v-stack-table class="table table-hover align-middle">
             <thead class="table-light">
               <tr>
                 <th>使用者名稱</th>
