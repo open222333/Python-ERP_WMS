@@ -157,7 +157,7 @@ const fmtDate = (s: string) => fmtDateTZ(s)
       <div class="card-body py-2">
         <div class="row g-2 align-items-end">
           <div class="col-auto">
-            <select v-model="filterStatus" class="form-select form-select-sm" style="width:140px">
+            <select v-model="filterStatus" class="form-select form-select-sm wpx-140">
               <option value="">全部狀態</option>
               <option value="issued">已開立</option>
               <option value="voided">已作廢</option>
@@ -194,7 +194,7 @@ const fmtDate = (s: string) => fmtDateTZ(s)
               <th>載具 / 統編</th>
               <th>狀態</th>
               <th>開立時間</th>
-              <th class="text-center" style="width:120px">操作</th>
+              <th class="text-center wpx-120">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -223,7 +223,7 @@ const fmtDate = (s: string) => fmtDateTZ(s)
                 <span class="badge" :class="statusBadge(inv.status)">
                   {{ statusLabel(inv.status) }}
                 </span>
-                <small v-if="inv.error_msg" class="text-danger d-block mt-1" style="max-width:160px;white-space:normal">{{ inv.error_msg }}</small>
+                <small v-if="inv.error_msg" class="text-danger d-block mt-1 mwpx-160 text-wrap">{{ inv.error_msg }}</small>
               </td>
               <td><small class="text-muted">{{ fmtDate(inv.issued_at || inv.created_at) }}</small></td>
               <td class="text-center">
@@ -245,7 +245,7 @@ const fmtDate = (s: string) => fmtDateTZ(s)
 
   <!-- ── 作廢 Modal ─────────────────────────── -->
   <Teleport to="body">
-    <div v-if="showVoidModal" class="modal d-block" style="background:rgba(0,0,0,.5)" @click.self="showVoidModal=false">
+    <div v-if="showVoidModal" class="modal d-block bg-dim-50" @click.self="showVoidModal=false">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
@@ -272,7 +272,7 @@ const fmtDate = (s: string) => fmtDateTZ(s)
 
   <!-- ── 詳情 Modal ─────────────────────────── -->
   <Teleport to="body">
-    <div v-if="showDetailModal" class="modal d-block" style="background:rgba(0,0,0,.5)" @click.self="showDetailModal=false">
+    <div v-if="showDetailModal" class="modal d-block bg-dim-50" @click.self="showDetailModal=false">
       <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
           <div class="modal-header">

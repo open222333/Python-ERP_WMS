@@ -71,7 +71,7 @@ onMounted(() => load())
     <div class="table-header">
       <h6><i class="bi bi-scooter me-1"></i>外送訂單</h6>
       <div class="toolbar">
-        <select v-model="statusFilter" class="form-select form-select-sm" style="width:130px" @change="load()">
+        <select v-model="statusFilter" class="form-select form-select-sm wpx-130" @change="load()">
           <option value="">全部狀態</option>
           <option v-for="(v,k) in STATUS_MAP" :key="k" :value="k">{{ v.label }}</option>
         </select>
@@ -91,7 +91,7 @@ onMounted(() => load())
             <td><code>{{ o.external_order_no || o.order_no || o._id?.slice(-6) }}</code></td>
             <td>
               <span class="order-status" :class="STATUS_MAP[o.status]?.cls">{{ STATUS_MAP[o.status]?.label || o.status }}</span>
-              <div v-if="o.platform_status" class="text-muted" style="font-size:.7rem">平台：{{ o.platform_status }}</div>
+              <div v-if="o.platform_status" class="text-muted fz-70">平台：{{ o.platform_status }}</div>
             </td>
             <td class="text-end">${{ Number(o.total_amount||0).toFixed(0) }}</td>
             <td><small class="text-muted">{{ fmtDate(o.placed_at || o.created_at) }}</small></td>

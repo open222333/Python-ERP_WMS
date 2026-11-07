@@ -23,7 +23,7 @@
             <div class="text-muted small mt-2">載入中…</div>
           </div>
           <div v-else-if="!historyOrders.length" class="text-center py-5 text-muted">
-            <i class="bi bi-inbox" style="font-size:2.2rem"></i>
+            <i class="bi bi-inbox fz-220"></i>
             <div class="mt-2">今日尚無銷售記錄</div>
           </div>
           <div v-else>
@@ -107,7 +107,7 @@
         <div class="modal-footer">
           <div class="hist-summary" v-if="historyOrders.length">
             今日實收合計：
-            <strong class="text-primary" style="font-size:1.1rem">
+            <strong class="text-primary fz-110">
               NT$&nbsp;{{ historyTotal.toLocaleString() }}
             </strong>
             <span class="text-muted small ms-2">（不含退款）</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFieldErrors } from '@/composables/useFieldErrors'
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import http from '@/api'
 import { fetchAllPages } from '@/api/paging'
@@ -6,13 +7,17 @@ import { useToastStore } from '@/stores/toast'
 import { useAuthStore } from '@/stores/auth'
 import type { Store } from '@/types'
 import { appConfirm } from '@/composables/useConfirm'
+// [U10] 2026-11 拆分：品項、選項組、批次客製化三個彈窗移至 components/menus/（型別在 types.ts）
+import type { SimpleProduct, SimpleWarehouse, MenuCat, OptionGroup, MenuItemData, MenuData } from '@/components/menus/types'
+import MenuItemModal from '@/components/menus/MenuItemModal.vue'
+import OptionGroupModal from '@/components/menus/OptionGroupModal.vue'
+import BatchCustomizeModal from '@/components/menus/BatchCustomizeModal.vue'
 
 const toast = useToastStore()
+const fe    = useFieldErrors()   // [U9] 菜單／分類表單共用（同時只開一個彈窗）
 const auth  = useAuthStore()
 
 // ── 商品 / 倉庫（庫存聯動用）─────────────────────────
-interface SimpleProduct   { _id: string; name: string; sku: string }
-interface SimpleWarehouse { _id: string; name: string }
 const products   = ref<SimpleProduct[]>([])
 const warehouses = ref<SimpleWarehouse[]>([])
 async function loadProductsAndWarehouses() {
@@ -24,61 +29,6 @@ async function loadProductsAndWarehouses() {
     products.value   = pList.filter((p: any) => p.status === 1)
     warehouses.value = wRes.data.data    || []
   } catch { /* 非關鍵，靜默失敗 */ }
-}
-
-// ── Interfaces ─────────────────────────────────────────
-interface MenuCat {
-  _id: string
-  name: string
-  sort_order: number
-  status: number
-}
-
-interface OptionChoice {
-  _id:         string
-  name:        string
-  extra_price: number
-  is_default:  boolean
-}
-
-interface OptionGroup {
-  _id:      string
-  name:     string
-  type:     'single' | 'multiple'
-  required: boolean
-  choices:  OptionChoice[]
-}
-
-interface LinkedProduct {
-  product_id:   string
-  warehouse_id: string
-  consume_qty:  number
-}
-
-interface MenuItemData {
-  _id:               string
-  name:              string
-  category:          string
-  price:             number
-  description:       string
-  status:            number
-  sort_order:        number
-  consume_inventory: boolean
-  linked_products:   LinkedProduct[]
-  applied_group_ids: string[]
-  applied_groups:    OptionGroup[]
-}
-
-interface MenuData {
-  _id:           string
-  name:          string
-  description:   string
-  sort_order:    number
-  status:        number
-  store_id?:     string | null
-  categories?:   MenuCat[]
-  items?:        MenuItemData[]
-  option_groups?: OptionGroup[]
 }
 
 // ── Stores ─────────────────────────────────────────────
@@ -112,10 +62,7 @@ function setDefaultMenu(id: string) {
 
 // ── 批次編輯 ────────────────────────────────────────────
 const selectedItemIds  = ref<string[]>([])
-const showBatchModal   = ref(false)
-const batchSaving      = ref(false)
 const selectAllRef     = ref<HTMLInputElement>()
-const batchGroupStates = ref<Record<string, 'add' | 'remove' | 'keep'>>({})
 
 const allItemsSelected = computed(() => {
   const items = selectedMenuData.value?.items || []
@@ -138,43 +85,14 @@ watch([() => selectedItemIds.value.length, () => selectedMenuData.value?.items],
 const showMenuModal = ref(false)
 const menuForm = ref({ _id: '', name: '', description: '', sort_order: 0, status: 1, store_id: '' })
 
-// 品項 Modal
-const showItemModal = ref(false)
-const itemForm = ref<{
-  _id: string; name: string; category: string; price: number; description: string;
-  sort_order: number; status: number; consume_inventory: boolean;
-  linked_products: LinkedProduct[];
-  applied_group_ids: string[];
-}>({
-  _id: '', name: '', category: '', price: 0, description: '',
-  sort_order: 0, status: 1, consume_inventory: false,
-  linked_products: [],
-  applied_group_ids: [],
-})
-
-function addLinkedProduct() {
-  itemForm.value.linked_products.push({ product_id: '', warehouse_id: '', consume_qty: 1 })
-}
-function removeLinkedProduct(idx: number) {
-  itemForm.value.linked_products.splice(idx, 1)
-}
+// 品項／選項組／批次彈窗（子元件，以 ref 呼叫 open()）
+const itemModal  = ref<InstanceType<typeof MenuItemModal> | null>(null)
+const ogModal    = ref<InstanceType<typeof OptionGroupModal> | null>(null)
+const batchModal = ref<InstanceType<typeof BatchCustomizeModal> | null>(null)
 
 // 分類 Modal
 const showCatModal = ref(false)
 const catForm = ref({ _id: '', name: '', sort_order: 0, status: 1 })
-
-// 選項組 Modal
-const showOgModal = ref(false)
-const ogSaving    = ref(false)
-const ogForm = ref<{
-  _id: string
-  name: string
-  type: 'single' | 'multiple'
-  required: boolean
-  choices: { _id: string; name: string; extra_price: number; is_default: boolean }[]
-}>({
-  _id: '', name: '', type: 'single', required: true, choices: [],
-})
 
 // ── API ────────────────────────────────────────────────
 async function loadMenus() {
@@ -211,11 +129,18 @@ async function loadMenuDetail(mid: string) {
   }
 }
 
-async function selectMenu(mid: string) {
+// [U13] 手機／平板上菜單列表與品項面板上下排列，點選菜單後自動捲到品項面板
+const detailPanel = ref<HTMLElement | null>(null)
+
+async function selectMenu(mid: string, scroll = false) {
   selectedMenuId.value = mid
   selectedItemIds.value = []
   if (mid) {
     await loadMenuDetail(mid)
+    if (scroll && window.matchMedia('(max-width: 991.98px)').matches) {
+      await nextTick()
+      detailPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   } else {
     selectedMenuData.value = null
   }
@@ -223,6 +148,7 @@ async function selectMenu(mid: string) {
 
 // ── 菜單 CRUD ──────────────────────────────────────────
 function openMenuModal(m?: MenuData) {
+  fe.clear()
   if (m) {
     menuForm.value = {
       _id: m._id, name: m.name,
@@ -236,7 +162,7 @@ function openMenuModal(m?: MenuData) {
 }
 
 async function saveMenu() {
-  if (!menuForm.value.name.trim()) { toast.show('請填寫菜單名稱', 'danger'); return }
+  if (!fe.check({ menu_name: [!menuForm.value.name.trim(), '請填寫菜單名稱'] })) return
   saving.value = true
   const isNew = !menuForm.value._id
   try {
@@ -279,58 +205,7 @@ async function openItemModal(item?: MenuItemData) {
   if (selectedMenuId.value) {
     await loadMenuDetail(selectedMenuId.value)
   }
-  if (item) {
-    // 重新從已更新的 selectedMenuData 取得最新品項資料（若有的話）
-    const fresh = selectedMenuData.value?.items?.find(i => i._id === item._id)
-    const src = fresh ?? item
-    itemForm.value = {
-      _id: src._id, name: src.name, category: src.category || '',
-      price: src.price || 0, description: src.description || '',
-      sort_order: src.sort_order || 0, status: src.status ?? 1,
-      consume_inventory: !!src.consume_inventory,
-      linked_products: (src.linked_products || []).map(lp => ({
-        product_id:   lp.product_id   || '',
-        warehouse_id: lp.warehouse_id || '',
-        consume_qty:  lp.consume_qty  || 1,
-      })),
-      applied_group_ids: [...(src.applied_group_ids || [])],
-    }
-  } else if (itemForm.value._id) {
-    itemForm.value = {
-      _id: '', name: '', category: '', price: 0, description: '',
-      sort_order: 0, status: 1, consume_inventory: false,
-      linked_products: [],
-      applied_group_ids: [],
-    }
-  }
-  showItemModal.value = true
-}
-
-async function saveItem() {
-  if (!itemForm.value.name.trim()) { toast.show('請填寫品項名稱', 'danger'); return }
-  if (!selectedMenuId.value) { toast.show('請先選擇菜單', 'danger'); return }
-  saving.value = true
-  const isNew = !itemForm.value._id
-  try {
-    const payload = { ...itemForm.value }
-    if (itemForm.value._id) {
-      await http.put(`/menu/${selectedMenuId.value}/item/${itemForm.value._id}`, payload)
-    } else {
-      await http.post(`/menu/${selectedMenuId.value}/item`, payload)
-    }
-    toast.show('儲存成功', 'success')
-    showItemModal.value = false
-    if (isNew) itemForm.value = {
-      _id: '', name: '', category: '', price: 0, description: '',
-      sort_order: 0, status: 1, consume_inventory: false,
-      linked_products: [], applied_group_ids: [],
-    }
-    await loadMenuDetail(selectedMenuId.value)
-  } catch (e: any) {
-    toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
-  } finally {
-    saving.value = false
-  }
+  itemModal.value?.open(item)
 }
 
 async function delItem(itemId: string) {
@@ -346,6 +221,7 @@ async function delItem(itemId: string) {
 
 // ── 分類 CRUD ──────────────────────────────────────────
 function openCatModal(cat?: MenuCat) {
+  fe.clear()
   if (cat) {
     catForm.value = { _id: cat._id, name: cat.name, sort_order: cat.sort_order ?? 0, status: cat.status ?? 1 }
   } else if (catForm.value._id) {
@@ -355,7 +231,7 @@ function openCatModal(cat?: MenuCat) {
 }
 
 async function saveCat() {
-  if (!catForm.value.name.trim()) { toast.show('請填寫分類名稱', 'danger'); return }
+  if (!fe.check({ cat_name: [!catForm.value.name.trim(), '請填寫分類名稱'] })) return
   if (!selectedMenuId.value) return
   saving.value = true
   const isNew = !catForm.value._id
@@ -389,69 +265,7 @@ async function delCat(catId: string) {
 
 // ── 選項組 CRUD ────────────────────────────────────────
 function openOgModal(og?: OptionGroup) {
-  if (og) {
-    ogForm.value = {
-      _id:      og._id,
-      name:     og.name,
-      type:     og.type,
-      required: og.required,
-      choices:  og.choices.map(c => ({ ...c })),
-    }
-  } else if (ogForm.value._id) {
-    ogForm.value = { _id: '', name: '', type: 'single', required: true, choices: [] }
-  }
-  showOgModal.value = true
-}
-
-function addChoice() {
-  ogForm.value.choices.push({ _id: '', name: '', extra_price: 0, is_default: false })
-}
-
-function removeChoice(idx: number) {
-  ogForm.value.choices.splice(idx, 1)
-}
-
-function setDefault(idx: number) {
-  if (ogForm.value.type === 'single') {
-    // 單選：只能一個預設
-    ogForm.value.choices.forEach((c, i) => { c.is_default = i === idx })
-  } else {
-    ogForm.value.choices[idx].is_default = !ogForm.value.choices[idx].is_default
-  }
-}
-
-async function saveOg() {
-  if (!ogForm.value.name.trim()) { toast.show('請填寫選項組名稱', 'danger'); return }
-  if (!selectedMenuId.value) return
-  ogSaving.value = true
-  const isNew = !ogForm.value._id
-  try {
-    const payload = {
-      name:     ogForm.value.name.trim(),
-      type:     ogForm.value.type,
-      required: ogForm.value.required,
-      choices:  ogForm.value.choices
-        .map(c => ({
-          name:        c.name.trim(),
-          extra_price: Number(c.extra_price) || 0,
-          is_default:  c.is_default,
-        }))
-        .filter(c => c.name),
-    }
-    if (ogForm.value._id) {
-      await http.put(`/menu/${selectedMenuId.value}/option-group/${ogForm.value._id}`, payload)
-    } else {
-      await http.post(`/menu/${selectedMenuId.value}/option-group`, payload)
-    }
-    toast.show('儲存成功', 'success')
-    showOgModal.value = false
-    if (isNew) ogForm.value = { _id: '', name: '', type: 'single', required: true, choices: [] }
-    await loadMenuDetail(selectedMenuId.value)
-  } catch (e: any) {
-    toast.show(e?.response?.data?.message || '儲存失敗', 'danger')
-  } finally {
-    ogSaving.value = false
-  }
+  ogModal.value?.open(og)
 }
 
 async function delOg(gid: string) {
@@ -480,60 +294,12 @@ function toggleAllItems() {
 }
 
 function openBatchModal() {
-  if (!selectedItemIds.value.length) {
-    toast.show('請先勾選要批次編輯的品項', 'warning')
-    return
-  }
-  const groups   = selectedMenuData.value?.option_groups || []
-  const selItems = (selectedMenuData.value?.items || []).filter(i => selectedItemIds.value.includes(i._id))
-  const states: Record<string, 'add' | 'remove' | 'keep'> = {}
-  for (const og of groups) {
-    const n = selItems.filter(i => i.applied_group_ids?.includes(og._id)).length
-    states[og._id] = n === selItems.length ? 'add' : 'keep'
-  }
-  batchGroupStates.value = states
-  showBatchModal.value   = true
+  batchModal.value?.open()
 }
 
-function cycleBatchState(groupId: string) {
-  const order: ('keep' | 'add' | 'remove')[] = ['keep', 'add', 'remove']
-  const cur = batchGroupStates.value[groupId] || 'keep'
-  batchGroupStates.value[groupId] = order[(order.indexOf(cur) + 1) % order.length]
-}
-
-async function saveBatch() {
-  if (!selectedMenuId.value) return
-  batchSaving.value = true
-  const selItems = (selectedMenuData.value?.items || []).filter(i => selectedItemIds.value.includes(i._id))
-  try {
-    await Promise.all(selItems.map(async item => {
-      const ids = [...(item.applied_group_ids || [])]
-      for (const [gid, state] of Object.entries(batchGroupStates.value)) {
-        if (state === 'add' && !ids.includes(gid)) {
-          ids.push(gid)
-        } else if (state === 'remove') {
-          const idx = ids.indexOf(gid)
-          if (idx >= 0) ids.splice(idx, 1)
-        }
-      }
-      const changed =
-        JSON.stringify([...ids].sort()) !==
-        JSON.stringify([...(item.applied_group_ids || [])].sort())
-      if (changed) {
-        await http.put(`/menu/${selectedMenuId.value}/item/${item._id}`, {
-          ...item, applied_group_ids: ids,
-        })
-      }
-    }))
-    toast.show('批次更新完成', 'success')
-    showBatchModal.value  = false
-    selectedItemIds.value = []
-    await loadMenuDetail(selectedMenuId.value)
-  } catch (e: any) {
-    toast.show(e?.response?.data?.message || '批次更新失敗', 'danger')
-  } finally {
-    batchSaving.value = false
-  }
+async function onBatchSaved() {
+  selectedItemIds.value = []
+  await loadMenuDetail(selectedMenuId.value)
 }
 
 // ── 匯出 / 匯入 ─────────────────────────────────────────
@@ -617,16 +383,14 @@ onMounted(() => {
               <tr v-else-if="!menus.length">
                 <td colspan="4" class="text-center text-muted py-3">無菜單</td>
               </tr>
-              <tr
+              <tr class="cursor-pointer"
                 v-for="m in menus" :key="m._id"
                 :class="{ 'table-active': selectedMenuId === m._id }"
-                style="cursor: pointer"
-                @click="selectMenu(m._id)"
-              >
+                @click="selectMenu(m._id, true)">
                 <td class="fw-semibold">
                   {{ m.name }}
-                  <span v-if="defaultMenuId === m._id" class="badge bg-warning text-dark ms-1" style="font-size:.65rem">預設</span>
-                  <span v-if="m.store_id && storeMap[m.store_id]" class="badge bg-info text-dark ms-1" style="font-size:.65rem">{{ storeMap[m.store_id] }}</span>
+                  <span v-if="defaultMenuId === m._id" class="badge bg-warning text-dark ms-1 fz-65">預設</span>
+                  <span v-if="m.store_id && storeMap[m.store_id]" class="badge bg-info text-dark ms-1 fz-65">{{ storeMap[m.store_id] }}</span>
                 </td>
                 <td class="text-muted small">{{ m.items?.length ?? 0 }}</td>
                 <td>
@@ -661,13 +425,13 @@ onMounted(() => {
 
     <!-- 右：品項 / 分類 / 客製化面板 -->
     <div class="col-12 col-lg-8">
-      <div class="table-card h-100">
+      <div ref="detailPanel" class="table-card h-100 menu-detail-panel">
         <div class="table-header">
           <div>
-            <span class="fw-semibold" style="font-size:.93rem">
+            <span class="fw-semibold fz-93">
               <i class="bi bi-menu-button-wide me-1 text-primary"></i>
               <span v-if="selectedMenuData" class="fw-bold">{{ selectedMenuData.name }}</span>
-              <span v-else class="text-muted fw-normal small">— 請先從左側選擇菜單</span>
+              <span v-else class="text-muted fw-normal small">— 請先選擇菜單</span>
             </span>
           </div>
           <div v-if="selectedMenuId" class="d-flex gap-2 align-items-center flex-wrap">
@@ -718,7 +482,7 @@ onMounted(() => {
             <table v-stack-table class="table mb-0 table-sm">
               <thead>
                 <tr>
-                  <th style="width:36px">
+                  <th class="wpx-36">
                     <input ref="selectAllRef" type="checkbox" class="form-check-input"
                            :checked="allItemsSelected" @change="toggleAllItems" />
                   </th>
@@ -733,7 +497,7 @@ onMounted(() => {
               </thead>
               <tbody>
                 <tr v-if="!selectedMenuId">
-                  <td colspan="8" class="text-center text-muted py-3">請從左側選擇菜單</td>
+                  <td colspan="8" class="text-center text-muted py-3">請先選擇菜單</td>
                 </tr>
                 <tr v-else-if="!selectedMenuData?.items?.length">
                   <td colspan="8" class="text-center text-muted py-3">此菜單尚無品項</td>
@@ -784,7 +548,7 @@ onMounted(() => {
               </thead>
               <tbody>
                 <tr v-if="!selectedMenuId">
-                  <td colspan="4" class="text-center text-muted py-3">請從左側選擇菜單</td>
+                  <td colspan="4" class="text-center text-muted py-3">請先選擇菜單</td>
                 </tr>
                 <tr v-else-if="!selectedMenuData?.categories?.length">
                   <td colspan="4" class="text-center text-muted py-3">此菜單尚無分類</td>
@@ -818,7 +582,7 @@ onMounted(() => {
               </thead>
               <tbody>
                 <tr v-if="!selectedMenuId">
-                  <td colspan="6" class="text-center text-muted py-3">請從左側選擇菜單</td>
+                  <td colspan="6" class="text-center text-muted py-3">請先選擇菜單</td>
                 </tr>
                 <tr v-else-if="!selectedMenuData?.option_groups?.length">
                   <td colspan="6" class="text-center text-muted py-3">尚無客製化選項組，點右上角「新增選項組」</td>
@@ -862,7 +626,7 @@ onMounted(() => {
   <Teleport to="body">
 
     <!-- 菜單 Modal -->
-    <div v-if="showMenuModal" class="modal fade show d-block" style="background:rgba(0,0,0,.5)" @click.self="showMenuModal = false">
+    <div v-if="showMenuModal" class="modal fade show d-block bg-dim-50" @click.self="showMenuModal = false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -872,7 +636,10 @@ onMounted(() => {
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label fw-semibold">名稱 <span class="text-danger">*</span></label>
-              <input v-model="menuForm.name" type="text" class="form-control" placeholder="例：午餐菜單" />
+              <input v-model="menuForm.name" type="text" class="form-control" placeholder="例：午餐菜單"
+                     data-field="menu_name" :class="{ 'is-invalid': fe.errors.menu_name }"
+                     @input="fe.clear('menu_name')" />
+              <div class="invalid-feedback">{{ fe.errors.menu_name }}</div>
             </div>
             <div class="mb-3">
               <label class="form-label fw-semibold">描述</label>
@@ -909,126 +676,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 品項 Modal -->
-    <div v-if="showItemModal" class="modal fade show d-block" style="background:rgba(0,0,0,.5)" @click.self="showItemModal = false">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">{{ itemForm._id ? '編輯品項' : '新增品項' }}</h5>
-            <button type="button" class="btn-close" @click="showItemModal = false"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row g-3">
-              <div class="col-md-8">
-                <label class="form-label fw-semibold">品項名稱 <span class="text-danger">*</span></label>
-                <input v-model="itemForm.name" type="text" class="form-control" placeholder="例：招牌炒飯" />
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-semibold">售價 <span class="text-danger">*</span></label>
-                <div class="input-group">
-                  <span class="input-group-text">$</span>
-                  <input v-model.number="itemForm.price" type="number" class="form-control" min="0" step="1" />
-                </div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label fw-semibold">分類</label>
-                <input v-model="itemForm.category" type="text" class="form-control"
-                       :list="`cat-list-${selectedMenuId}`" placeholder="選擇或輸入分類" />
-                <datalist :id="`cat-list-${selectedMenuId}`">
-                  <option v-for="c in selectedMenuData?.categories" :key="c._id" :value="c.name" />
-                </datalist>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label fw-semibold">排序</label>
-                <input v-model.number="itemForm.sort_order" type="number" class="form-control" min="0" />
-              </div>
-              <div class="col-md-3">
-                <label class="form-label fw-semibold">狀態</label>
-                <select v-model.number="itemForm.status" class="form-select">
-                  <option :value="1">啟用</option>
-                  <option :value="0">停用</option>
-                </select>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold">描述</label>
-                <input v-model="itemForm.description" type="text" class="form-control" placeholder="選填" />
-              </div>
-              <div class="col-12">
-                <div class="form-check form-switch">
-                  <input v-model="itemForm.consume_inventory" class="form-check-input" type="checkbox" id="item-consume" />
-                  <label class="form-check-label fw-semibold" for="item-consume">結帳時消耗庫存</label>
-                </div>
-                <div class="form-text">開啟後，POS 結帳會扣減對應商品庫存。</div>
-              </div>
-
-              <!-- 庫存聯動 -->
-              <div class="col-12" v-if="itemForm.consume_inventory">
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                  <label class="form-label fw-semibold mb-0">
-                    <i class="bi bi-link-45deg me-1 text-primary"></i>庫存聯動商品
-                  </label>
-                  <button type="button" class="btn btn-sm btn-outline-primary" @click="addLinkedProduct">
-                    <i class="bi bi-plus"></i> 新增
-                  </button>
-                </div>
-                <div v-if="!itemForm.linked_products.length" class="text-muted small fst-italic mb-1">
-                  尚未設定聯動商品，結帳時不會扣庫存。
-                </div>
-                <div v-for="(lp, idx) in itemForm.linked_products" :key="idx"
-                     class="linked-row d-flex align-items-center gap-2 mb-2">
-                  <select v-model="lp.product_id" class="form-select form-select-sm">
-                    <option value="">-- 選擇商品 --</option>
-                    <option v-for="p in products" :key="p._id" :value="p._id">
-                      {{ p.name }}{{ p.sku ? ` (${p.sku})` : '' }}
-                    </option>
-                  </select>
-                  <select v-model="lp.warehouse_id" class="form-select form-select-sm">
-                    <option value="">預設倉庫</option>
-                    <option v-for="w in warehouses" :key="w._id" :value="w._id">{{ w.name }}</option>
-                  </select>
-                  <input v-model.number="lp.consume_qty" type="number" min="1"
-                         class="form-control form-control-sm lp-qty" placeholder="扣量" />
-                  <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0"
-                          @click="removeLinkedProduct(idx)" aria-label="移除" title="移除">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </div>
-                <div class="form-text">每賣出 1 份，依上方設定各扣減指定商品庫存數量。</div>
-              </div>
-              <!-- 套用客製化選項組 -->
-              <div class="col-12" v-if="selectedMenuData?.option_groups?.length">
-                <label class="form-label fw-semibold"><i class="bi bi-sliders2 me-1"></i>客製化選項組</label>
-                <div class="d-flex flex-wrap gap-3">
-                  <div v-for="og in selectedMenuData?.option_groups" :key="og._id" class="form-check">
-                    <input type="checkbox" :id="`og-cb-${og._id}`" class="form-check-input"
-                           :value="og._id" v-model="itemForm.applied_group_ids" />
-                    <label :for="`og-cb-${og._id}`" class="form-check-label">
-                      {{ og.name }}
-                      <span class="text-muted small">（{{ og.choices?.length || 0 }} 選項）</span>
-                    </label>
-                  </div>
-                </div>
-                <div class="form-text">勾選後，POS 點此品項時會彈出選項讓顧客選擇。</div>
-              </div>
-              <div class="col-12" v-else-if="selectedMenuId">
-                <div class="text-muted small fst-italic">
-                  <i class="bi bi-info-circle me-1"></i>此菜單尚無客製化選項組，可至「客製化」tab 新增。
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showItemModal = false">取消</button>
-            <button class="btn btn-primary" :disabled="saving" @click="saveItem">
-              <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>儲存
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 分類 Modal -->
-    <div v-if="showCatModal" class="modal fade show d-block" style="background:rgba(0,0,0,.5)" @click.self="showCatModal = false">
+    <div v-if="showCatModal" class="modal fade show d-block bg-dim-50" @click.self="showCatModal = false">
       <div class="modal-dialog modal-sm">
         <div class="modal-content">
           <div class="modal-header">
@@ -1038,7 +687,10 @@ onMounted(() => {
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label fw-semibold">分類名稱 <span class="text-danger">*</span></label>
-              <input v-model="catForm.name" type="text" class="form-control" placeholder="例：主食" />
+              <input v-model="catForm.name" type="text" class="form-control" placeholder="例：主食"
+                     data-field="cat_name" :class="{ 'is-invalid': fe.errors.cat_name }"
+                     @input="fe.clear('cat_name')" />
+              <div class="invalid-feedback">{{ fe.errors.cat_name }}</div>
             </div>
             <div class="row g-3">
               <div class="col-6">
@@ -1064,145 +716,17 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 選項組 Modal -->
-    <div v-if="showOgModal" class="modal fade show d-block" style="background:rgba(0,0,0,.5)" @click.self="showOgModal = false">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-sliders2 me-1"></i>{{ ogForm._id ? '編輯選項組' : '新增選項組' }}
-            </h5>
-            <button type="button" class="btn-close" @click="showOgModal = false"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row g-3 mb-3">
-              <div class="col-md-5">
-                <label class="form-label fw-semibold">選項組名稱 <span class="text-danger">*</span></label>
-                <input v-model="ogForm.name" type="text" class="form-control" placeholder="例：辣度、甜度" />
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-semibold">選擇類型</label>
-                <select v-model="ogForm.type" class="form-select">
-                  <option value="single">單選（只能選一個）</option>
-                  <option value="multiple">多選（可選多個）</option>
-                </select>
-              </div>
-              <div class="col-md-3 d-flex align-items-end">
-                <div class="form-check form-switch mb-0 pb-2">
-                  <input v-model="ogForm.required" class="form-check-input" type="checkbox" id="og-required" />
-                  <label class="form-check-label fw-semibold" for="og-required">必選</label>
-                </div>
-              </div>
-            </div>
-
-            <!-- 選項清單 -->
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <label class="form-label fw-semibold mb-0">選項清單</label>
-              <button class="btn btn-sm btn-outline-primary" type="button" @click="addChoice">
-                <i class="bi bi-plus-lg"></i> 新增選項
-              </button>
-            </div>
-            <div v-if="!ogForm.choices.length" class="text-muted small fst-italic mb-2">
-              尚無選項，點右上角新增
-            </div>
-            <div class="og-choice-list">
-              <div v-for="(ch, idx) in ogForm.choices" :key="idx" class="og-choice-row">
-                <div class="flex-grow-1">
-                  <input v-model="ch.name" type="text" class="form-control form-control-sm"
-                         placeholder="選項名稱（例：不辣）" />
-                </div>
-                <div style="width:110px">
-                  <div class="input-group input-group-sm">
-                    <span class="input-group-text">+$</span>
-                    <input v-model.number="ch.extra_price" type="number" class="form-control" min="0" step="1" placeholder="0" />
-                  </div>
-                </div>
-                <div>
-                  <button type="button"
-                    class="btn btn-sm"
-                    :class="ch.is_default ? 'btn-warning' : 'btn-outline-secondary'"
-                    @click="setDefault(idx)"
-                    :title="ogForm.type === 'single' ? '設為預設' : '切換預設'"
-                  >
-                    <i class="bi" :class="ch.is_default ? 'bi-star-fill' : 'bi-star'"></i>
-                  </button>
-                </div>
-                <div>
-                  <button type="button" class="btn btn-sm btn-outline-danger" @click="removeChoice(idx)" aria-label="移除" title="移除">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div class="form-text mt-1">
-              <i class="bi bi-star-fill text-warning me-1"></i>金色星號 = POS 預設勾選；加價 0 = 不另加收費
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showOgModal = false">取消</button>
-            <button class="btn btn-primary" :disabled="ogSaving" @click="saveOg">
-              <span v-if="ogSaving" class="spinner-border spinner-border-sm me-1"></span>儲存
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 批次客製化 Modal -->
-    <div v-if="showBatchModal" class="modal fade show d-block" style="background:rgba(0,0,0,.5)" @click.self="showBatchModal = false">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">
-              <i class="bi bi-sliders2 me-1 text-indigo"></i>批次設定客製化
-            </h5>
-            <button type="button" class="btn-close" @click="showBatchModal = false"></button>
-          </div>
-          <div class="modal-body">
-            <p class="text-muted small mb-3">
-              已選 <strong>{{ selectedItemIds.length }}</strong> 個品項。點擊標籤循環切換狀態：
-              <span class="batch-badge state-add">套用</span> 加入全部選中品項，
-              <span class="batch-badge state-remove">移除</span> 從全部選中品項移除，
-              <span class="batch-badge state-keep">不改</span> 保持各品項現有設定不變。
-            </p>
-
-            <div v-if="!selectedMenuData?.option_groups?.length" class="text-muted fst-italic small">
-              此菜單尚無客製化選項組，請至「客製化」tab 新增。
-            </div>
-
-            <div class="batch-group-list">
-              <div v-for="og in selectedMenuData?.option_groups" :key="og._id" class="batch-group-row">
-                <div class="batch-group-info">
-                  <div class="fw-semibold">{{ og.name }}</div>
-                  <div class="text-muted small">
-                    {{ og.type === 'single' ? '單選' : '多選' }} ·
-                    {{ og.choices?.length || 0 }} 個選項
-                    （{{ (og.choices || []).map(c => c.name).join('、') }}）
-                  </div>
-                </div>
-                <button class="batch-state-btn"
-                        :class="`state-${batchGroupStates[og._id] || 'keep'}`"
-                        @click="cycleBatchState(og._id)">
-                  {{ ({ add: '套用', remove: '移除', keep: '不改' } as Record<string,string>)[batchGroupStates[og._id] || 'keep'] }}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showBatchModal = false">取消</button>
-            <button class="btn btn-primary" :disabled="batchSaving" @click="saveBatch">
-              <span v-if="batchSaving" class="spinner-border spinner-border-sm me-1"></span>
-              儲存變更
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
   </Teleport>
+
+  <MenuItemModal ref="itemModal" :menu-id="selectedMenuId" :menu="selectedMenuData"
+                 :products="products" :warehouses="warehouses" @saved="loadMenuDetail(selectedMenuId)" />
+  <OptionGroupModal ref="ogModal" :menu-id="selectedMenuId" @saved="loadMenuDetail(selectedMenuId)" />
+  <BatchCustomizeModal ref="batchModal" :menu-id="selectedMenuId" :menu="selectedMenuData"
+                       :selected-item-ids="selectedItemIds" @saved="onBatchSaved" />
 </template>
 
 <style scoped>
+.menu-detail-panel { scroll-margin-top: 64px; }   /* [U13] 捲動時避開固定頂列 */
 .btn-xs {
   padding: .15rem .4rem;
   font-size: .75rem;
@@ -1212,40 +736,7 @@ onMounted(() => {
   color: #fff;
 }
 
-/* 選項組 Modal 選項列 */
-.og-choice-list { display: flex; flex-direction: column; gap: 8px; }
-.og-choice-row  { display: flex; align-items: center; gap: 8px; }
-
-/* 庫存聯動列 */
-.linked-row .form-select:first-child { flex: 2; min-width: 0; }
-.linked-row .form-select:nth-child(2) { flex: 1.5; min-width: 0; }
-.lp-qty { width: 70px; flex-shrink: 0; text-align: center; }
-
-/* 批次編輯 */
+/* 批次編輯按鈕 */
 .btn-outline-indigo { border-color: #6366f1; color: #6366f1; background: transparent; }
 .btn-outline-indigo:hover { background: #6366f1; color: #fff; }
-.text-indigo { color: #6366f1; }
-
-.batch-group-list { display: flex; flex-direction: column; gap: 8px; }
-.batch-group-row  {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 14px; background: #f8f9fb; border-radius: 8px; border: 1px solid #e8eaf0;
-}
-.batch-group-info { flex: 1; min-width: 0; }
-.batch-state-btn  {
-  padding: 5px 18px; border-radius: 20px; font-size: .82rem; font-weight: 700;
-  border: 2px solid; cursor: pointer; transition: .15s; white-space: nowrap; flex-shrink: 0;
-}
-.batch-state-btn.state-keep   { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
-.batch-state-btn.state-add    { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
-.batch-state-btn.state-remove { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
-.batch-state-btn:hover { filter: brightness(.92); }
-
-.batch-badge {
-  display: inline-block; padding: 1px 8px; border-radius: 20px;
-  font-size: .75rem; font-weight: 600; border: 1.5px solid;
-}
-.batch-badge.state-keep   { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
-.batch-badge.state-add    { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
-.batch-badge.state-remove { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
 </style>

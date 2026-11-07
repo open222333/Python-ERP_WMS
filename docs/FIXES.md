@@ -1,5 +1,26 @@
 # Bug 修復 / 安全修復記錄
 
+## 2026-11-07 UI 第七輪（`[U9]` `[U10]` `[U12]` `[U13]` 標記，項目見 OPTIMIZATION_REPORT 第七輪）
+
+本輪首次以 Chromium（Playwright）實際截圖檢查：手機 390×844、手機橫向 844×390、平板 1024×768、桌機 1440×900，淺色與深色模式各一輪，資料為 mongomock 測試資料。
+
+| 檔案 | 問題 | 修復說明 |
+|---|---|---|
+| `src/schemas/domain.py` `ProductPayload` | [U13] **後台新增／編輯產品一律失敗**：schema 把 `status` 宣告成字串，表單送出 `status: 1`（整數）被擋成 400「輸入資料格式錯誤」 | 改 `Optional[int]`（model 本來就以 `int()` 寫入）；補 `test_schemas.py` 2 條（整數 status 可新增／修改、非數字仍擋） |
+| `views/admin/InventoryView.vue`、`types/index.ts` | [U13] 庫存查詢的 SKU、單位欄永遠空白；搜尋框輸入任何字都拋 `TypeError`（`i.sku` 為 undefined） | 前端改用後端實際欄位 `product_sku`／`product_unit` |
+| `style.css` | [U13] 深色模式下儀表板統計數字、各頁卡片標題（h5/h6）幾乎看不見：Bootstrap 只在 `<body>` 設文字色，`[data-bs-theme=dark]` 子樹沿用淺色模式的深色字 | `.admin-dark` 根節點重設 `color: var(--bs-body-color)`；`.stat-label` 改淺灰；`body:has(.admin-dark)` 底色改深色（iOS 回彈不露白） |
+| `directives/stackTable.ts`、`style.css` | [U13] 手機卡片版列表每格都是「標籤：值」一列，空值「—」也占一列，一張卡片動輒 8–10 列；勾選框、操作按鈕各占一整列 | 指令自動標記：第一個文字欄當卡片標題（不顯示標籤、字級加大）、勾選框浮到右上角、操作欄按鈕靠右成一列、空值欄隱藏。18 個頁面自動套用 |
+| `views/KitchenView.vue` | [U13] 備餐顯示在手機直向時頂列擠成直排（標題、統計徽章逐字換行）；「目前無待處理訂單」在黑底上幾乎看不見 | < 576px 改兩列（統計徽章獨立一列、隱藏時鐘）；空狀態改淺灰字；訂單管理圖示鈕補名稱 |
+| `components/pos/PosTopbar.vue` | [U13] 「銷售記錄」按鈕 1.56rem 字＋大內距，高度超過頂列；手機橫向（844px）時右側銷售記錄、登出按鈕被擠出畫面 | 按鈕收在頂列內；< 1024px 隱藏時鐘與使用者、縮窄選單；< 900px 按鈕只留圖示（有 aria-label） |
+| `views/OrderView.vue` | [U13] 顧客點餐頁在手機上看不到桌號（`d-none d-sm-inline`）；分類列以 `top: 49px` 黏在頂列下，但頂列實際約 40px，中間露出捲動中的品項 | 桌號改為頂列上的膠囊標籤；頂列固定 `min-height: 49px` |
+| `views/admin/MenusView.vue` | [U13] 手機上「請從左側選擇菜單」（實際在上方）；點選菜單後品項面板在畫面外，看起來沒反應 | 文字改「請先選擇菜單」；< 992px 點選菜單後自動捲到品項面板 |
+| `components/menus/BatchCustomizeModal.vue` | [U13] 批次客製化選項組列寫死淺色底，深色模式一條白底 | 改用 `--table-th-bg`／`--card-border` |
+| `WarehousesView`、`StoresView`、`UsersView`（含拆出的分頁元件）、`MenusView`（菜單／品項／分類／選項組）、產品分類 | [U9] 其餘表單錯誤只靠 toast，或按鈕直接 disabled 不說明缺什麼 | 全面套用 `useFieldErrors`：欄位紅框＋說明、自動聚焦第一個錯誤欄；必填改由送出時檢查（按鈕不再無故 disabled）。倉庫代碼補必填（後端本來就必填）、重複代碼 409 標在代碼欄；分店帳號密碼依欄位提示檢查至少 6 碼；品項售價不可空白或負數 |
+| `style.css`、32 個 .vue | [U12] 約 150 處行內 `style="..."`，手機版需靠 `!important` 逐一覆寫 | 改為共用工具 class（`wpx-*`、`mwpx-*`、`fz-*`、`bg-dim-*`、`z-*`、`switch-lg/md/sm` 等，定義在 `style.css` 末段）；剩 22 處為動態綁定或單一顏色，保留 |
+| `views/admin/{Settings,Users,Menus,Products}View.vue`、`views/OrderView.vue` | [U10] 超大頁面元件（1251／1026／981／836／821 行） | 拆出 `components/settings/`（4）、`components/users/`（4）、`components/menus/`（3＋types.ts）、`components/products/`（2）、`components/order/`（4＋orderCart.ts）；頁面縮為 187／86／742／459／693 行。表單類彈窗為常駐元件，維持「關閉不儲存保留草稿」行為。點餐頁購物車列原本桌機與手機抽屜各寫一份，改為共用 `OrderCartRows` |
+
+測試：`pytest tests/unit` 全綠；`vue-tsc --noEmit` 0 錯、`vite build` 成功；Playwright 端對端 23 項（設定頁各區塊載入與儲存、使用者新增與四個分頁、產品新增與草稿保留、菜單品項／選項組新增、批次客製化送出、點餐頁客製化→購物車→送出）。mongomock 不支援 `array_filters`，品項「修改」與批次儲存的後端寫入無法在沙箱驗證，僅驗證前端送出的請求內容。
+
 ## 2026-10-25 UI 第六輪（`[U1]`–`[U11]` 標記，項目見 OPTIMIZATION_REPORT 第六輪）
 
 | 檔案 | 問題 | 修復說明 |

@@ -59,7 +59,9 @@ class ProductPayload(BaseSchema):
     min_stock: Optional[float] = None
     max_stock: Optional[float] = None
     sort_order: Optional[int] = None
-    status: Optional[str] = None
+    # [U13] 原寫 Optional[str]，但產品 status 一律是整數（model 以 int() 寫入、前端送 1/0），
+    #       導致後台「新增／編輯產品」送出 status=1 時都被擋成 400「輸入資料格式錯誤」
+    status: Optional[int] = None
     category_id: LooseObjectIdStr = None
 
 

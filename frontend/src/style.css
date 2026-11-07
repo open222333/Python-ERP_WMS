@@ -18,6 +18,13 @@
 }
 
 /* ── Dark Mode — set by .admin-dark class on AdminLayout root ── */
+/* [U13] 深色模式文字顏色：Bootstrap 只在 <body> 套用 color，[data-bs-theme=dark] 的子樹不會重新繼承，
+   沒有指定顏色的標題（h5/h6）、.stat-num 等會沿用 body 的深色字而看不見，這裡在根節點重新指定 */
+.admin-dark { color: var(--bs-body-color); }
+.admin-dark .stat-label { color: #9ca3af; }
+/* iOS 回彈捲動、內容不足一屏時露出的 body 底色也改深色 */
+body:has(.admin-dark) { background: #12141e; }
+
 .admin-dark {
   --content-bg:     #12141e;
   --topbar-bg:      #1e2130;
@@ -174,7 +181,27 @@ body {
   .table-stack td[colspan] { justify-content: center; text-align: center !important; }
   .table-stack tr:has(> td[colspan]:only-child) { border-style: dashed; }
   /* 操作按鈕在卡片內放大 */
-  .table-stack td .btn-sm { min-height: 34px; min-width: 34px; }
+  .table-stack td .btn-sm, .table-stack td .btn-xs { min-height: 34px; min-width: 34px; }
+
+  /* [U13] 卡片排版（class 由 stackTable.ts 標記）*/
+  .table-stack tr { position: relative; }
+  .table-stack td.stack-title {
+    display: block; text-align: left !important;
+    font-size: 1rem; font-weight: 600; padding: 8px 0 !important;
+  }
+  .table-stack td.stack-title::before { content: none; }
+  .table-stack tr:has(> td.stack-check) td.stack-title { padding-right: 32px !important; }
+  .table-stack td.stack-check {
+    position: absolute; top: 10px; right: 12px; width: auto;
+    padding: 0 !important; border: 0 !important;
+  }
+  .table-stack td.stack-check + td { border-top: 0 !important; }
+  .table-stack td.stack-empty { display: none; }
+  .table-stack td.stack-actions {
+    justify-content: flex-end; flex-wrap: wrap; gap: 6px;
+    padding-top: 10px !important;
+  }
+  .table-stack td.stack-actions::before { content: none; }
 }
 
 /* [U6] 有自製彈窗開啟時鎖住背景捲動（由 plugins/modalEnhancer.ts 切換） */
@@ -190,3 +217,53 @@ input[type="search"]::-webkit-search-cancel-button {
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zM5.35 4.65 8 7.29l2.65-2.64.7.7L8.71 8l2.64 2.65-.7.7L8 8.71l-2.65 2.64-.7-.7L7.29 8 4.65 5.35z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 input[type="search"]::-webkit-search-cancel-button:hover { opacity: .85; }
+
+/* ══ [U12] 共用工具 class：取代各頁面的行內 style="..."（2026-11 第七輪）══
+   沿用 Bootstrap 工具 class 的寫法加 !important，讓它跟原本的行內樣式一樣優先；
+   手機版覆寫規則（上方 @media 區塊，例如 .table-card .table-header .form-control 的 width:auto !important）
+   選擇器較具體，仍可蓋過，不必再為每頁寫特例。Bootstrap 已有的（d-none、text-end、fw-semibold、min-vh-100…）直接用 Bootstrap 的。 */
+
+/* 固定寬度（篩選列下拉／輸入框、表頭欄寬）*/
+.wpx-36  { width: 36px  !important; }  .wpx-70  { width: 70px  !important; }
+.wpx-80  { width: 80px  !important; }  .wpx-90  { width: 90px  !important; }
+.wpx-100 { width: 100px !important; }  .wpx-110 { width: 110px !important; }
+.wpx-120 { width: 120px !important; }  .wpx-130 { width: 130px !important; }
+.wpx-140 { width: 140px !important; }  .wpx-150 { width: 150px !important; }
+.wpx-160 { width: 160px !important; }  .wpx-180 { width: 180px !important; }
+.wpx-380 { width: 380px !important; }
+/* 最大寬／高 */
+.mwpx-150 { max-width: 150px !important; }  .mwpx-160 { max-width: 160px !important; }
+.mwpx-180 { max-width: 180px !important; }  .mwpx-200 { max-width: 200px !important; }
+.mwpx-260 { max-width: 260px !important; }  .mwpx-320 { max-width: 320px !important; }
+.mwpx-360 { max-width: 360px !important; }  .mwpx-560 { max-width: 560px !important; }
+.mwpx-680 { max-width: 680px !important; }  .mw-95vw  { max-width: 95vw  !important; }
+.mhpx-160 { max-height: 160px !important; } .mhpx-180 { max-height: 180px !important; }
+.mh-60vh  { max-height: 60vh  !important; }
+/* 字級（數字 = rem × 100，例：fz-75 = .75rem）*/
+.fz-65  { font-size: .65rem !important; }  .fz-70  { font-size: .7rem  !important; }
+.fz-72  { font-size: .72rem !important; }  .fz-75  { font-size: .75rem !important; }
+.fz-82  { font-size: .82rem !important; }  .fz-85  { font-size: .85rem !important; }
+.fz-93  { font-size: .93rem !important; }  .fz-110 { font-size: 1.1rem !important; }
+.fz-220 { font-size: 2.2rem !important; }  .fz-260 { font-size: 2.6rem !important; }
+.fz-300 { font-size: 3rem   !important; }  .fz-350 { font-size: 3.5rem !important; }
+/* 自製彈窗的半透明遮罩與層級 */
+.bg-dim-40 { background: rgba(0,0,0,.4)  !important; }
+.bg-dim-45 { background: rgba(0,0,0,.45) !important; }
+.bg-dim-50 { background: rgba(0,0,0,.5)  !important; }
+.bg-dim-55 { background: rgba(0,0,0,.55) !important; }
+.z-1055  { z-index: 1055  !important; }  .z-1060  { z-index: 1060  !important; }
+.z-9999  { z-index: 9999  !important; }  .z-10050 { z-index: 10050 !important; }
+/* 加大的 form-switch 開關 */
+.form-check-input.switch-lg { width: 2.5em; height: 1.3em; cursor: pointer; }
+.form-check-input.switch-md { width: 2.2em; height: 1.2em; cursor: pointer; }
+.form-check-input.switch-sm { width: 2em;   height: 1.1em; cursor: pointer; }
+/* 其他 */
+.cursor-pointer      { cursor: pointer !important; }
+.opacity-20          { opacity: .2 !important; }
+.opacity-30          { opacity: .3 !important; }
+.text-inherit        { color: inherit !important; }
+.break-all           { word-break: break-all !important; }
+.ws-pre-line         { white-space: pre-line !important; }
+.ls-wide             { letter-spacing: .05em !important; }
+.text-truncate-only  { text-overflow: ellipsis !important; }
+.grid-full           { grid-column: 1 / -1 !important; }

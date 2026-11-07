@@ -399,7 +399,7 @@ onMounted(async () => {
 
   <!-- ─── Store Settings Modal ──────────────────────────────── -->
   <Teleport to="body">
-    <div v-if="showModal" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055"
+    <div v-if="showModal" class="modal d-block bg-dim-50 z-1055"
          @click.self="showModal = false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -431,8 +431,8 @@ onMounted(async () => {
                     <div class="text-muted small">開啟後系統會接收此平台的 Webhook 通知</div>
                   </div>
                   <div class="form-check form-switch mb-0">
-                    <input v-model="forms[p.key].enabled" class="form-check-input" type="checkbox"
-                           :id="`${p.key}-enabled`" style="width:2.5em;height:1.3em;cursor:pointer" />
+                    <input v-model="forms[p.key].enabled" class="form-check-input switch-lg" type="checkbox"
+                           :id="`${p.key}-enabled`" />
                   </div>
                 </div>
 
@@ -443,8 +443,8 @@ onMounted(async () => {
                     <div class="text-muted small">收到新訂單後自動確認，並建立 POS 銷售紀錄</div>
                   </div>
                   <div class="form-check form-switch mb-0">
-                    <input v-model="forms[p.key].auto_confirm" class="form-check-input" type="checkbox"
-                           :id="`${p.key}-auto`" style="width:2.5em;height:1.3em;cursor:pointer" />
+                    <input v-model="forms[p.key].auto_confirm" class="form-check-input switch-lg" type="checkbox"
+                           :id="`${p.key}-auto`" />
                   </div>
                 </div>
 
@@ -514,7 +514,7 @@ onMounted(async () => {
 
   <!-- ─── Template Create/Edit Modal ──────────────────────── -->
   <Teleport to="body">
-    <div v-if="showTplModal" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1060"
+    <div v-if="showTplModal" class="modal d-block bg-dim-50 z-1060"
          @click.self="showTplModal = false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -604,9 +604,9 @@ onMounted(async () => {
                       <i :class="si.type === 'menu_item' ? 'bi bi-journal-text' : 'bi bi-box'"></i>
                       {{ si.product_name }}
                       <input v-model.number="si.qty" type="number" min="1"
-                             class="form-control form-control-sm d-inline-block p-0"
-                             style="width:2.5rem;background:transparent;border:none;color:inherit;font-weight:bold" />
-                      <i class="bi bi-x-circle" style="cursor:pointer"
+                             class="form-control form-control-sm d-inline-block p-0 bg-transparent border-0 text-inherit fw-bold"
+                             style="width:2.5rem" />
+                      <i class="bi bi-x-circle cursor-pointer"
                          @click="tplRemoveProduct(idx)"></i>
                     </span>
                   </div>
@@ -631,7 +631,7 @@ onMounted(async () => {
                   <label class="form-label fw-semibold small mb-1">搜尋系統產品</label>
                   <input v-model="tplProductSearch" type="search" class="form-control form-control-sm"
                          placeholder="輸入名稱或 SKU 搜尋..." />
-                  <div class="border rounded mt-1" style="max-height:160px;overflow-y:auto">
+                  <div class="border rounded mt-1 mhpx-160 overflow-y-auto">
                     <div v-if="!filteredTplProducts.length" class="text-muted small p-2">無符合產品</div>
                     <button v-for="prod in filteredTplProducts" :key="prod._id"
                             class="btn btn-sm w-100 text-start rounded-0 border-0 border-bottom"
@@ -641,7 +641,7 @@ onMounted(async () => {
                       <i class="bi bi-check2 me-1"
                          v-if="tplNewMapping.system_items.find(s => s.product_id === prod._id)"></i>
                       {{ prod.name }}
-                      <code class="ms-1 text-secondary" style="font-size:.7rem">{{ prod.sku }}</code>
+                      <code class="ms-1 text-secondary fz-70">{{ prod.sku }}</code>
                     </button>
                   </div>
                 </div>
@@ -651,7 +651,7 @@ onMounted(async () => {
                   <label class="form-label fw-semibold small mb-1">搜尋菜單品項</label>
                   <input v-model="tplMenuSearch" type="search" class="form-control form-control-sm"
                          placeholder="輸入品項名稱搜尋..." />
-                  <div class="border rounded mt-1" style="max-height:160px;overflow-y:auto">
+                  <div class="border rounded mt-1 mhpx-160 overflow-y-auto">
                     <div v-if="!filteredTplMenuItems.length" class="text-muted small p-2">無符合菜單品項</div>
                     <button v-for="mi in filteredTplMenuItems" :key="mi._id"
                             class="btn btn-sm w-100 text-start rounded-0 border-0 border-bottom"
@@ -661,9 +661,9 @@ onMounted(async () => {
                       <i class="bi bi-check2 me-1"
                          v-if="tplNewMapping.system_items.find(s => s.menu_item_id === mi._id)"></i>
                       {{ mi.name }}
-                      <span class="text-secondary ms-1" style="font-size:.7rem">{{ mi.menu_name }}</span>
-                      <span v-if="mi.linked_products?.length" class="badge bg-body-secondary text-body border ms-1"
-                            style="font-size:.65rem">扣 {{ mi.linked_products.length }} 項原料</span>
+                      <span class="text-secondary ms-1 fz-70">{{ mi.menu_name }}</span>
+                      <span v-if="mi.linked_products?.length" class="badge bg-body-secondary text-body border ms-1 fz-65"
+                            >扣 {{ mi.linked_products.length }} 項原料</span>
                     </button>
                   </div>
                   <div class="form-text">

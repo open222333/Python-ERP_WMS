@@ -18,10 +18,10 @@
 
     <!-- Item grid -->
     <div id="product-grid">
-      <div v-if="!selectedMenu" class="text-center text-muted py-4" style="grid-column:1/-1">
+      <div v-if="!selectedMenu" class="text-center text-muted py-4 grid-full">
         <i class="bi bi-menu-button-wide fs-2"></i><p class="mt-2">請先從上方選擇菜單</p>
       </div>
-      <div v-else-if="filteredItems.length === 0" class="text-center text-muted py-4" style="grid-column:1/-1">
+      <div v-else-if="filteredItems.length === 0" class="text-center text-muted py-4 grid-full">
         <i class="bi bi-inbox fs-2"></i><p class="mt-2">無符合品項</p>
       </div>
       <div v-for="item in filteredItems" :key="item._id"

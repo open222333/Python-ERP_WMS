@@ -3,11 +3,11 @@
   <div id="topbar">
     <div class="tb-logo"><i class="bi bi-cash-register"></i>POS 收銀</div>
     <div class="tb-sep"></div>
-    <select v-model="warehouseModel" class="form-select" style="width:150px">
+    <select v-model="warehouseModel" class="form-select tb-select-wh" aria-label="倉庫">
       <option value="">全部倉庫</option>
       <option v-for="w in warehouses" :key="w._id" :value="w._id">{{ w.name }}</option>
     </select>
-    <select v-model="menuModel" class="form-select" style="width:160px">
+    <select v-model="menuModel" class="form-select tb-select-menu" aria-label="菜單">
       <option value="" disabled>-- 選擇菜單 --</option>
       <option v-for="m in menus" :key="m._id" :value="m._id">{{ m.name }}</option>
     </select>
@@ -16,15 +16,15 @@
       <input v-model="scanInput" type="text" placeholder="掃描條碼…"
              autocomplete="off" @keydown.enter="onScan" ref="scanRef" />
     </div>
-    <div style="flex:1"></div>
+    <div class="tb-spacer"></div>
     <span id="topbar-clock">{{ clock }}</span>
-    <div class="tb-sep"></div>
+    <div class="tb-sep tb-sep-user"></div>
     <span id="topbar-user">👤 {{ auth.username }}</span>
-    <button class="tb-btn tb-btn-history" @click="emit('show-history')">
-      <i class="bi bi-clock-history"></i>銷售記錄
+    <button class="tb-btn tb-btn-history" @click="emit('show-history')" aria-label="銷售記錄" title="銷售記錄">
+      <i class="bi bi-clock-history"></i><span class="tb-btn-text">銷售記錄</span>
     </button>
-    <button class="tb-btn danger" @click="handleLogout">
-      <i class="bi bi-box-arrow-right"></i>登出
+    <button class="tb-btn danger" @click="handleLogout" aria-label="登出" title="登出">
+      <i class="bi bi-box-arrow-right"></i><span class="tb-btn-text">登出</span>
     </button>
   </div>
 </template>
@@ -120,11 +120,32 @@ onUnmounted(() => clearInterval(clockTimer))
 .tb-btn:hover { background: #3a4060; }
 .tb-btn.danger { border-color: #7f1d1d; color: #fca5a5; }
 .tb-btn.danger:hover { background: #7f1d1d; }
+/* [U13] 原本 1.56rem＋10px 內距，按鈕高於頂列（52px）而溢出；維持醒目但收在頂列內 */
 .tb-btn.tb-btn-history {
-  padding: 10px 20px;
-  font-size: 1.56rem;
-  border-radius: 14px;
-  gap: 10px;
+  padding: 6px 16px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 10px;
+  gap: 8px;
+  max-height: calc(var(--topbar-h, 52px) - 10px);
 }
 .tb-sep { width: 1px; height: 24px; background: #3d4566; flex-shrink: 0; }
+.tb-spacer { flex: 1; }
+.tb-select-wh   { width: 150px; }
+.tb-select-menu { width: 160px; }
+
+/* [U13] 手機橫向／小平板（實測 844px 寬時右側的銷售記錄、登出按鈕被擠出畫面）：
+   隱藏時鐘與使用者、縮窄選單，按鈕只留圖示 */
+@media (max-width: 1023.98px) {
+  #topbar { gap: 8px; padding: 0 10px; }
+  #topbar-clock, #topbar-user, .tb-sep-user { display: none; }
+  .tb-select-wh, .tb-select-menu { width: 120px; flex-shrink: 1; min-width: 90px; }
+  #scan-bar { flex: 1 1 140px; min-width: 110px; }
+  .tb-spacer { display: none; }
+}
+@media (max-width: 899.98px) {
+  .tb-logo { font-size: .9rem; }
+  .tb-btn .tb-btn-text { display: none; }
+  .tb-btn, .tb-btn.tb-btn-history { padding: 6px 10px; font-size: 1.05rem; }
+}
 </style>

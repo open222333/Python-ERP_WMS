@@ -5,8 +5,10 @@ import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import type { Warehouse, Store } from '@/types'
 import { appConfirm } from '@/composables/useConfirm'
+import { useFieldErrors } from '@/composables/useFieldErrors'
 
 const toast = useToastStore()
+const fe    = useFieldErrors()   // [U9]
 const auth  = useAuthStore()
 
 // ── State ──────────────────────────────────────────────────
@@ -61,6 +63,7 @@ async function load() {
 
 // ── Modal ──────────────────────────────────────────────────
 function openModal(w?: Warehouse) {
+  fe.clear()
   form.value = w
     ? {
         _id:         w._id,
@@ -82,10 +85,11 @@ function closeModal() {
 
 // ── Save ───────────────────────────────────────────────────
 async function save() {
-  if (!form.value.name.trim()) {
-    toast.show('請填寫倉庫名稱', 'danger')
-    return
-  }
+  // [U9] 欄位層級錯誤；後端 code 與 name 皆必填（原本只檢查 name，code 清空時才由後端回錯）
+  if (!fe.check({
+    code: [!form.value.code.trim(), '請填寫倉庫代碼'],
+    name: [!form.value.name.trim(), '請填寫倉庫名稱'],
+  })) return
   saving.value = true
   try {
     const payload: Record<string, any> = {
@@ -106,7 +110,9 @@ async function save() {
     closeModal()
     await load()
   } catch (e: any) {
-    toast.show(e?.response?.data?.message ?? '儲存失敗', 'danger')
+    const msg = e?.response?.data?.message ?? '儲存失敗'
+    if (e?.response?.status === 409 && msg.includes('代碼')) fe.set('code', msg)   // 倉庫代碼已存在
+    toast.show(msg, 'danger')
   } finally {
     saving.value = false
   }
@@ -193,8 +199,7 @@ onMounted(load)
   <Teleport to="body">
     <div
       v-if="showModal"
-      class="modal d-block"
-      style="background: rgba(0,0,0,.5); z-index: 1055;"
+      class="modal d-block bg-dim-50 z-1055"
       @click.self="closeModal"
     >
       <div class="modal-dialog">
@@ -211,17 +216,20 @@ onMounted(load)
             <div class="row g-3">
               <!-- Code -->
               <div class="col-md-5">
-                <label class="form-label fw-semibold">代碼</label>
-                <div class="input-group">
-                  <input v-model="form.code" type="text" class="form-control" />
+                <label class="form-label fw-semibold">代碼 <span class="text-danger">*</span></label>
+                <div class="input-group has-validation">
+                  <input v-model="form.code" type="text" class="form-control" data-field="code"
+                         :class="{ 'is-invalid': fe.errors.code }" @input="fe.clear('code')" />
                   <button
                     type="button"
                     class="btn btn-outline-secondary"
                     title="重新產生代碼"
-                    @click="form.code = genCode()"
+                    aria-label="重新產生代碼"
+                    @click="form.code = genCode(); fe.clear('code')"
                   >
                     <i class="bi bi-arrow-clockwise"></i>
                   </button>
+                  <div class="invalid-feedback">{{ fe.errors.code }}</div>
                 </div>
               </div>
 
@@ -235,7 +243,11 @@ onMounted(load)
                   type="text"
                   class="form-control"
                   placeholder="倉庫名稱"
+                  data-field="name"
+                  :class="{ 'is-invalid': fe.errors.name }"
+                  @input="fe.clear('name')"
                 />
+                <div class="invalid-feedback">{{ fe.errors.name }}</div>
               </div>
 
               <!-- Address -->

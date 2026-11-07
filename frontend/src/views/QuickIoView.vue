@@ -285,7 +285,7 @@ onBeforeUnmount(() => {
               <i class="bi bi-upc-scan"></i><span v-if="isMobile" class="ms-1">掃描</span>
             </button>
           </div>
-          <select v-if="!isMobile" v-model="catFilter" class="form-select" style="width:140px">
+          <select v-if="!isMobile" v-model="catFilter" class="form-select wpx-140">
             <option value="">全部分類</option>
             <option v-for="c in categories" :key="c._id" :value="c._id">{{ c.name }}</option>
           </select>

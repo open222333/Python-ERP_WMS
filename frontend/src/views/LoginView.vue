@@ -1,8 +1,8 @@
 <template>
   <div class="login-wrap d-flex align-items-center justify-content-center min-vh-100">
-    <div class="login-card card shadow-sm p-4" style="width:380px;max-width:95vw">
+    <div class="login-card card shadow-sm p-4 wpx-380 mw-95vw">
       <div class="text-center mb-4">
-        <i class="bi bi-boxes text-primary" style="font-size:2.6rem"></i>
+        <i class="bi bi-boxes text-primary fz-260"></i>
         <h5 class="mt-2 mb-0 fw-bold">WMS 倉儲管理系統</h5>
         <div class="text-muted small mt-1">請登入以繼續</div>
       </div>

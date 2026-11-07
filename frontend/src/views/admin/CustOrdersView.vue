@@ -139,8 +139,7 @@ onUnmounted(() => {
         <div class="d-flex gap-2 flex-wrap">
           <select
             v-model="statusFilter"
-            class="form-select form-select-sm"
-            style="width:auto"
+            class="form-select form-select-sm w-auto"
             @change="loadOrders()"
           >
             <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
@@ -150,8 +149,7 @@ onUnmounted(() => {
           <input
             v-model="dateFilter"
             type="date"
-            class="form-control form-control-sm"
-            style="width:auto"
+            class="form-control form-control-sm w-auto"
             @change="loadOrders()"
           />
           <button class="btn btn-sm btn-outline-secondary" @click="loadOrders()" aria-label="重新整理" title="重新整理">

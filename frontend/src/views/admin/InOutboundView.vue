@@ -324,7 +324,7 @@ onMounted(async () => {
 
       <!-- Inbound toolbar -->
       <div v-if="activeTab === 'inbound'" class="d-flex gap-2 align-items-center">
-        <select v-model="inStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadInbound()">
+        <select v-model="inStatusFilter" class="form-select form-select-sm wpx-130" @change="loadInbound()">
           <option value="">全部狀態</option>
           <option v-for="(v, k) in STATUS_MAP" :key="k" :value="k">{{ v.label }}</option>
         </select>
@@ -335,7 +335,7 @@ onMounted(async () => {
 
       <!-- Outbound toolbar -->
       <div v-if="activeTab === 'outbound'" class="d-flex gap-2 align-items-center">
-        <select v-model="outStatusFilter" class="form-select form-select-sm" style="width:130px" @change="loadOutbound()">
+        <select v-model="outStatusFilter" class="form-select form-select-sm wpx-130" @change="loadOutbound()">
           <option value="">全部狀態</option>
           <option v-for="(v, k) in STATUS_MAP" :key="k" :value="k">{{ v.label }}</option>
         </select>
@@ -427,7 +427,7 @@ onMounted(async () => {
   <Teleport to="body">
 
     <!-- ── 入庫：建立 Modal ── -->
-    <div v-if="showInCreate" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055" @click.self="showInCreate = false">
+    <div v-if="showInCreate" class="modal d-block bg-dim-50 z-1055" @click.self="showInCreate = false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -462,7 +462,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── 入庫：詳情 Modal ── -->
-    <div v-if="showInDetail && inDetailOrder" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055" @click.self="showInDetail = false">
+    <div v-if="showInDetail && inDetailOrder" class="modal d-block bg-dim-50 z-1055" @click.self="showInDetail = false">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
@@ -542,7 +542,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── 入庫：新增品項 Modal ── -->
-    <div v-if="showInItemModal" class="modal d-block" style="background:rgba(0,0,0,.55);z-index:1060">
+    <div v-if="showInItemModal" class="modal d-block bg-dim-55 z-1060">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -582,7 +582,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── 出庫：建立 Modal ── -->
-    <div v-if="showOutCreate" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055" @click.self="showOutCreate = false">
+    <div v-if="showOutCreate" class="modal d-block bg-dim-50 z-1055" @click.self="showOutCreate = false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -617,7 +617,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── 出庫：詳情 Modal ── -->
-    <div v-if="showOutDetail && outDetailOrder" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055" @click.self="showOutDetail = false">
+    <div v-if="showOutDetail && outDetailOrder" class="modal d-block bg-dim-50 z-1055" @click.self="showOutDetail = false">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
@@ -697,7 +697,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── 出庫：新增品項 Modal ── -->
-    <div v-if="showOutItemModal" class="modal d-block" style="background:rgba(0,0,0,.55);z-index:1060">
+    <div v-if="showOutItemModal" class="modal d-block bg-dim-55 z-1060">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">

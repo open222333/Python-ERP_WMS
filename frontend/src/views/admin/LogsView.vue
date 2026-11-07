@@ -109,8 +109,7 @@ onMounted(load)
           v-model="fUser"
           type="search"
           @search="load()"
-          class="form-control form-control-sm"
-          style="width:110px"
+          class="form-control form-control-sm wpx-110"
           placeholder="使用者"
           @keydown.enter="(e) => !e.isComposing && load()"
         />
@@ -118,16 +117,14 @@ onMounted(load)
           v-model="fAction"
           type="search"
           @search="load()"
-          class="form-control form-control-sm"
-          style="width:110px"
+          class="form-control form-control-sm wpx-110"
           placeholder="操作類型"
           @keydown.enter="(e) => !e.isComposing && load()"
         />
         <input
           v-model="fStart"
           type="date"
-          class="form-control form-control-sm"
-          style="width:140px"
+          class="form-control form-control-sm wpx-140"
           title="開始日期"
           @change="load"
         />
@@ -135,13 +132,12 @@ onMounted(load)
         <input
           v-model="fEnd"
           type="date"
-          class="form-control form-control-sm"
-          style="width:140px"
+          class="form-control form-control-sm wpx-140"
           title="結束日期"
           @change="load"
         />
         <!-- 顯示筆數 -->
-        <select v-model.number="limit" class="form-select form-select-sm" style="width:90px" @change="load">
+        <select v-model.number="limit" class="form-select form-select-sm wpx-90" @change="load">
           <option :value="100">100 筆</option>
           <option :value="200">200 筆</option>
           <option :value="500">500 筆</option>
@@ -171,13 +167,11 @@ onMounted(load)
           <i v-else class="bi bi-upload me-1"></i>匯入
         </button>
         <!-- 隱藏 file input -->
-        <input
+        <input class="d-none"
           ref="fileInput"
           type="file"
           accept=".csv,.json"
-          style="display:none"
-          @change="onFileChange"
-        />
+          @change="onFileChange" />
       </div>
     </div>
 
@@ -205,9 +199,8 @@ onMounted(load)
             <td><strong>{{ l.username || l.operator || '-' }}</strong></td>
             <td>{{ l.action }}</td>
             <td
-              class="text-muted small"
-              style="max-width:320px; word-break:break-all"
-            >{{ l.detail || '-' }}</td>
+            class="text-muted small mwpx-320 break-all"
+>{{ l.detail || '-' }}</td>
             <td>
               <span
                 class="badge"

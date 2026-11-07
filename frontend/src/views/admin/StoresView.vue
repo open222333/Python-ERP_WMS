@@ -5,8 +5,12 @@ import { useToastStore } from '@/stores/toast'
 import { fmtDate, ROLE_COLOR, ROLE_LABEL } from '@/utils/format'
 import type { Store, User } from '@/types'
 import { appConfirm } from '@/composables/useConfirm'
+import { useFieldErrors } from '@/composables/useFieldErrors'
 
 const toast = useToastStore()
+// [U9] 欄位層級錯誤（分店表單、帳號表單各一組）。原本按鈕直接 disabled，使用者不知道缺什麼
+const feStore = useFieldErrors()
+const feUser  = useFieldErrors()
 
 const activeTab = ref<'stores' | 'accounts'>('stores')
 const loading   = ref(false)
@@ -30,19 +34,21 @@ async function loadStores() {
 }
 
 function openCreateStore() {
+  feStore.clear()
   storeForm.value = { _id: '', name: '', code: '', status: 'active' }
   isEditingStore.value = false
   showStoreModal.value = true
 }
 
 function openEditStore(s: Store) {
+  feStore.clear()
   storeForm.value = { _id: s._id, name: s.name, code: s.code || '', status: s.status || 'active' }
   isEditingStore.value = true
   showStoreModal.value = true
 }
 
 async function saveStore() {
-  if (!storeForm.value.name.trim()) return
+  if (!feStore.check({ store_name: [!storeForm.value.name.trim(), '請填寫分店名稱'] })) return
   saving.value = true
   try {
     if (isEditingStore.value) {
@@ -103,12 +109,17 @@ async function loadStoreUsers() {
 }
 
 function openCreateUser() {
+  feUser.clear()
   userForm.value = { username: '', password: '', role: 'viewer' }
   showUserModal.value = true
 }
 
 async function saveUser() {
-  if (!userForm.value.username.trim() || !userForm.value.password.trim()) return
+  const pw = userForm.value.password
+  if (!feUser.check({
+    su_username: [!userForm.value.username.trim(), '請填寫使用者名稱'],
+    su_password: [!pw.trim() || pw.length < 6, pw.trim() ? '密碼至少 6 碼' : '請設定密碼'],
+  })) return
   saving.value = true
   try {
     await storeApi.createUser(selectedStoreId.value, userForm.value)
@@ -261,7 +272,7 @@ onMounted(loadStores)
 
   <!-- ── 分店 Modal ── -->
   <Teleport to="body">
-    <div v-if="showStoreModal" class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.4)">
+    <div v-if="showStoreModal" class="modal d-block bg-dim-40" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -271,7 +282,10 @@ onMounted(loadStores)
           <div class="modal-body">
             <div class="mb-3">
               <label class="form-label">分店名稱 <span class="text-danger">*</span></label>
-              <input v-model="storeForm.name" class="form-control" placeholder="例：台北信義店" />
+              <input v-model="storeForm.name" class="form-control" placeholder="例：台北信義店"
+                     data-field="store_name" :class="{ 'is-invalid': feStore.errors.store_name }"
+                     @input="feStore.clear('store_name')" />
+              <div class="invalid-feedback">{{ feStore.errors.store_name }}</div>
             </div>
             <div v-if="isEditingStore" class="mb-3">
               <label class="form-label">分店代碼</label>
@@ -287,7 +301,7 @@ onMounted(loadStores)
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" @click="showStoreModal = false">取消</button>
-            <button class="btn btn-primary" :disabled="saving || !storeForm.name.trim()" @click="saveStore">
+            <button class="btn btn-primary" :disabled="saving" @click="saveStore">
               <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
               {{ isEditingStore ? '儲存' : '新增' }}
             </button>
@@ -299,7 +313,7 @@ onMounted(loadStores)
 
   <!-- ── 新增帳號 Modal ── -->
   <Teleport to="body">
-    <div v-if="showUserModal" class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.4)">
+    <div v-if="showUserModal" class="modal d-block bg-dim-40" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
@@ -310,11 +324,17 @@ onMounted(loadStores)
             <p class="text-muted small mb-3">分店：<strong>{{ selectedStoreName }}</strong></p>
             <div class="mb-3">
               <label class="form-label">使用者名稱 <span class="text-danger">*</span></label>
-              <input v-model="userForm.username" class="form-control" placeholder="登入帳號" autocomplete="off" />
+              <input v-model="userForm.username" class="form-control" placeholder="登入帳號" autocomplete="off"
+                     data-field="su_username" :class="{ 'is-invalid': feUser.errors.su_username }"
+                     @input="feUser.clear('su_username')" />
+              <div class="invalid-feedback">{{ feUser.errors.su_username }}</div>
             </div>
             <div class="mb-3">
               <label class="form-label">密碼 <span class="text-danger">*</span></label>
-              <input v-model="userForm.password" type="password" class="form-control" placeholder="至少 6 碼" autocomplete="new-password" />
+              <input v-model="userForm.password" type="password" class="form-control" placeholder="至少 6 碼" autocomplete="new-password"
+                     data-field="su_password" :class="{ 'is-invalid': feUser.errors.su_password }"
+                     @input="feUser.clear('su_password')" />
+              <div class="invalid-feedback">{{ feUser.errors.su_password }}</div>
             </div>
             <div class="mb-3">
               <label class="form-label">角色</label>
@@ -329,7 +349,7 @@ onMounted(loadStores)
           <div class="modal-footer">
             <button class="btn btn-secondary" @click="showUserModal = false">取消</button>
             <button class="btn btn-primary"
-              :disabled="saving || !userForm.username.trim() || !userForm.password.trim()"
+              :disabled="saving"
               @click="saveUser">
               <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
               建立帳號

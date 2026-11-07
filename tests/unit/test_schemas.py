@@ -76,6 +76,21 @@ class TestProductValidation:
                         headers=admin_headers)
         assert r.status_code == 400
 
+    def test_create_and_update_product_with_int_status(self, client, admin_headers):
+        # [U13] 後台表單送出的 payload（status 為整數）原本被 schema 當成字串驗證而 400
+        payload = {'sku': 'S3', 'name': 'N', 'barcode': '', 'category_id': None, 'unit': '個',
+                   'sell_price': 10, 'cost_price': 5, 'min_stock': 0, 'description': '', 'status': 1}
+        r = client.post('/product/', json=payload, headers=admin_headers)
+        assert r.status_code == 201, r.get_json()
+        pid = r.get_json()['id']
+        r = client.put(f'/product/{pid}', json={**payload, 'status': 0}, headers=admin_headers)
+        assert r.status_code == 200, r.get_json()
+
+    def test_create_product_bad_status_400(self, client, admin_headers):
+        r = client.post('/product/', json={'sku': 'S4', 'name': 'N', 'status': 'on'},
+                        headers=admin_headers)
+        assert r.status_code == 400
+
 
 class TestInventoryValidation:
     def test_adjust_bad_quantity_400(self, client, admin_headers):

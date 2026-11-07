@@ -142,8 +142,7 @@ onMounted(load)
   <Teleport to="body">
     <div
       v-if="showModal"
-      class="modal d-block"
-      style="background: rgba(0,0,0,.5); z-index: 1055;"
+      class="modal d-block bg-dim-50 z-1055"
       @click.self="closeModal"
     >
       <div class="modal-dialog">

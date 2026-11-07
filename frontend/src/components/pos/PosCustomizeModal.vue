@@ -11,7 +11,7 @@
           </div>
           <button class="btn-close" @click="emit('close')"></button>
         </div>
-        <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+        <div class="modal-body mh-60vh overflow-y-auto">
           <div v-for="grp in target?.applied_groups" :key="grp._id" class="og-section">
             <div class="og-title">
               {{ grp.name }}
@@ -23,15 +23,13 @@
               <label v-for="ch in grp.choices" :key="ch._id"
                      class="choice-pill"
                      :class="{ active: customSelections[grp._id]?.includes(ch._id) }">
-                <input v-if="grp.type === 'single'" type="radio"
+                <input class="d-none" v-if="grp.type === 'single'" type="radio"
                        :name="`grp-${grp._id}`"
                        :checked="customSelections[grp._id]?.[0] === ch._id"
-                       @change="customSelections[grp._id] = [ch._id]"
-                       style="display:none" />
-                <input v-else type="checkbox"
+                       @change="customSelections[grp._id] = [ch._id]" />
+                <input class="d-none" v-else type="checkbox"
                        :checked="customSelections[grp._id]?.includes(ch._id)"
-                       @change="toggleMultiChoice(grp._id, ch._id)"
-                       style="display:none" />
+                       @change="toggleMultiChoice(grp._id, ch._id)" />
                 {{ ch.name }}
                 <span v-if="ch.extra_price > 0" class="choice-extra">+{{ ch.extra_price }}</span>
               </label>

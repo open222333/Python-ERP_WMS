@@ -186,11 +186,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="kitchen-wrap" style="min-height:100vh;background:#111;color:#eee">
+  <div class="kitchen-wrap min-vh-100" style="background:#111; color:#eee">
     <!-- ── Topbar ──────────────────────────────────────────── -->
     <header class="kitchen-topbar d-flex align-items-center gap-3 px-3">
       <i class="bi bi-grid-3x3-gap-fill text-success fs-5"></i>
-      <span class="fw-bold fs-5">備餐顯示</span>
+      <span class="fw-bold fs-5 kds-title">備餐顯示</span>
 
       <!-- 統計 -->
       <div class="stat-chips ms-2">
@@ -205,7 +205,7 @@ onUnmounted(() => {
         <button class="btn btn-sm btn-outline-light" :class="{ disabled: loading }" @click="loadOrders" aria-label="重新整理" title="重新整理">
           <i class="bi bi-arrow-clockwise" :class="{ 'spin': loading }"></i>
         </button>
-        <a href="/admin/cust-orders" class="btn btn-sm btn-outline-secondary">
+        <a href="/admin/cust-orders" class="btn btn-sm btn-outline-secondary" aria-label="訂單管理" title="訂單管理">
           <i class="bi bi-grid-1x2"></i>
         </a>
       </div>
@@ -214,7 +214,7 @@ onUnmounted(() => {
     <!-- ── Order Cards ─────────────────────────────────────── -->
     <div class="orders-grid p-3">
       <div v-if="!orders.length && !loading"
-           class="no-orders text-center text-muted py-5">
+           class="no-orders text-center py-5">
         <i class="bi bi-check2-circle fs-1 d-block mb-2 text-success"></i>
         目前無待處理訂單
       </div>
@@ -289,9 +289,27 @@ onUnmounted(() => {
   z-index: 10;
 }
 
+.kds-title { white-space: nowrap; }
 .stat-chips { display: flex; gap: 8px; }
 .stat-chip {
   padding: 3px 10px; border-radius: 20px; font-size: .8rem; font-weight: 600;
+  white-space: nowrap;
+}
+.now-clock { white-space: nowrap; }
+/* [U13] 原本 .text-muted 在 #111 底色上幾乎看不見 */
+.no-orders { color: #9ca3af; }
+
+/* [U13] 手機直向：標題、統計、時鐘擠在 54px 一列會被壓成直排，改為兩列並隱藏時鐘 */
+@media (max-width: 575.98px) {
+  .kitchen-topbar {
+    height: auto; flex-wrap: wrap; row-gap: 8px !important;
+    padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px;
+  }
+  .kitchen-topbar .stat-chips { order: 5; width: 100%; margin-left: 0 !important; }
+  .kitchen-topbar .stat-chip { flex: 1; text-align: center; }
+  .kitchen-topbar .now-clock { display: none; }
+  .kitchen-topbar > .d-flex.gap-2 { margin-left: auto; }
+  .orders-grid { grid-template-columns: 1fr; padding: 10px !important; gap: 10px; }
 }
 .chip-pending { background: #5c5c00; color: #ffd700; }
 .chip-process { background: #004d60; color: #00e5ff; }

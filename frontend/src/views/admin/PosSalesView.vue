@@ -189,23 +189,22 @@ onMounted(() => {
       <div class="table-header">
         <h6><i class="bi bi-receipt me-1"></i>銷售記錄</h6>
         <div class="toolbar flex-wrap">
-          <select v-model="sourceFilter" class="form-select form-select-sm" style="width:120px">
+          <select v-model="sourceFilter" class="form-select form-select-sm wpx-120">
             <option value="">全部來源</option>
             <option value="pos">POS 現場</option>
             <option value="ubereats">UberEats</option>
             <option value="foodpanda">foodpanda</option>
           </select>
-          <input v-model="dateFrom" type="date" class="form-control form-control-sm" style="width:140px" />
+          <input v-model="dateFrom" type="date" class="form-control form-control-sm wpx-140" />
           <span class="text-muted small">～</span>
-          <input v-model="dateTo" type="date" class="form-control form-control-sm" style="width:140px" />
+          <input v-model="dateTo" type="date" class="form-control form-control-sm wpx-140" />
           <input
             v-model="cashierFilter"
             type="text"
-            class="form-control form-control-sm"
-            style="width:90px"
+            class="form-control form-control-sm wpx-90"
             placeholder="收銀員"
           />
-          <select v-model="statusFilter" class="form-select form-select-sm" style="width:100px">
+          <select v-model="statusFilter" class="form-select form-select-sm wpx-100">
             <option value="">全部狀態</option>
             <option value="completed">已完成</option>
             <option value="refunded">已退款</option>
@@ -233,13 +232,11 @@ onMounted(() => {
             <span v-if="importing" class="spinner-border spinner-border-sm me-1"></span>
             <i v-else class="bi bi-upload me-1"></i>匯入
           </button>
-          <input
+          <input class="d-none"
             ref="fileInput"
             type="file"
             accept=".csv,.json"
-            style="display:none"
-            @change="onFileChange"
-          />
+            @change="onFileChange" />
         </div>
       </div>
 
@@ -309,9 +306,8 @@ onMounted(() => {
     <!-- Detail Modal -->
     <div
       v-if="showModal && selectedSale"
-      class="modal fade show d-block"
+      class="modal fade show d-block bg-dim-50"
       tabindex="-1"
-      style="background: rgba(0,0,0,.5)"
       @click.self="closeModal"
     >
       <div class="modal-dialog">

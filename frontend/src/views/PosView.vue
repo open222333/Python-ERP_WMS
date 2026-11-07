@@ -2,8 +2,8 @@
   <!-- 直向提示 -->
   <div id="rotate-hint">
     <i class="bi bi-phone-landscape"></i>
-    <div style="font-size:1.1rem;font-weight:600">請旋轉裝置為橫向使用</div>
-    <div style="font-size:.85rem;color:#94a3b8">POS 收銀系統需要橫向模式</div>
+    <div class="fz-110 fw-semibold">請旋轉裝置為橫向使用</div>
+    <div class="fz-85" style="color:#94a3b8">POS 收銀系統需要橫向模式</div>
   </div>
 
   <div id="pos-root">

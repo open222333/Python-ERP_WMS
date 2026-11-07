@@ -23,8 +23,8 @@ const filteredInventory = computed(() => {
   if (searchKw.value.trim()) {
     const kw = searchKw.value.trim().toLowerCase()
     list = list.filter(i =>
-      i.product_name.toLowerCase().includes(kw) ||
-      i.sku.toLowerCase().includes(kw)
+      (i.product_name || '').toLowerCase().includes(kw) ||
+      (i.product_sku || '').toLowerCase().includes(kw)
     )
   }
   return list
@@ -67,8 +67,7 @@ onMounted(async () => {
         <!-- Warehouse filter -->
         <select
           v-model="filterWhId"
-          class="form-select form-select-sm"
-          style="width: 150px"
+          class="form-select form-select-sm wpx-150"
           @change="load"
         >
           <option value="">全部倉庫</option>
@@ -79,8 +78,7 @@ onMounted(async () => {
         <input
           v-model="searchKw"
           type="search"
-          class="form-control form-control-sm"
-          style="width: 180px"
+          class="form-control form-control-sm wpx-180"
           placeholder="搜尋產品名稱/SKU"
         />
         <button class="btn btn-sm btn-outline-secondary" @click="load" title="刷新">
@@ -112,7 +110,7 @@ onMounted(async () => {
           </tr>
           <tr v-for="inv in filteredInventory" :key="inv._id">
             <td class="fw-semibold">{{ inv.product_name }}</td>
-            <td><code class="text-primary">{{ inv.sku }}</code></td>
+            <td><code class="text-primary">{{ inv.product_sku }}</code></td>
             <td>{{ inv.warehouse_name }}</td>
             <td
               class="text-end fw-bold"
@@ -120,7 +118,7 @@ onMounted(async () => {
             >
               {{ inv.quantity.toLocaleString() }}
             </td>
-            <td>{{ inv.unit }}</td>
+            <td>{{ inv.product_unit }}</td>
             <td>
               <small class="text-muted">{{ fmtDate(inv.updated_at) }}</small>
             </td>

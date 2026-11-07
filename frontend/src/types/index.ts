@@ -92,11 +92,11 @@ export interface InventoryItem {
   _id:          string
   product_id:   string
   product_name: string
-  sku:          string
+  product_sku:  string   // [U13] 後端欄位名為 product_sku／product_unit（原寫 sku／unit 永遠是空的）
   warehouse_id: string
   warehouse_name: string
   quantity:     number
-  unit:         string
+  product_unit: string
   updated_at:   string
 }
 

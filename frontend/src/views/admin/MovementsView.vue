@@ -213,7 +213,7 @@ onBeforeUnmount(() => mql?.removeEventListener('change', onMql))
             </td>
             <td class="text-end text-muted">{{ m.before_qty ?? '—' }}</td>
             <td class="text-end text-muted">{{ m.after_qty ?? '—' }}</td>
-            <td class="text-muted" style="max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            <td class="text-muted mwpx-150 text-nowrap overflow-hidden text-truncate-only">
               {{ m.remark || '—' }}
             </td>
             <td>{{ m.operator || '—' }}</td>

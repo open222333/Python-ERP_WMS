@@ -326,7 +326,7 @@ onUnmounted(() => clearInterval(sessionPollTimer))
                   {{ ttlEnabled ? '啟用' : '關閉' }}
                 </label>
               </div>
-              <div v-if="ttlEnabled" class="input-group input-group-sm" style="width:160px">
+              <div v-if="ttlEnabled" class="input-group input-group-sm wpx-160">
                 <input v-model.number="ttlHours" type="number" min="1" max="8760"
                        class="form-control" />
                 <span class="input-group-text">小時</span>
@@ -361,7 +361,7 @@ onUnmounted(() => clearInterval(sessionPollTimer))
         <i class="bi bi-link-45deg me-1"></i>點餐頁網址設定
       </div>
       <div class="card-body py-2">
-        <div class="input-group input-group-sm" style="max-width:560px">
+        <div class="input-group input-group-sm mwpx-560">
           <span class="input-group-text">前綴</span>
           <input v-model="baseUrl" type="url" class="form-control" @input="genAll"
                  placeholder="https://your-domain.com" />
@@ -451,7 +451,7 @@ onUnmounted(() => clearInterval(sessionPollTimer))
       <div class="spinner-border spinner-border-sm me-2"></div>載入中...
     </div>
     <div v-else-if="!entries.length" class="text-center text-muted py-5">
-      <i class="bi bi-qr-code-scan" style="font-size:3rem;opacity:.3"></i>
+      <i class="bi bi-qr-code-scan fz-300 opacity-30"></i>
       <p class="mt-2 mb-0">尚未新增任何桌位 QR 碼</p>
     </div>
 
@@ -461,12 +461,12 @@ onUnmounted(() => clearInterval(sessionPollTimer))
         <table v-stack-table class="table table-hover align-middle mb-0">
           <thead class="table-light no-print">
             <tr>
-              <th style="width:110px">QR 圖片</th>
+              <th class="wpx-110">QR 圖片</th>
               <th>桌號 / 標籤</th>
               <th class="d-none d-md-table-cell">Token 狀態</th>
-              <th class="d-none d-lg-table-cell no-print" style="width:150px">桌況 Session</th>
-              <th class="text-center no-print" style="width:70px">啟用</th>
-              <th class="text-center no-print" style="width:130px">操作</th>
+              <th class="d-none d-lg-table-cell no-print wpx-150">桌況 Session</th>
+              <th class="text-center no-print wpx-70">啟用</th>
+              <th class="text-center no-print wpx-130">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -488,11 +488,10 @@ onUnmounted(() => clearInterval(sessionPollTimer))
                 <div class="fw-semibold">{{ e.label }}</div>
                 <small class="text-muted font-monospace">{{ e.table_no }}</small>
                 <div class="d-flex align-items-center gap-1 mt-1">
-                  <span class="badge bg-secondary bg-opacity-75 font-monospace" style="font-size:.7rem">
+                  <span class="badge bg-secondary bg-opacity-75 font-monospace fz-70">
                     識別碼
                   </span>
-                  <input v-model="e.code" type="text" class="form-control form-control-sm py-0"
-                         style="width:90px;font-size:.75rem;font-family:monospace"
+                  <input v-model="e.code" type="text" class="form-control form-control-sm py-0 wpx-90 fz-75 font-monospace"
                          placeholder="自動生成" @change="saveTables" />
                 </div>
               </td>
@@ -505,11 +504,11 @@ onUnmounted(() => clearInterval(sessionPollTimer))
                 <div v-else class="text-success small">
                   <i class="bi bi-check-circle-fill me-1"></i>有效
                 </div>
-                <div class="text-muted" style="font-size:.75rem">
+                <div class="text-muted fz-75">
                   到期：{{ fmtExpiry(e.expires_at) }}
                 </div>
                 <div class="d-flex align-items-center gap-1 no-print mt-1">
-                  <code class="small text-truncate" style="max-width:200px">
+                  <code class="small text-truncate mwpx-200">
                     {{ orderUrl(e.token) }}
                   </code>
                   <button class="btn btn-link btn-sm p-0 text-muted" @click="copyUrl(e)"
@@ -527,11 +526,10 @@ onUnmounted(() => clearInterval(sessionPollTimer))
                   <span class="badge bg-success mb-1">
                     <i class="bi bi-person-fill me-1"></i>活躍中
                   </span>
-                  <div class="text-muted" style="font-size:.72rem">
+                  <div class="text-muted fz-72">
                     到 {{ fmtExpiry(sessionMap[e.table_no]?.expires_at || '') }}
                   </div>
-                  <button class="btn btn-outline-danger btn-sm mt-1 px-2 py-0"
-                          style="font-size:.75rem"
+                  <button class="btn btn-outline-danger btn-sm mt-1 px-2 py-0 fz-75"
                           @click="closeSession(e.table_no, e.label)"
                           :disabled="closingSession === e.table_no">
                     <span v-if="closingSession === e.table_no"
@@ -547,9 +545,9 @@ onUnmounted(() => clearInterval(sessionPollTimer))
               <!-- 開關 -->
               <td class="text-center no-print">
                 <div class="form-check form-switch d-inline-block m-0">
-                  <input class="form-check-input" type="checkbox"
+                  <input class="form-check-input cursor-pointer" type="checkbox"
                          :checked="e.enabled" @change="toggleEnabled(e)"
-                         style="cursor:pointer;width:2.2em;height:1.2em" />
+                         style="width:2.2em; height:1.2em" />
                 </div>
               </td>
 

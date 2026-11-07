@@ -13,8 +13,8 @@ watch(() => dialogState.open, async (v) => {
 
 <template>
   <Teleport to="body">
-    <div v-if="dialogState.open" class="modal d-block app-confirm" role="dialog" aria-modal="true"
-         :aria-label="dialogState.title" style="background:rgba(0,0,0,.45);z-index:10050"
+    <div v-if="dialogState.open" class="modal d-block app-confirm bg-dim-45 z-10050" role="dialog" aria-modal="true"
+         :aria-label="dialogState.title"
          @click.self="closeDialog(false)">
       <div class="modal-dialog modal-dialog-centered modal-sm">
         <div class="modal-content">
@@ -22,7 +22,7 @@ watch(() => dialogState.open, async (v) => {
             <h6 class="modal-title fw-bold">{{ dialogState.title }}</h6>
             <button type="button" class="btn-close" aria-label="關閉" @click="closeDialog(false)"></button>
           </div>
-          <div class="modal-body" style="white-space:pre-line">{{ dialogState.message }}</div>
+          <div class="modal-body ws-pre-line">{{ dialogState.message }}</div>
           <div class="modal-footer py-2">
             <button v-if="!dialogState.alertOnly" type="button" class="btn btn-secondary"
                     @click="closeDialog(false)">{{ dialogState.cancelText }}</button>

@@ -43,7 +43,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="container-fluid py-3 px-4" style="max-width:680px">
+  <div class="container-fluid py-3 px-4 mwpx-680">
     <h5 class="fw-bold mb-4">
       <i class="bi bi-wallet2 me-2 text-success"></i>LINE Pay 全支付設定
     </h5>
@@ -62,8 +62,7 @@ onMounted(load)
             <small class="text-muted">啟用後 POS 付款方式將自動加入「LINE Pay」選項</small>
           </div>
           <div class="form-check form-switch m-0">
-            <input v-model="form.enabled" class="form-check-input" type="checkbox"
-                   style="width:2.5em;height:1.3em;cursor:pointer" />
+            <input v-model="form.enabled" class="form-check-input switch-lg" type="checkbox" />
           </div>
         </div>
       </div>
@@ -78,20 +77,20 @@ onMounted(load)
             <label class="form-label form-label-sm fw-semibold">
               Channel ID <span class="text-danger">*</span>
             </label>
-            <input v-model="form.channel_id" type="text" class="form-control form-control-sm"
-                   placeholder="例：1234567890" style="max-width:260px" />
+            <input v-model="form.channel_id" type="text" class="form-control form-control-sm mwpx-260"
+                   placeholder="例：1234567890" />
           </div>
           <div class="mb-3">
             <label class="form-label form-label-sm fw-semibold">
               Channel Secret <span class="text-danger">*</span>
             </label>
-            <input v-model="form.channel_secret" type="password" class="form-control form-control-sm"
-                   placeholder="已設定則顯示 ******" autocomplete="new-password" style="max-width:360px" />
+            <input v-model="form.channel_secret" type="password" class="form-control form-control-sm mwpx-360"
+                   placeholder="已設定則顯示 ******" autocomplete="new-password" />
           </div>
           <div class="d-flex align-items-center gap-3">
             <div class="form-check form-switch m-0">
-              <input v-model="form.sandbox" class="form-check-input" type="checkbox"
-                     id="sandbox" style="width:2.2em;height:1.2em;cursor:pointer" />
+              <input v-model="form.sandbox" class="form-check-input switch-md" type="checkbox"
+                     id="sandbox" />
               <label class="form-check-label fw-semibold" for="sandbox">Sandbox 測試模式</label>
             </div>
             <small class="text-warning">

@@ -1,5 +1,5 @@
 <template>
-  <div class="d-flex" style="min-height:100vh"
+  <div class="d-flex min-vh-100"
        :class="{ 'admin-dark': theme.darkMode }"
        :data-bs-theme="theme.darkMode ? 'dark' : 'light'">
     <!-- ─── Sidebar ─────────────────────────────────────── -->

@@ -136,8 +136,7 @@ onMounted(loadReport)
             <input
               v-model="selDate"
               type="date"
-              class="form-control form-control-sm"
-              style="width:150px"
+              class="form-control form-control-sm wpx-150"
               @change="loadReport"
             />
           </template>
@@ -147,15 +146,14 @@ onMounted(loadReport)
             <input
               v-model="selMonth"
               type="month"
-              class="form-control form-control-sm"
-              style="width:150px"
+              class="form-control form-control-sm wpx-150"
               @change="loadReport"
             />
           </template>
 
           <!-- 年 選擇器 -->
           <template v-else>
-            <select v-model="selYear" class="form-select form-select-sm" style="width:100px" @change="loadReport">
+            <select v-model="selYear" class="form-select form-select-sm wpx-100" @change="loadReport">
               <option v-for="y in yearOptions" :key="y" :value="y">{{ y }} 年</option>
             </select>
           </template>

@@ -4,6 +4,12 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import { appAlert } from '@/composables/useConfirm'
+// [U10] 2026-11 拆分：購物車列、我的訂單、客製化抽屜、底部抽屜外框移至 components/order/
+import { selKey, rowPrice, type SelectionItem, type CartRow } from '@/components/order/orderCart'
+import OrderBottomSheet from '@/components/order/OrderBottomSheet.vue'
+import OrderCartRows from '@/components/order/OrderCartRows.vue'
+import MyOrdersList from '@/components/order/MyOrdersList.vue'
+import OrderCustomizeSheet from '@/components/order/OrderCustomizeSheet.vue'
 
 const auth  = useAuthStore()
 const route = useRoute()
@@ -21,20 +27,6 @@ const sessionToken   = ref(localStorage.getItem('order_session_token') || '')
 const myOrders      = ref<any[]>([])
 const sessionClosed = ref(false)
 let   sseConn: EventSource | null = null
-
-// ── Types ─────────────────────────────────────────
-interface SelectionItem {
-  group_id:    string
-  group_name:  string
-  choice_id:   string
-  choice_name: string
-  extra_price: number
-}
-interface CartRow {
-  item:       any
-  qty:        number
-  selections: SelectionItem[]
-}
 
 // ── 登入 ──────────────────────────────────────────
 const loginForm    = reactive({ username: '', password: '' })
@@ -77,21 +69,6 @@ function connectCustomerSSE(token: string) {
     sessionToken.value = ''
     if (sseConn) { sseConn.close(); sseConn = null }
   })
-}
-
-function statusLabel(s: string): string {
-  const map: Record<string, string> = {
-    pending: '等待中', processing: '製作中', completed: '已完成', cancelled: '已取消',
-  }
-  return map[s] || s
-}
-
-function statusBadge(s: string): string {
-  const map: Record<string, string> = {
-    pending: 'bg-warning text-dark', processing: 'bg-info text-dark',
-    completed: 'bg-success', cancelled: 'bg-secondary',
-  }
-  return map[s] || 'bg-secondary'
 }
 
 // ── 菜單 ──────────────────────────────────────────
@@ -152,14 +129,6 @@ const orderNo        = ref('')
 const showSuccess    = ref(false)
 const showCartDrawer = ref(false)   // 手機購物車 drawer
 
-function selKey(sel: SelectionItem[]) {
-  return sel.map(s => `${s.group_id}:${s.choice_id}`).sort().join('|')
-}
-
-function rowPrice(row: CartRow): number {
-  return (row.item.price || 0) + row.selections.reduce((s, x) => s + (x.extra_price || 0), 0)
-}
-
 const cartCount    = computed(() => cart.value.reduce((s, r) => s + r.qty, 0))
 const cartSubtotal = computed(() => cart.value.reduce((s, r) => s + rowPrice(r) * r.qty, 0))
 
@@ -216,80 +185,12 @@ function continueOrder() {
   showSuccess.value = false
 }
 
-// ── 客製化 Modal ──────────────────────────────────
-const showCustomModal  = ref(false)
-const customTarget     = ref<any>(null)
-const customSelections = ref<Record<string, string[]>>({})
-const custQty          = ref(1)
-
-const custTotalPrice = computed(() => {
-  if (!customTarget.value) return 0
-  const groups: any[] = customTarget.value.applied_groups || []
-  let extra = 0
-  for (const grp of groups) {
-    for (const cid of (customSelections.value[grp._id] || [])) {
-      const ch = (grp.choices || []).find((c: any) => c._id === cid)
-      if (ch) extra += ch.extra_price || 0
-    }
-  }
-  return (customTarget.value.price + extra) * custQty.value
-})
+// ── 客製化（有選項組的品項開抽屜，沒有的直接加入）──────
+const customSheet = ref<InstanceType<typeof OrderCustomizeSheet> | null>(null)
 
 function handleItemClick(item: any) {
-  const groups: any[] = item.applied_groups || []
-  if (groups.length > 0) {
-    custQty.value      = 1
-    customTarget.value = item
-    // 初始化：預選 is_default
-    const sel: Record<string, string[]> = {}
-    for (const grp of groups) {
-      if (grp.type === 'single') {
-        const def = (grp.choices || []).find((c: any) => c.is_default)
-        sel[grp._id] = def ? [def._id] : []
-      } else {
-        sel[grp._id] = (grp.choices || []).filter((c: any) => c.is_default).map((c: any) => c._id)
-      }
-    }
-    customSelections.value = sel
-    showCustomModal.value  = true
-  } else {
-    commitToCart(item, [])
-  }
-}
-
-function toggleMultiChoice(groupId: string, choiceId: string) {
-  const arr = customSelections.value[groupId] || []
-  const i   = arr.indexOf(choiceId)
-  customSelections.value[groupId] = i >= 0
-    ? arr.filter(id => id !== choiceId)
-    : [...arr, choiceId]
-}
-
-function confirmCustom() {
-  const groups: any[] = customTarget.value?.applied_groups || []
-  for (const grp of groups) {
-    if (grp.required && !(customSelections.value[grp._id]?.length)) {
-      appAlert(`請選擇「${grp.name}」`)
-      return
-    }
-  }
-  const selections: SelectionItem[] = []
-  for (const grp of groups) {
-    for (const cid of (customSelections.value[grp._id] || [])) {
-      const ch = (grp.choices || []).find((c: any) => c._id === cid)
-      if (ch) {
-        selections.push({
-          group_id:    grp._id,
-          group_name:  grp.name,
-          choice_id:   cid,
-          choice_name: ch.name,
-          extra_price: ch.extra_price || 0,
-        })
-      }
-    }
-  }
-  commitToCart(customTarget.value, selections, custQty.value)
-  showCustomModal.value = false
+  if ((item.applied_groups || []).length > 0) customSheet.value?.open(item)
+  else commitToCart(item, [])
 }
 
 // ── 版面：桌機固定高度+內部滾動 ───────────────────
@@ -317,7 +218,7 @@ onUnmounted(() => {
   <!-- 桌況已結束 → 全屏感謝頁 -->
   <div v-if="sessionClosed" class="session-ended-screen">
     <div class="session-ended-card">
-      <div style="font-size:3.5rem">🙏</div>
+      <div class="fz-350">🙏</div>
       <h4 class="fw-bold mt-3 mb-2">感謝您的光臨</h4>
       <p class="text-muted mb-1">本次用餐已結束</p>
       <p class="text-muted small">如需再次點餐，請重新掃描桌上的 QR Code</p>
@@ -330,7 +231,7 @@ onUnmounted(() => {
   <!-- 有 tableFromUrl 但未登入 → 顯示登入遮罩（內部人員用） -->
   <div v-else-if="!sessionClosed && tableFromUrl && (!auth.isLoggedIn || !auth.username)" class="overlay-login">
     <div class="login-card">
-      <i class="bi bi-cup-hot text-primary" style="font-size:2.2rem"></i>
+      <i class="bi bi-cup-hot text-primary fz-220"></i>
       <h5 class="mt-2 mb-1 fw-bold">點餐系統</h5>
       <p class="text-muted small mb-0">請先登入以繼續點餐</p>
       <form class="mt-4 text-start" @submit.prevent="doLogin">
@@ -361,8 +262,9 @@ onUnmounted(() => {
         <i class="bi bi-cup-hot me-1 text-primary"></i>{{ menuTitle }}
       </h6>
       <div class="topbar-right">
+        <!-- [U13] 原本手機上隱藏（d-none d-sm-inline），但顧客幾乎都用手機，看不到自己的桌號 -->
         <span v-if="resolvedTable || tableFromUrl || auth.username"
-              class="text-muted small me-2 d-none d-sm-inline">
+              class="table-chip me-2">
           <i class="bi bi-geo-alt me-1"></i>{{ resolvedTable || tableFromUrl || auth.username }}
         </span>
         <button v-if="auth.isLoggedIn" class="btn btn-sm btn-outline-secondary me-1" @click="handleLogout">登出</button>
@@ -394,8 +296,7 @@ onUnmounted(() => {
           <i class="bi bi-exclamation-circle fs-1 d-block mb-2"></i>{{ errorMsg }}
         </div>
         <div v-else class="item-grid">
-          <div v-if="!filteredItems.length" class="text-center py-5 text-muted"
-               style="grid-column:1/-1">
+          <div v-if="!filteredItems.length" class="text-center py-5 text-muted grid-full">
             <i class="bi bi-inbox fs-2 d-block mb-2"></i>目前無品項
           </div>
 
@@ -444,23 +345,7 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="cart-rows">
-          <div v-for="(row, idx) in cart" :key="idx" class="cart-row">
-            <div class="cr-info">
-              <div class="cr-name">{{ row.item.name }}</div>
-              <div v-if="row.selections.length" class="cr-opts">
-                {{ row.selections.map(s => s.choice_name).join(' · ') }}
-              </div>
-              <div class="cr-price">NT${{ rowPrice(row) }}</div>
-            </div>
-            <div class="cr-qty">
-              <button @click="changeQty(idx, -1)">－</button>
-              <span>{{ row.qty }}</span>
-              <button @click="changeQty(idx, 1)">＋</button>
-            </div>
-            <button class="cr-del" @click="removeFromCart(idx)" aria-label="移除" title="移除">
-              <i class="bi bi-x"></i>
-            </button>
-          </div>
+          <OrderCartRows :cart="cart" @change-qty="changeQty" @remove="removeFromCart" />
         </div>
 
         <div v-if="cart.length" class="cart-footer">
@@ -478,21 +363,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 訂單狀態（SSE 即時更新） -->
-        <div v-if="myOrders.length" class="order-status-section">
-          <div class="order-status-title">
-            <i class="bi bi-receipt me-1"></i>我的訂單
-          </div>
-          <div v-for="o in myOrders" :key="o._id" class="osc">
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="osc-no">#{{ o.order_no }}</span>
-              <span :class="`badge ${statusBadge(o.status)}`">{{ statusLabel(o.status) }}</span>
-            </div>
-            <div class="osc-items">
-              {{ o.items.slice(0, 3).map((i: any) => i.item_name).join('、') }}
-              <span v-if="o.items.length > 3">…</span>
-            </div>
-          </div>
-        </div>
+        <MyOrdersList :orders="myOrders" />
       </div><!-- /panel-cart -->
 
     </div><!-- /order-body -->
@@ -510,119 +381,35 @@ onUnmounted(() => {
   </div><!-- /order-app -->
 
   <!-- ── 手機購物車 Drawer ─────────────────────── -->
-  <Teleport to="body">
-    <div v-if="showCartDrawer" class="bottom-mask" @click.self="showCartDrawer = false">
-      <div class="bottom-sheet">
-        <div class="bs-header">
-          <span class="fw-bold"><i class="bi bi-cart3 me-1"></i>購物車</span>
-          <button class="btn-close" @click="showCartDrawer = false"></button>
-        </div>
-        <div class="bs-body">
-          <div v-for="(row, idx) in cart" :key="idx" class="cart-row">
-            <div class="cr-info">
-              <div class="cr-name">{{ row.item.name }}</div>
-              <div v-if="row.selections.length" class="cr-opts">
-                {{ row.selections.map(s => s.choice_name).join(' · ') }}
-              </div>
-              <div class="cr-price">NT${{ rowPrice(row) }}</div>
-            </div>
-            <div class="cr-qty">
-              <button @click="changeQty(idx, -1)">－</button>
-              <span>{{ row.qty }}</span>
-              <button @click="changeQty(idx, 1)">＋</button>
-            </div>
-            <button class="cr-del" @click="removeFromCart(idx)" aria-label="移除" title="移除">
-              <i class="bi bi-x"></i>
-            </button>
-          </div>
-          <div class="cf-total mt-3">
-            <span>合計</span>
-            <span class="text-primary fw-bold">NT${{ cartSubtotal }}</span>
-          </div>
-          <textarea v-model="remark" class="form-control form-control-sm mt-2"
-                    rows="2" placeholder="備註（選填）"></textarea>
-          <button class="btn btn-primary w-100 mt-3 py-2 fw-semibold"
-                  :disabled="submitting" @click="submitOrder">
-            <span v-if="submitting" class="spinner-border spinner-border-sm me-1"></span>
-            <i v-else class="bi bi-check-circle me-1"></i>送出訂單
-          </button>
-
-          <!-- 訂單狀態（SSE 即時更新） -->
-          <div v-if="myOrders.length" class="order-status-section mt-3">
-            <div class="order-status-title">
-              <i class="bi bi-receipt me-1"></i>我的訂單
-            </div>
-            <div v-for="o in myOrders" :key="o._id" class="osc">
-              <div class="d-flex justify-content-between align-items-center">
-                <span class="osc-no">#{{ o.order_no }}</span>
-                <span :class="`badge ${statusBadge(o.status)}`">{{ statusLabel(o.status) }}</span>
-              </div>
-              <div class="osc-items">
-                {{ o.items.slice(0, 3).map((i: any) => i.item_name).join('、') }}
-                <span v-if="o.items.length > 3">…</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+  <OrderBottomSheet :show="showCartDrawer" @close="showCartDrawer = false">
+    <template #header>
+      <span class="fw-bold"><i class="bi bi-cart3 me-1"></i>購物車</span>
+    </template>
+    <OrderCartRows :cart="cart" @change-qty="changeQty" @remove="removeFromCart" />
+    <div class="cf-total mt-3">
+      <span>合計</span>
+      <span class="text-primary fw-bold">NT${{ cartSubtotal }}</span>
     </div>
-  </Teleport>
+    <textarea v-model="remark" class="form-control form-control-sm mt-2"
+              rows="2" placeholder="備註（選填）"></textarea>
+    <button class="btn btn-primary w-100 mt-3 py-2 fw-semibold"
+            :disabled="submitting" @click="submitOrder">
+      <span v-if="submitting" class="spinner-border spinner-border-sm me-1"></span>
+      <i v-else class="bi bi-check-circle me-1"></i>送出訂單
+    </button>
 
-  <!-- ── 客製化 Modal ─────────────────────────── -->
-  <Teleport to="body">
-    <div v-if="showCustomModal" class="bottom-mask" @click.self="showCustomModal = false">
-      <div class="bottom-sheet">
-        <div class="bs-header">
-          <div>
-            <div class="fw-bold">{{ customTarget?.name }}</div>
-            <div class="text-primary small">NT${{ customTarget?.price }}</div>
-          </div>
-          <button class="btn-close" @click="showCustomModal = false"></button>
-        </div>
+    <!-- 訂單狀態（SSE 即時更新） -->
+    <MyOrdersList :orders="myOrders" class="mt-3" />
+  </OrderBottomSheet>
 
-        <div class="bs-body" v-if="customTarget">
-          <div v-for="grp in customTarget.applied_groups" :key="grp._id" class="og-section">
-            <div class="og-title">
-              {{ grp.name }}
-              <span v-if="grp.required" class="badge bg-danger ms-1 og-badge">必選</span>
-              <span v-if="grp.type === 'multiple'" class="badge bg-secondary ms-1 og-badge">可複選</span>
-            </div>
-            <div class="og-choices">
-              <div v-for="ch in grp.choices" :key="ch._id"
-                   class="choice-pill"
-                   :class="{ active: customSelections[grp._id]?.includes(ch._id) }"
-                   @click="grp.type === 'single'
-                             ? (customSelections[grp._id] = [ch._id])
-                             : toggleMultiChoice(grp._id, ch._id)">
-                {{ ch.name }}
-                <span v-if="ch.extra_price > 0" class="choice-extra">+{{ ch.extra_price }}</span>
-              </div>
-            </div>
-          </div>
-          <div v-if="!customTarget.applied_groups?.length"
-               class="text-center text-muted small py-3">無客製選項</div>
-        </div>
-
-        <div class="bs-footer">
-          <div class="qty-ctrl">
-            <button @click="custQty > 1 && custQty--">－</button>
-            <span>{{ custQty }}</span>
-            <button @click="custQty++">＋</button>
-          </div>
-          <div class="cust-total-lbl">NT${{ custTotalPrice }}</div>
-          <button class="btn btn-primary fw-semibold px-3" @click="confirmCustom">
-            <i class="bi bi-cart-plus me-1"></i>加入
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <!-- ── 客製化 ─────────────────────────────── -->
+  <OrderCustomizeSheet ref="customSheet" @add="commitToCart" />
 
   <!-- ── 送出成功 Modal ───────────────────────── -->
   <Teleport to="body">
     <div v-if="showSuccess" class="center-mask">
       <div class="success-card">
-        <div style="font-size:3rem">🎉</div>
+        <div class="fz-300">🎉</div>
         <h5 class="fw-bold mt-2 mb-1">訂單已送出！</h5>
         <p class="text-muted small mb-1">訂單編號</p>
         <h4 class="text-primary fw-bold mb-3">{{ orderNo }}</h4>
@@ -667,6 +454,9 @@ onUnmounted(() => {
 #order-topbar {
   position: sticky;
   top: 0;
+  /* [U13] 固定高度：分類列以 top: 49px 黏在頂列下方，頂列實際只有約 40px 時中間會露出捲動中的品項 */
+  min-height: 49px;
+  box-sizing: border-box;
   z-index: 50;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
@@ -678,6 +468,10 @@ onUnmounted(() => {
 }
 .brand-title { font-size: .95rem; font-weight: 700; }
 .topbar-right { display: flex; align-items: center; }
+.table-chip {
+  font-size: .8rem; font-weight: 600; color: #475569;
+  background: #f1f5f9; border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+}
 
 /* ── 分類 tabs ────────────────────────────────── */
 #order-cats {
@@ -837,32 +631,6 @@ onUnmounted(() => {
   z-index: 60;
 }
 
-/* ── 共用 Cart Row ─────────────────────────────── */
-.cart-row {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  padding: .5rem 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-.cr-info  { flex: 1; min-width: 0; }
-.cr-name  { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cr-opts  { font-size: .7rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cr-price { font-size: .78rem; color: #3b82f6; font-weight: 600; }
-.cr-qty   { display: flex; align-items: center; gap: .2rem; flex-shrink: 0; }
-.cr-qty button {
-  width: 1.5rem; height: 1.5rem;
-  border: 1px solid #e2e8f0; border-radius: 4px;
-  background: #f8fafc; font-size: .85rem; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-.cr-qty span { font-weight: 700; font-size: .82rem; min-width: 1.2rem; text-align: center; }
-.cr-del {
-  background: none; border: none; color: #94a3b8;
-  cursor: pointer; font-size: 1.1rem; padding: .1rem; line-height: 1;
-  flex-shrink: 0;
-}
-.cr-del:hover { color: #ef4444; }
 .cf-total {
   display: flex;
   justify-content: space-between;
@@ -871,81 +639,6 @@ onUnmounted(() => {
   padding: .5rem 0;
   border-top: 1px solid #e2e8f0;
 }
-
-/* ── Bottom Sheet（購物車 drawer + 客製化 modal） ── */
-.bottom-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.5);
-  z-index: 1050;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.bottom-sheet {
-  background: #fff;
-  border-radius: 16px 16px 0 0;
-  width: 100%;
-  max-width: 480px;
-  max-height: 82vh;
-  display: flex;
-  flex-direction: column;
-}
-.bs-header {
-  padding: 1rem 1rem .75rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e2e8f0;
-  flex-shrink: 0;
-}
-.bs-body {
-  padding: .75rem 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
-.bs-footer {
-  padding: .75rem 1rem;
-  padding-bottom: calc(.75rem + env(safe-area-inset-bottom));   /* [MOBILE] */
-  border-top: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  flex-shrink: 0;
-}
-
-/* ── 客製化選項 ────────────────────────────────── */
-.og-section   { margin-bottom: 1.1rem; }
-.og-title     { font-weight: 700; font-size: .88rem; margin-bottom: .5rem; }
-.og-badge     { font-size: .6rem !important; }
-.og-choices   { display: flex; flex-wrap: wrap; gap: .4rem; }
-.choice-pill  {
-  padding: .35rem .8rem;
-  border-radius: 20px;
-  border: 1.5px solid #e2e8f0;
-  font-size: .82rem;
-  cursor: pointer;
-  user-select: none;
-  transition: all .15s;
-  background: #f8fafc;
-}
-.choice-pill.active {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 600;
-}
-.choice-extra { font-size: .7rem; color: #3b82f6; margin-left: .2rem; }
-
-.qty-ctrl { display: flex; align-items: center; gap: .35rem; }
-.qty-ctrl button {
-  width: 2rem; height: 2rem;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  background: #f8fafc; font-size: 1rem; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-.qty-ctrl span { font-size: 1rem; font-weight: 700; min-width: 1.5rem; text-align: center; }
-.cust-total-lbl { flex: 1; text-align: right; font-weight: 700; font-size: 1rem; color: #3b82f6; }
 
 /* ── 成功 Modal（置中） ─────────────────────────── */
 .center-mask {
@@ -984,29 +677,6 @@ onUnmounted(() => {
   max-width: 320px;
 }
 
-/* ── 訂單狀態區塊 ─────────────────────────────── */
-.order-status-section {
-  padding-top: .75rem;
-  border-top: 1px solid #e2e8f0;
-}
-.order-status-title {
-  font-weight: 700;
-  font-size: .78rem;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  margin-bottom: .5rem;
-}
-.osc {
-  background: #f8fafc;
-  border-radius: .5rem;
-  padding: .45rem .6rem;
-  margin-bottom: .35rem;
-}
-.osc-no    { font-weight: 700; font-size: .8rem; color: #1e293b; }
-.osc-items { font-size: .7rem; color: #64748b; margin-top: .15rem;
-             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 /* ── 桌機：固定高度內部滾動 ────────────────────── */
 @media (min-width: 768px) {
   #order-app { height: 100vh; overflow: hidden; }
@@ -1016,11 +686,8 @@ onUnmounted(() => {
   #mobile-cart-bar { display: none !important; }
 }
 
-/* ── [MOBILE] 觸控裝置：購物車加減鈕加大（原 24px 太小）、輸入框 16px 防 iOS 聚焦放大 ── */
+/* ── [MOBILE] 觸控裝置：輸入框 16px 防 iOS 聚焦放大（購物車加減鈕見 OrderCartRows.vue）── */
 @media (pointer: coarse) {
-  .cr-qty { gap: .35rem; }
-  .cr-qty button { width: 2.25rem; height: 2.25rem; font-size: 1.05rem; border-radius: 8px; }
-  .cr-del { padding: .45rem; font-size: 1.25rem; }
   textarea.form-control, input.form-control { font-size: 16px; }
 }
 </style>

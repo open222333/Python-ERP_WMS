@@ -245,7 +245,7 @@ onMounted(load)
 
   <!-- Settings Modal -->
   <Teleport to="body">
-    <div v-if="showModal" class="modal d-block" style="background:rgba(0,0,0,.5);z-index:1055"
+    <div v-if="showModal" class="modal d-block bg-dim-50 z-1055"
          @click.self="showModal = false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -264,14 +264,13 @@ onMounted(load)
                 <small class="text-muted">關閉時不顯示發票相關選項</small>
               </div>
               <div class="form-check form-switch m-0">
-                <input v-model="form.enabled" class="form-check-input" type="checkbox"
-                       style="width:2.5em;height:1.3em;cursor:pointer" />
+                <input v-model="form.enabled" class="form-check-input switch-lg" type="checkbox" />
               </div>
             </div>
 
             <div class="mb-3">
               <label class="form-label fw-semibold">發票平台</label>
-              <select v-model="form.platform" class="form-select" style="max-width:200px">
+              <select v-model="form.platform" class="form-select mwpx-200">
                 <option value="ecpay">綠界科技 (ECPay)</option>
               </select>
             </div>
@@ -280,8 +279,8 @@ onMounted(load)
               <label class="form-label fw-semibold">
                 特店編號 MerchantID <span class="text-danger">*</span>
               </label>
-              <input v-model="form.merchant_id" type="text" class="form-control"
-                     placeholder="例：3002599" style="max-width:260px" />
+              <input v-model="form.merchant_id" type="text" class="form-control mwpx-260"
+                     placeholder="例：3002599" />
               <div class="form-text">各機台未設定獨立憑證時，預設使用此組</div>
             </div>
 
@@ -300,8 +299,8 @@ onMounted(load)
 
             <div class="mb-3">
               <label class="form-label fw-semibold">賣方統一編號</label>
-              <input v-model="form.seller_id" type="text" class="form-control"
-                     placeholder="8 位數字" maxlength="8" style="max-width:180px" />
+              <input v-model="form.seller_id" type="text" class="form-control mwpx-180"
+                     placeholder="8 位數字" maxlength="8" />
               <div class="form-text">開立 B2B 三聯式發票時使用</div>
             </div>
 
@@ -310,8 +309,8 @@ onMounted(load)
             <div class="row g-3 mb-3">
               <div class="col-auto d-flex align-items-center gap-3">
                 <div class="form-check form-switch m-0">
-                  <input v-model="form.test_mode" class="form-check-input" type="checkbox"
-                         id="testMode" style="width:2.2em;height:1.2em;cursor:pointer" />
+                  <input v-model="form.test_mode" class="form-check-input switch-md" type="checkbox"
+                         id="testMode" />
                   <label class="form-check-label fw-semibold" for="testMode">測試模式</label>
                 </div>
                 <small class="text-warning">
@@ -320,8 +319,8 @@ onMounted(load)
               </div>
               <div class="col-auto d-flex align-items-center gap-3">
                 <div class="form-check form-switch m-0">
-                  <input v-model="form.auto_issue" class="form-check-input" type="checkbox"
-                         id="autoIssue" style="width:2.2em;height:1.2em;cursor:pointer" />
+                  <input v-model="form.auto_issue" class="form-check-input switch-md" type="checkbox"
+                         id="autoIssue" />
                   <label class="form-check-label fw-semibold" for="autoIssue">POS 結帳後自動開立</label>
                 </div>
               </div>
@@ -330,7 +329,7 @@ onMounted(load)
             <div class="d-flex align-items-center gap-2 mb-4">
               <label class="form-label fw-semibold mb-0">稅率（%）</label>
               <input v-model.number="form.tax_rate" type="number" min="0" max="100"
-                     class="form-control" style="width:90px" />
+                     class="form-control wpx-90" />
               <small class="text-muted">目前台灣標準稅率 5%</small>
             </div>
 
@@ -354,7 +353,7 @@ onMounted(load)
             <div v-else-if="terminals.length" class="list-group mb-3">
               <div v-for="t in terminals" :key="t.id"
                    class="list-group-item d-flex align-items-center gap-2 py-2">
-                <code class="badge bg-secondary" style="font-size:.75rem">{{ t.id }}</code>
+                <code class="badge bg-secondary fz-75">{{ t.id }}</code>
                 <span class="flex-grow-1 fw-semibold small">{{ t.name }}</span>
                 <span v-if="t.device_model"
                       class="badge bg-body-secondary text-body border small">
@@ -376,7 +375,7 @@ onMounted(load)
             <!-- Terminal add/edit form -->
             <div v-if="showTerminalForm"
                  class="border rounded p-3 mb-3 bg-body-tertiary">
-              <div class="fw-semibold mb-3 small text-uppercase text-muted" style="letter-spacing:.05em">
+              <div class="fw-semibold mb-3 small text-uppercase text-muted ls-wide">
                 {{ editingTerminalId ? '編輯機台' : '新增機台' }}
               </div>
               <div class="row g-3 mb-3">
@@ -396,8 +395,8 @@ onMounted(load)
 
               <!-- Override toggle -->
               <div class="form-check form-switch mb-2">
-                <input v-model="terminalForm.use_override" class="form-check-input" type="checkbox"
-                       id="overrideToggle" style="width:2em;height:1.1em;cursor:pointer" />
+                <input v-model="terminalForm.use_override" class="form-check-input switch-sm" type="checkbox"
+                       id="overrideToggle" />
                 <label class="form-check-label small" for="overrideToggle">
                   使用獨立 ECPay 憑證（不繼承店家設定）
                 </label>

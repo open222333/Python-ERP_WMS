@@ -4,10 +4,10 @@
   <div id="panel-cart">
     <div id="cart-header">
       <div>
-        <h6 style="display:inline"><i class="bi bi-cart3 me-1"></i>購物車</h6>
+        <h6 class="d-inline"><i class="bi bi-cart3 me-1"></i>購物車</h6>
         <span v-if="cart.length" id="cart-count">{{ cartTotal.count }}</span>
       </div>
-      <button class="tb-btn danger" style="padding:4px 10px;font-size:.75rem" @click="emit('clear')">
+      <button class="tb-btn danger fz-75" style="padding:4px 10px" @click="emit('clear')">
         <i class="bi bi-trash"></i>清空
       </button>
     </div>
@@ -49,10 +49,10 @@
       </div>
       <div class="cf-row">
         <span class="cf-label">折扣</span>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span style="color:#9ca3af;font-size:.82rem">$</span>
-          <input v-model.number="discountModel" type="number" min="0" step="1"
-                 style="width:80px;border:1.5px solid #e2e8f0;border-radius:7px;padding:4px 8px;text-align:right;font-size:.85rem;font-weight:600" />
+        <div class="d-flex align-items-center gap-1">
+          <span class="fz-82" style="color:#9ca3af">$</span>
+          <input class="wpx-80 text-end fz-85 fw-semibold" v-model.number="discountModel" type="number" min="0" step="1"
+                 style="border:1.5px solid #e2e8f0; border-radius:7px; padding:4px 8px" />
         </div>
       </div>
       <div v-if="discountPresets.length && cart.length" class="disc-presets">
@@ -67,7 +67,7 @@
         <span id="cf-total">NT$ {{ cartTotal.total }}</span>
       </div>
       <button id="btn-checkout" :disabled="cart.length === 0" @click="emit('checkout')">
-        <i class="bi bi-credit-card-2-front-fill" style="font-size:1.1rem"></i>結帳
+        <i class="bi bi-credit-card-2-front-fill fz-110"></i>結帳
       </button>
     </div>
   </div>
